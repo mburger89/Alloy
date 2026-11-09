@@ -104,8 +104,10 @@ import Testing
         let session = try await idleSession(rig)
         let model = ComposerModel(workspace: rig.workspace, sessionID: session.id)
         model.draft = "line one"
-        #expect(model.handleKey(.return, modifiers: .shift) == .ignored)
-        #expect(model.draft == "line one")
+        model.caret = 4..<4
+        #expect(model.handleKey(.return, modifiers: .shift) == .handled)   // G18's field would submit; Alloy inserts
+        #expect(model.draft == "line\n one")
+        #expect(model.caret == 5..<5)
         for _ in 0..<50 { await Task.yield() }
         #expect(await rig.transports[0].sentAfterInitialize.isEmpty)
     }

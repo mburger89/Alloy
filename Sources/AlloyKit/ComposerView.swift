@@ -85,8 +85,8 @@ struct ComposerView: Component {
                 }
             }
             HStack(alignment: .bottom, spacing: Pixels(8)) {
-                TextEditor("Message Claude", text: draft, selectedOffsets: caret)
-                    .textEditorStyle(.plain)
+                TextField("Message Claude", text: draft, selectedOffsets: caret, axis: .vertical)
+                    .lineLimit(1...8)
                     .accessibilityIdentifier("composer")
                     .focused($fieldFocused)
                     .onChange(of: fieldFocused) { _, new in model.hasFocus = new }
@@ -98,10 +98,8 @@ struct ComposerView: Component {
                     .pasteDestination(for: ImageData.self, action: { images in
                         for image in images { model.attach(imageData: image.data, typeHint: image.contentType.identifier) }
                     }, validator: { clipboard.hasContent(of: .text) ? [] : $0 })
-                    // G18 STOPGAP (docs/metalui-gaps.md): an explicit height, which the editor scrolls and follows the caret
-                    // inside by itself. Replace with `TextField(axis: .vertical).lineLimit(1...8)` once MetalUI ships it.
+                    // G18: the field grows from one line to eight (wrapped lines count), then scrolls inside.
                     .frame(maxWidth: .infinity, alignment: .topLeading)
-                    .frame(height: Self.editorHeight(draft: model.draft))
                     .padding(inset(8, 6))
                     .background(Color.surface)
                     .cornerRadius(Pixels(6))
@@ -137,16 +135,6 @@ struct ComposerView: Component {
             return true
         }
         .padding(inset(12, 10))
-    }
-
-    /// One editor row at the default 13 pt font, and the most rows shown before the editor scrolls.
-    static let lineHeight: Float = 16
-    static let maxLines = 8
-
-    /// G18 stopgap: logical lines (hard breaks) only, one to eight; a long wrapped line stays one row and scrolls.
-    static func editorHeight(draft: String) -> Pixels {
-        let lines = draft.reduce(1) { $1 == "\n" ? $0 + 1 : $0 }
-        return Pixels(Float(min(maxLines, max(1, lines))) * lineHeight)
     }
 
     /// "640×480 · 1.2 MB".

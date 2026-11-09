@@ -25,40 +25,52 @@ import Testing
         window.tick(); window.tick()
     }
 
-    /// The box is the editor plus the 6 pt inset above and below; the editor shows whole 16 pt lines.
+    /// The box is the field plus the 6 pt inset above and below; the field is 24 pt at one line and grows 16 pt per line to 136 (G18).
     private func height(_ id: String, _ window: TestWindow) throws -> Float {
         try window.element(identifier: id).frame.size.height.value
     }
 
     @Test func emptyDraftIsOneLineHigh() async throws {
         let (_, _, window) = await rigWithSession()
-        #expect(try height("composer", window) == 16)
-        #expect(try height("composer-box", window) == 16 + 12)
+        #expect(try height("composer", window) == 24)
+        #expect(try height("composer-box", window) == 24 + 12)
     }
 
     @Test func threeLinesAreThreeLinesHigh() async throws {
         let (_, _, window) = await rigWithSession()
         try type(lines: 3, window: window)
-        #expect(try height("composer", window) == 48)
+        #expect(try height("composer", window) == 56)
     }
 
     @Test func fortyLinesAreCappedAtEightAndKeepAcceptingText() async throws {
         let (_, _, window) = await rigWithSession()
         try type(lines: 40, window: window)
-        #expect(try height("composer", window) == 8 * 16)
-        #expect(try height("composer-box", window) == 8 * 16 + 12)
+        #expect(try height("composer", window) == 136)
+        #expect(try height("composer-box", window) == 136 + 12)
         // Capped, yet the editor still holds (and scrolls to) the whole text.
         let value = try window.element(identifier: "composer").value ?? ""
         #expect(value.hasSuffix("line 39"))
         #expect(try window.element(identifier: "composer").isFocused)
     }
 
-    @Test func oneLongLineStaysOneRow() async throws {
+    @Test func oneLongWrappedLineGrowsTheBox() async throws {
         let (_, _, window) = await rigWithSession()
         try window.focus(window.element(identifier: "composer"))
         window.typeText(String(repeating: "word ", count: 120))
         window.tick(); window.tick()
-        #expect(try height("composer", window) == 16)
+        let grown = try height("composer", window)
+        #expect(grown > 24)
+        #expect(grown <= 136)
+        #expect(!(try #require(window.element(identifier: "composer").value)).contains("\n"))
+    }
+
+    @Test func aVeryLongWrappedLineCapsAt136AndScrolls() async throws {
+        let (_, _, window) = await rigWithSession()
+        try window.focus(window.element(identifier: "composer"))
+        window.typeText(String(repeating: "word ", count: 2_000))
+        window.tick(); window.tick()
+        #expect(try height("composer", window) == 136)
+        #expect(try window.element(identifier: "composer").isFocused)
     }
 
     @Test func textIsInsetFromTheBorderAndSendSitsOnTheBottomEdge() async throws {

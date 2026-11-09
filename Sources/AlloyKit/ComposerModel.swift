@@ -214,7 +214,8 @@ final class ComposerModel {
         if suggestions != nil, handleSuggestionKey(key, modifiers: modifiers) { return .handled }
         switch key {
         case .return:
-            if modifiers.contains(.shift) { return .ignored }   // TextEditor inserts the newline
+            // The G18 field submits on ⇧Return, so the newline is inserted here, before the field sees the key.
+            if modifiers.contains(.shift) { insertNewline(); return .handled }
             send(priority: modifiers.contains(.option) ? .later : defaultPriority)
             return .handled
         case .escape:
@@ -286,6 +287,17 @@ final class ComposerModel {
         }
         suggestions = nil
         replace(state.tokenRange, with: String(replacement.dropLast()))
+    }
+
+    /// Replaces the selection (or inserts at the caret; the end when unknown) with a line break and puts the caret after it.
+    func insertNewline() {
+        let count = draft.count
+        let range = caret.map { min($0.lowerBound, count)..<min($0.upperBound, count) } ?? count..<count
+        var updated = draft
+        let lower = updated.index(updated.startIndex, offsetBy: range.lowerBound)
+        let upper = updated.index(updated.startIndex, offsetBy: range.upperBound)
+        updated.replaceSubrange(lower..<upper, with: "\n")
+        replaceDraft(updated, caret: range.lowerBound + 1)
     }
 
     /// The `/` or `@` token that ends at `caret` (the end of the draft when nil). `/` counts only as the draft's first

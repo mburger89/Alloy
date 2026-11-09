@@ -117,11 +117,12 @@ Gaps G1-G7 come from spec section 5. Each was sent to the MetalUI session. Stopg
 - Wanted API: `CodeView.firstLineNumber(_ n: Int)` (or a `lineNumberOffset`) so the gutter starts at `n`, plus a way to blank the number of a row (shell `tail` output has an unknown start).
 
 ## G18 TextEditor: size to content up to a cap, then scroll
-- Status: open (filed in polish batch B)
+- Status: adopted (MetalUI 2f0b43c5). The composer is `TextField(text:selectedOffsets:axis: .vertical).lineLimit(1...8)`: 24 pt at one line, 16 pt per line including wrapped lines, 136 pt cap, then it scrolls. The field submits on ⇧Return (divergence 232..234), so `ComposerModel.handleKey` now inserts the ⇧Return line break itself (`insertNewline`) before the field sees the key; every key does what it did before. Original report follows.
+- Filed in polish batch B.
 - Used by: the composer, which should start at one line, grow to about 8 lines and then scroll.
 - Gap: `TextEditor` is greedy; `.fixedSize(vertical: true)` makes it take its ideal (content) height, so it starts at one line and grows. But the grow cannot be bounded. `.frame(maxHeight:)` around the fixed-size editor clamps the box while the editor is still laid out at its full ideal height (measured 672 pt for 40 lines under a 128 pt frame), so it neither scrolls nor follows the caret. Putting `frame(maxHeight:)` inside `fixedSize` or around a `VStack`/`ProposalScrollView` made the frame take its maximum even for an empty editor. `TextEditor` ignores `.lineLimit(1...8)`.
 - Wanted API: `TextEditor` honouring `.lineLimit(_ range)` (SwiftUI's growing editor), or an ideal height clamped to the proposal so `frame(maxHeight:)` plus the editor's own scrolling works.
-- Stopgap (polish B fix round 1): `ComposerView.editorHeight(draft:)` sets an explicit `.frame(height:)` of `min(8, max(1, logical lines)) * 16` pt. The editor scrolls and follows the caret inside that frame by itself. Wrapped lines do not count, so one long line stays one row and scrolls. Replace it with `TextField(axis: .vertical).lineLimit(1...8)` (or the TextEditor equivalent) once MetalUI ships it; the 16 pt row height is the default 13 pt font and is wrong for other font sizes.
+- Stopgap (removed on adoption; polish B fix round 1): `ComposerView.editorHeight(draft:)` sets an explicit `.frame(height:)` of `min(8, max(1, logical lines)) * 16` pt. The editor scrolls and follows the caret inside that frame by itself. Wrapped lines do not count, so one long line stays one row and scrolls. Replace it with `TextField(axis: .vertical).lineLimit(1...8)` (or the TextEditor equivalent) once MetalUI ships it; the 16 pt row height is the default 13 pt font and is wrong for other font sizes.
 
 ## G19 TextEditor placeholder contrast
 - Status: requested (forwarded to the MetalUI session by the coordinator)
@@ -160,3 +161,6 @@ Gaps G1-G7 come from spec section 5. Each was sent to the MetalUI session. Stopg
 - Gap: a `Menu` item is a `MenuNode` (title, enabled, shortcut); `.accessibilityIdentifier` and `.help` on a `Button` inside a `Menu` are dropped. The plan asks for `fork-<uuid>` on the Fork item and a "Nothing to fork yet" tooltip on it when disabled.
 - Adopted as: the Fork item has `fork-<session uuid>` and `.help` ("Fork this session", or "Nothing to fork yet" while disabled); Rename has `session-rename-<session uuid>` (`rename-<uuid>` is the inline text field). The gutter-bar menu items carry `keep-`, `revert-`, `show-in-chat-`, `side-by-side-`/`inline-` plus the edit uuid, and the model menu items `model-choice-<alias>`. The disabled "Nothing to fork yet" text item is gone; tests look items up with `menu.item(accessibilityIdentifier:)`.
 - Remaining gap: `TestWindow.chooseMenuItem` still chooses by title only (no choose-by-identifier).
+
+## G26: choose a menu item by accessibility identifier in tests (forwarded)
+`TestWindow.chooseMenuItem(_:)` takes only a title. With G24, tests find items by id but must still choose by title. Also asked (low priority): `.help(String?)`, where nil means no tooltip.
