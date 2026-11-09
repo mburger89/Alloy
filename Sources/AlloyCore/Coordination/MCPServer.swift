@@ -105,6 +105,14 @@ public enum MCPServer {
     /// text and retries.
     enum Checked { case ok(JSONValue), refused(MCPToolResult) }
 
+    /// A model's usual wrong name for the note body of `notes_write` gets a pointer to the right one.
+    private static func noteHint(_ unknown: [String], valid: [String], tool: MCPTool) -> String {
+        guard tool.name == "notes_write", valid.contains("text"),
+              let wrong = unknown.first(where: { ["summary", "note", "content", "body", "message"].contains($0) })
+        else { return "" }
+        return " \(tool.name) takes the note in \"text\" (not \"\(wrong)\")."
+    }
+
     static func checkedArguments(_ raw: JSONValue?, for tool: MCPTool) -> Checked {
         let valid: [String]? = {
             guard case .object(let props)? = tool.inputSchema["properties"] else { return nil }
@@ -121,7 +129,8 @@ public enum MCPServer {
         guard unknown.isEmpty else {
             let named = unknown.map { "\"\($0)\"" }.joined(separator: ", ")
             return .refused(MCPToolResult(
-                text: "Unknown argument\(unknown.count == 1 ? "" : "s") \(named). \(tool.name) takes \(valid.joined(separator: ", ")).",
+                text: "Unknown argument\(unknown.count == 1 ? "" : "s") \(named). \(tool.name) takes \(valid.joined(separator: ", "))."
+                    + noteHint(unknown, valid: valid, tool: tool),
                 isError: true))
         }
         return .ok(raw)

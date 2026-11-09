@@ -6,6 +6,8 @@ session, and lets the sessions share what they have already read.
 
 It is built on [MetalUI](https://github.com/mburger89/MetalUI), a GPU-rendered Swift UI framework.
 
+![Alloy with two Claude Code sessions, Retry and Averages, on one project: the chat shows an edit diff and the code panel shows Forecast.swift with each session's changes marked in its own colour](docs/images/alloy-hero.png)
+
 ## Why
 
 Running more than one agent on a project works until you cannot tell who changed what, and until each agent re-reads
@@ -39,6 +41,10 @@ Editing and diffs
   non-UTF-8 files open read-only.
 - A per-file edit ledger with author gutter bars and tints, removed lines shown inline, and Keep and Revert per edit.
 - Side-by-side diff with synchronized scrolling.
+
+  ![Side-by-side diff of Forecast.swift: the old text on the left, the new text on the right, with edits marked by session colour](docs/images/alloy-side-by-side.png)
+
+*Side by side: the file before and after the sessions' edits, scrolling together.*
 - Edits by other programs show as "outside"; changes made by a session's Bash command are attributed to that session.
   `git commit` clears the reviewed files' baseline.
 - If a session changes a file while you have unsaved edits, the changes are merged.
@@ -49,6 +55,10 @@ Shared knowledge (on by default)
 - When a message names a file another session has read, Alloy adds a short quoted "Shared by other sessions" block
   saying whether the file changed since. Note text is marked as written by another session and treated as a hint.
 - Redundant-read counts per session and per project; a Settings view with the `claude` path and sharing switches.
+
+![A chat message with its "shared: 1 file" chip expanded to the exact note text Alloy added from another session's read](docs/images/alloy-shared-knowledge.png)
+
+*The "shared: 1 file" chip, expanded: exactly what Alloy told this session about a file another session had read.*
 
 Coordination between sessions
 - Overlap warnings, which never block. Alloy registers PreToolUse and PostToolUse `http` hooks (for Edit, Write,

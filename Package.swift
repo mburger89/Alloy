@@ -95,6 +95,7 @@ let package = Package(
                 "AlloyTestSupport",
                 .product(name: "MetalUI", package: "MetalUI"),
                 .product(name: "MetalUITesting", package: "MetalUI"),
+                .product(name: "MetalUITestingSnapshot", package: "MetalUI"),
             ],
             resources: [.copy("Fixtures")]
         ),

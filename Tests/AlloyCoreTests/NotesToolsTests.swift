@@ -109,6 +109,14 @@ private final class Dirs: @unchecked Sendable {
         await ws.stopAll()
     }
 
+    @Test func summaryForTextGetsAGentleHint() async throws {
+        let ws = makeWS(root: dirs.make())
+        let r = try await callThroughServer(ws, "notes_write", arguments: #"{"path":"a.txt","summary":"y"}"#)
+        #expect(r.isError && r.text.contains("Unknown argument \"summary\""))
+        #expect(r.text.contains("takes the note in \"text\" (not \"summary\")"))
+        await ws.stopAll()
+    }
+
     @Test func anExtraKeyIsRejectedOnEveryTool() async throws {
         let ws = makeWS(root: dirs.make())
         let lookup = try await callThroughServer(ws, "notes_lookup", arguments: #"{"path":"a.txt","depth":2}"#)

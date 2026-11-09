@@ -146,13 +146,13 @@ struct SessionRow: Component {
             if let warning = CoordinationStyle.headline(warnings.filter { $0.sessions.contains(id) }) {
                 WarningMark(warning: warning, identifier: "session-warning-\(id.uuidString)")
             }
-            // Menu items cannot carry identifiers or tooltips (G24): tests choose them by title, and the reason
-            // Fork is unavailable is a disabled item of its own.
             Menu {
                 Button("Fork") { Task { await workspace.fork(id, name: nil) } }
                     .disabled(!session.hasConversation)
-                if !session.hasConversation { Text("Nothing to fork yet") }
+                    .help(session.hasConversation ? "Fork this session" : "Nothing to fork yet")
+                    .accessibilityIdentifier("fork-\(id.uuidString)")
                 Button("Rename") { draft = session.name; renaming = true }
+                    .accessibilityIdentifier("session-rename-\(id.uuidString)")
             } label: {
                 Image(systemName: "ellipsis").font(.system(size: 12)).foregroundColor(.mutedInk)
             }

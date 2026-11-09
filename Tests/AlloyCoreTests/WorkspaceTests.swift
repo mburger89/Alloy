@@ -1563,6 +1563,23 @@ private final class Flag: @unchecked Sendable {
         #expect(numbers(out) == [2, 3, 4, 5, 6, 7, 8])
     }
 
+    /// Two edits in one region: the diff lists the first edit's inserted lines before the second edit's. The second
+    /// edit's card must not borrow the first edit's added lines as "context".
+    @Test func otherEditsChangedLinesNeverAppearAsContext() {
+        let mine = UUID(), other = UUID()
+        var ls: [DiffLine] = [.context(text: "a", line: 39), .context(text: "b", line: 40),
+                              .removed(text: "func old()", edit: mine), .removed(text: "guard", edit: mine)]
+        for k in 0..<6 { ls.append(.added(text: "other\(k)", line: 41 + k, edit: other, runs: [])) }
+        ls.append(.added(text: "func new()", line: 47, edit: mine, runs: []))
+        ls.append(.context(text: "z", line: 48))
+        let out = DiffSlice.visible(ls, editIDs: [mine])
+        for line in out {
+            if case .added(_, _, let e, _) = line { #expect(e == mine) }
+            if case .removed(_, let e) = line { #expect(e == mine) }
+        }
+        #expect(out.count == 6)  // a, b, 2 removed, new, z
+    }
+
     @Test func otherEditsAreContextOnlyAndAbsentWhenNothingMatches() {
         let e = UUID(), other = UUID()
         #expect(DiffSlice.visible(lines(10, changed: [4], edit: other), editIDs: [e]).isEmpty)

@@ -354,5 +354,8 @@ private final class Transports: @unchecked Sendable {
         #expect(words < 250)
         #expect(!Guidance.text.contains("Claude Code"))
         for n in ["sessions_changes", "claim_region", "release_region"] { #expect(Guidance.text.contains(n)) }
+        #expect(words < 150)
+        // Argument names are explicit, so a model does not invent `summary`.
+        #expect(Guidance.text.contains("`text`") && Guidance.text.contains("`path`"))
     }
 }

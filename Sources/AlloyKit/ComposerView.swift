@@ -51,8 +51,11 @@ struct ComposerView: Component {
                 .accessibilityIdentifier("mode-picker")
                 Menu(session.model ?? "Model") {
                     Button("Sonnet") { model.setModel("sonnet") }
+                        .accessibilityIdentifier("model-choice-sonnet")
                     Button("Opus") { model.setModel("opus") }
+                        .accessibilityIdentifier("model-choice-opus")
                     Button("Haiku") { model.setModel("haiku") }
+                        .accessibilityIdentifier("model-choice-haiku")
                 }
                 .menuPresented(pickerOpen)   // `/model` with no name opens it (G9)
                 .accessibilityIdentifier("model-menu")

@@ -155,9 +155,8 @@ Gaps G1-G7 come from spec section 5. Each was sent to the MetalUI session. Stopg
 - Wanted: a stronger selected-segment treatment (border or accent), or a theme key.
 
 ## G24 Menu items cannot carry an identifier or a tooltip
-- Status: merged upstream (MetalUI #253, "Menu items carry a Button's accessibilityIdentifier and help"); Alloy has not adopted it yet and adopts it on the next `../MetalUI` fast-forward (filed with Plan 5a Task 7)
+- Status: adopted (MetalUI #253, "Menu items carry a Button's accessibilityIdentifier and help"; Alloy at MetalUI 8de0b5b4)
 - Used by: the session menu in the sidebar (Fork, Rename).
 - Gap: a `Menu` item is a `MenuNode` (title, enabled, shortcut); `.accessibilityIdentifier` and `.help` on a `Button` inside a `Menu` are dropped. The plan asks for `fork-<uuid>` on the Fork item and a "Nothing to fork yet" tooltip on it when disabled.
-- Alloy workaround: the menu button has `session-menu-<uuid>`; tests choose items by title; when Fork is disabled a disabled text item "Nothing to fork yet" follows it.
-- Wanted API: per-item identifier and help text on menu items (and the platform menu nodes). Upstream now provides it.
-- On adoption: give Fork the id `fork-<uuid>` and, while disabled, the tooltip "Nothing to fork yet"; then drop the disabled text item and the by-title test lookups.
+- Adopted as: the Fork item has `fork-<session uuid>` and `.help` ("Fork this session", or "Nothing to fork yet" while disabled); Rename has `session-rename-<session uuid>` (`rename-<uuid>` is the inline text field). The gutter-bar menu items carry `keep-`, `revert-`, `show-in-chat-`, `side-by-side-`/`inline-` plus the edit uuid, and the model menu items `model-choice-<alias>`. The disabled "Nothing to fork yet" text item is gone; tests look items up with `menu.item(accessibilityIdentifier:)`.
+- Remaining gap: `TestWindow.chooseMenuItem` still chooses by title only (no choose-by-identifier).

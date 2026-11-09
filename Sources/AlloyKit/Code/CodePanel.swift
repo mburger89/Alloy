@@ -401,11 +401,15 @@ struct FindBar: Component {
 func editMenu(edit: UUID, workspace: Workspace, store: SessionUIStore, document: EditorDocument) -> some MenuContent {
     let path = document.path
     Button("Keep") { workspace.keep(edit: edit, path: path) }
+        .accessibilityIdentifier("keep-\(edit.uuidString)")
     Button("Revert") { Task { _ = await workspace.revertInEditor(edit: edit, path: path) } }
+        .accessibilityIdentifier("revert-\(edit.uuidString)")
     Button("Show in chat") {
         if let record = workspace.editRecord(id: edit) { showInChat(record, workspace: workspace, store: store) }
     }
+    .accessibilityIdentifier("show-in-chat-\(edit.uuidString)")
     Button(document.diffMode == .inline ? "Side by side" : "Inline") {
         document.diffMode = document.diffMode == .inline ? .sideBySide : .inline
     }
+    .accessibilityIdentifier("\(document.diffMode == .inline ? "side-by-side" : "inline")-\(edit.uuidString)")
 }
