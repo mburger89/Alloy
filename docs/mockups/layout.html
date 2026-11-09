@@ -1,0 +1,99 @@
+<style>
+.w{background:#16181d;color:#c9ccd3;font:12px/1.4 ui-monospace,Menlo,monospace;border-radius:8px;overflow:hidden;border:1px solid #2a2e37}
+.bar{background:#1d2027;padding:6px 10px;border-bottom:1px solid #2a2e37;color:#8a8f99;display:flex;gap:12px}
+.row{display:flex;height:340px}
+.p{padding:8px;border-right:1px solid #2a2e37;overflow:hidden}
+.p:last-child{border-right:none}
+.h{color:#8a8f99;font-size:10px;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px}
+.s{padding:4px 6px;border-radius:4px;margin-bottom:3px;display:flex;align-items:center;gap:6px}
+.s.on{background:#262a33}
+.dot{width:8px;height:8px;border-radius:50%;display:inline-block}
+.a{background:#5aa9ff}.b{background:#f2a65a}.c{background:#8bd17c}
+.u{background:#232731;padding:6px 8px;border-radius:6px;margin:6px 0 6px 30px}
+.m{padding:6px 2px}
+.tool{border:1px solid #2f3440;border-radius:6px;margin:6px 0;font-size:11px}
+.tool .t{padding:4px 8px;background:#1d2027;color:#8a8f99;display:flex;justify-content:space-between}
+.add{background:#1c3324;color:#9fe0a8;padding:0 8px}.del{background:#3a1f22;color:#f0a0a6;padding:0 8px}.ctx{padding:0 8px;color:#7d828c}
+.warn{background:#3b2f17;color:#f2c46d;border-radius:4px;padding:4px 8px;margin:6px 0;font-size:11px}
+.inp{border:1px solid #2f3440;border-radius:6px;padding:8px;color:#6b707a;margin-top:8px}
+.code div{white-space:pre;padding:0 6px}
+.gut{border-left:3px solid}
+.ga{border-color:#5aa9ff}.gb{border-color:#f2a65a}
+.tabs{display:flex;gap:2px;margin-bottom:6px}.tab{padding:3px 8px;background:#1d2027;border-radius:4px 4px 0 0;font-size:11px}.tab.on{background:#262a33;color:#fff}
+</style>
+
+<h2>Where should the chat sit?</h2>
+<p class="subtitle">Three ways to put chat at the center. Colors = sessions (blue, orange, green). Click the one closest to what you picture; mixing is fine.</p>
+
+<div class="options">
+
+<div class="option" data-choice="a" onclick="toggleSelect(this)">
+<div class="letter">A</div>
+<div class="content" style="width:100%">
+<h3>Chat in the middle, code on the side</h3>
+<p>Session list on the left, the active session's chat in the center, and the file it's editing (with a live diff) on the right. Edits show up in the chat as compact cards.</p>
+<div class="w"><div class="bar"><span>myproject</span><span>3 sessions · 1 conflict</span></div>
+<div class="row">
+ <div class="p" style="width:18%"><div class="h">Sessions</div>
+  <div class="s on"><span class="dot a"></span>auth refactor</div>
+  <div class="s"><span class="dot b"></span>add tests ⚠</div>
+  <div class="s"><span class="dot c"></span>docs</div>
+  <div class="h" style="margin-top:12px">Changed files</div>
+  <div class="s"><span class="dot a"></span>auth.swift</div>
+  <div class="s"><span class="dot a"></span><span class="dot b"></span>login.swift</div>
+ </div>
+ <div class="p" style="width:46%"><div class="h">auth refactor</div>
+  <div class="u">Move token refresh into AuthClient</div>
+  <div class="m">I'll pull the refresh logic out of LoginView…</div>
+  <div class="tool"><div class="t"><span>Edit login.swift</span><span>+12 −30</span></div></div>
+  <div class="warn">⚠ "add tests" also changed login.swift lines 40–58</div>
+  <div class="tool"><div class="t"><span>Edit auth.swift</span><span>+44 −2</span></div></div>
+  <div class="inp">Message auth refactor…</div>
+ </div>
+ <div class="p code" style="width:36%"><div class="tabs"><span class="tab on">login.swift</span><span class="tab">auth.swift</span></div>
+  <div class="ctx">func signIn() async {</div>
+  <div class="del gut ga">-  let t = try await refresh()</div>
+  <div class="add gut ga">+  let t = try await client.token()</div>
+  <div class="ctx">   session.store(t)</div>
+  <div class="add gut gb">+  assert(t.isValid)</div>
+  <div class="ctx">}</div>
+ </div>
+</div></div>
+</div></div>
+
+<div class="option" data-choice="b" onclick="toggleSelect(this)">
+<div class="letter">B</div>
+<div class="content" style="width:100%">
+<h3>Chat is the whole screen; diffs live inside it</h3>
+<p>Diffs expand right inside the conversation, so you can review in place. The full file editor slides in only when you ask for it.</p>
+<div class="w"><div class="bar"><span class="s on" style="margin:0"><span class="dot a"></span>auth refactor</span><span class="s" style="margin:0"><span class="dot b"></span>add tests ⚠</span><span class="s" style="margin:0"><span class="dot c"></span>docs</span></div>
+<div class="row"><div class="p" style="width:100%;padding:8px 18%">
+  <div class="u">Move token refresh into AuthClient</div>
+  <div class="m">I'll pull the refresh logic out of LoginView…</div>
+  <div class="tool code"><div class="t"><span>Edit login.swift</span><span>+12 −30 · accept / reject / open</span></div>
+   <div class="ctx">func signIn() async {</div>
+   <div class="del">-  let t = try await refresh()</div>
+   <div class="add">+  let t = try await client.token()</div>
+   <div class="ctx">}</div></div>
+  <div class="warn">⚠ "add tests" also changed login.swift lines 40–58 — view both</div>
+  <div class="inp">Message auth refactor…</div>
+</div></div></div>
+</div></div>
+
+<div class="option" data-choice="c" onclick="toggleSelect(this)">
+<div class="letter">C</div>
+<div class="content" style="width:100%">
+<h3>All sessions side by side</h3>
+<p>Every session's chat visible at once in columns, with a shared strip below showing which files each one is touching and where they overlap.</p>
+<div class="w"><div class="bar"><span>myproject</span><span>3 sessions</span></div>
+<div class="row" style="height:250px">
+ <div class="p" style="width:33%"><div class="h"><span class="dot a"></span> auth refactor</div><div class="u" style="margin-left:10px">Move token refresh…</div><div class="tool"><div class="t"><span>Edit login.swift</span><span>+12 −30</span></div></div><div class="inp">Message…</div></div>
+ <div class="p" style="width:33%"><div class="h"><span class="dot b"></span> add tests</div><div class="u" style="margin-left:10px">Cover signIn…</div><div class="tool"><div class="t"><span>Edit login.swift</span><span>+3</span></div></div><div class="warn">⚠ overlaps auth refactor</div><div class="inp">Message…</div></div>
+ <div class="p" style="width:33%"><div class="h"><span class="dot c"></span> docs</div><div class="u" style="margin-left:10px">Update README…</div><div class="tool"><div class="t"><span>Edit README.md</span><span>+20</span></div></div><div class="inp">Message…</div></div>
+</div>
+<div style="border-top:1px solid #2a2e37;padding:8px;display:flex;gap:16px">
+ <span><span class="dot a"></span> auth.swift</span><span style="color:#f2c46d"><span class="dot a"></span><span class="dot b"></span> login.swift ⚠</span><span><span class="dot c"></span> README.md</span>
+</div></div>
+</div></div>
+
+</div>

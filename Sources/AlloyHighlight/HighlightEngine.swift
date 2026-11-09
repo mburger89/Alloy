@@ -1,0 +1,260 @@
+import Foundation
+import MetalUI
+import SwiftTreeSitter
+
+/// What a highlight run is, independent of colour.
+public enum SyntaxToken: Sendable, Hashable, CaseIterable {
+    case keyword, string, comment, number, type, function, variable, property, constant, builtin
+    case operator_, punctuation, attribute, tag, heading, link, plain
+
+    /// The token a tree-sitter capture name maps to, by its first dotted component (`function.method` is
+    /// `.function`); `nil` for captures that do not colour text (`spell`, `none`, `embedded`).
+    static func forCapture(_ components: [String]) -> SyntaxToken? {
+        guard let first = components.first else { return nil }
+        let second = components.count > 1 ? components[1] : ""
+        switch first {
+        case "keyword", "conditional", "repeat", "include", "exception", "storageclass", "media", "import",
+             "supports", "keyframes", "charset", "preproc", "define": return .keyword
+        case "string", "character", "escape": return .string
+        case "comment": return .comment
+        case "number", "float": return .number
+        case "type", "constructor", "namespace", "module": return .type
+        case "function", "method": return .function
+        case "variable": return second == "builtin" ? .builtin : .variable
+        case "property", "field", "parameter": return .property
+        case "constant", "boolean": return second == "builtin" ? .builtin : .constant
+        case "builtin": return .builtin
+        case "operator": return .operator_
+        case "punctuation", "delimiter": return .punctuation
+        case "attribute", "annotation", "decorator": return .attribute
+        case "tag": return .tag
+        case "label": return .variable
+        case "heading": return .heading
+        case "text", "markup":
+            switch second {
+            case "title", "heading": return .heading
+            case "uri", "link", "reference", "url": return .link
+            default: return nil
+            }
+        default: return nil
+        }
+    }
+}
+
+/// The pure part of highlighting: a tree and its text in, flattened `(bytes, token)` runs out.
+enum HighlightCore {
+    static func parse(_ parser: Parser, old: MutableTree?, bytes: [UInt8]) -> MutableTree? {
+        // Encoding 0 is TSInputEncodingUTF8: every offset tree-sitter reports is a UTF-8 byte.
+        parser.parse(tree: old, encoding: .init(0)) { offset, _ in
+            guard offset < bytes.count else { return nil }
+            return Data(bytes[offset..<min(offset + 8192, bytes.count)])
+        }
+    }
+
+    private struct Capture {
+        var lower: Int
+        var upper: Int
+        var token: SyntaxToken
+        var priority: Int
+    }
+
+    /// The runs covering `range` of `bytes`. A later pattern in the query wins where captures overlap; runs
+    /// are sorted and disjoint, and adjacent runs of one token are joined.
+    static func runs(tree: MutableTree, query: Query, bytes: [UInt8], range: Range<Int>) -> [(Range<Int>, SyntaxToken)] {
+        let lo = max(0, range.lowerBound), hi = min(bytes.count, range.upperBound)
+        guard lo < hi, let root = tree.rootNode else { return [] }
+        let cursor = query.execute(node: root, in: tree)
+        cursor.setByteRange(range: UInt32(lo)..<UInt32(hi))
+        var captures: [Capture] = []
+        while let match = cursor.next() {
+            if !match.predicates.isEmpty && !allows(match, bytes: bytes) { continue }
+            for capture in match.captures {
+                guard let token = SyntaxToken.forCapture(capture.nameComponents) else { continue }
+                let r = capture.node.byteRange
+                let a = max(lo, Int(r.lowerBound)), b = min(hi, Int(r.upperBound))
+                if a < b { captures.append(Capture(lower: a, upper: b, token: token, priority: match.patternIndex)) }
+            }
+        }
+        return flatten(captures)
+    }
+
+    private static func allows(_ match: QueryMatch, bytes: [UInt8]) -> Bool {
+        for predicate in match.predicates {
+            switch predicate {
+            case .set, .generic, .isNot: continue
+            default:
+                for capture in predicate.captures(in: match) {
+                    let r = capture.node.byteRange
+                    let text = String(decoding: bytes[Int(r.lowerBound)..<min(bytes.count, Int(r.upperBound))], as: UTF8.self)
+                    if !predicate.evalulate(with: text) { return false }
+                }
+            }
+        }
+        return true
+    }
+
+    private static func flatten(_ captures: [Capture]) -> [(Range<Int>, SyntaxToken)] {
+        if captures.isEmpty { return [] }
+        var bounds = Set<Int>()
+        for c in captures { bounds.insert(c.lower); bounds.insert(c.upper) }
+        let points = bounds.sorted()
+        var winner = [Int](repeating: -1, count: points.count - 1)   // index into `ordered`
+        let ordered = captures.enumerated().sorted {
+            $0.element.priority != $1.element.priority ? $0.element.priority < $1.element.priority : $0.offset < $1.offset
+        }.map(\.element)
+        for (index, c) in ordered.enumerated() {
+            guard var i = lowerBound(points, c.lower) else { continue }
+            while i < points.count - 1, points[i] < c.upper {
+                winner[i] = index
+                i += 1
+            }
+        }
+        var out: [(Range<Int>, SyntaxToken)] = []
+        for i in 0..<winner.count where winner[i] >= 0 {
+            let token = ordered[winner[i]].token
+            let r = points[i]..<points[i + 1]
+            if let last = out.last, last.0.upperBound == r.lowerBound, last.1 == token {
+                out[out.count - 1].0 = last.0.lowerBound..<r.upperBound
+            } else {
+                out.append((r, token))
+            }
+        }
+        return out
+    }
+
+    private static func lowerBound(_ points: [Int], _ value: Int) -> Int? {
+        var lo = 0, hi = points.count
+        while lo < hi {
+            let mid = (lo + hi) / 2
+            if points[mid] < value { lo = mid + 1 } else { hi = mid }
+        }
+        return lo < points.count ? lo : nil
+    }
+}
+
+/// Parses documents off the main actor and answers highlight captures for byte ranges. It owns one parser
+/// and tree per document id; edits reparse incrementally.
+public actor HighlightEngine {
+    private struct Document {
+        var support: LanguageSupport
+        var parser: Parser
+        var tree: MutableTree?
+        var bytes: [UInt8]
+        /// The buffer version `bytes` is the text of.
+        var version: UInt64
+    }
+
+    private struct Waiter {
+        var token: UInt64
+        var minVersion: UInt64
+        var continuation: CheckedContinuation<Void, Never>
+        var timeout: Task<Void, Never>
+    }
+
+    private var documents: [UUID: Document] = [:]
+    private var waiters: [UUID: [Waiter]] = [:]
+    private var nextToken: UInt64 = 0
+    private let waitTimeout: Duration
+
+    /// `waitTimeout` bounds how long ``captures(id:byteRange:minVersion:)`` waits for the engine to reach a version.
+    public init(waitTimeout: Duration = .seconds(2)) {
+        self.waitTimeout = waitTimeout
+    }
+
+    /// How many `captures` calls are suspended waiting for a version (test observability).
+    var waiterCount: Int { waiters.values.reduce(0) { $0 + $1.count } }
+
+    /// Starts tracking `id`, parsing `text` (the text of buffer `version`) as `language`.
+    public func open(id: UUID, language: Language, text: String, version: UInt64) async {
+        let support = LanguageSupport.of(language)
+        let parser = Parser()
+        do {
+            try parser.setLanguage(support.language)
+        } catch {
+            LanguageSupport.report("grammar for \(language) rejected by the parser: \(error)", key: "set-\(language)")
+        }
+        let bytes = Array(text.utf8)
+        let tree = HighlightCore.parse(parser, old: nil, bytes: bytes)
+        documents[id] = Document(support: support, parser: parser, tree: tree, bytes: bytes, version: version)
+        resumeWaiters(id)
+    }
+
+    /// Applies `edits` (in order, each in the coordinates of the text just before it) and reparses
+    /// incrementally; `newText` is the text after all of them, which is buffer `version`.
+    public func edit(id: UUID, edits: [CodeEdit], newText: String, version: UInt64) async {
+        guard var doc = documents[id] else { return }
+        if let tree = doc.tree {
+            for e in edits {
+                tree.edit(InputEdit(
+                    startByte: e.range.lowerBound, oldEndByte: e.range.upperBound,
+                    newEndByte: e.range.lowerBound + e.newText.utf8.count,
+                    startPoint: Point(row: e.startPoint.row, column: e.startPoint.column),
+                    oldEndPoint: Point(row: e.oldEndPoint.row, column: e.oldEndPoint.column),
+                    newEndPoint: Point(row: e.newEndPoint.row, column: e.newEndPoint.column)))
+            }
+        }
+        doc.bytes = Array(newText.utf8)
+        doc.version = version
+        doc.tree = HighlightCore.parse(doc.parser, old: doc.tree, bytes: doc.bytes)
+        documents[id] = doc
+        resumeWaiters(id)
+    }
+
+    /// The version `captures` answers for an id the engine does not hold.
+    public static let unknownVersion = UInt64.max
+
+    /// The runs inside `byteRange` of the document's text (sorted, disjoint, UTF-8 byte offsets) and the buffer
+    /// version that text is. A caller applies them only to a snapshot of that same version.
+    ///
+    /// If the engine's text is older than `minVersion` (its `edit` has not arrived yet) the call suspends, without
+    /// holding the actor, until an `edit` or `open` brings it there, or until the wait times out (then it answers
+    /// from the text it has, and the caller's version check drops the answer). `close` ends the wait with
+    /// ``unknownVersion``.
+    public func captures(id: UUID, byteRange: Range<Int>, minVersion: UInt64 = 0)
+        async -> (version: UInt64, runs: [(Range<Int>, SyntaxToken)]) {
+        if let doc = documents[id], doc.version < minVersion { await waitForVersion(id: id, minVersion: minVersion) }
+        guard let doc = documents[id] else { return (Self.unknownVersion, []) }
+        guard let tree = doc.tree, let query = doc.support.highlights else { return (doc.version, []) }
+        return (doc.version, HighlightCore.runs(tree: tree, query: query, bytes: doc.bytes, range: byteRange))
+    }
+
+    /// Forgets `id`; its waiting `captures` calls answer ``unknownVersion``.
+    public func close(id: UUID) {
+        documents[id] = nil
+        resumeWaiters(id)
+    }
+
+    private func waitForVersion(id: UUID, minVersion: UInt64) async {
+        nextToken += 1
+        let token = nextToken
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            let limit = waitTimeout
+            let timeout = Task { [weak self] in
+                try? await Task.sleep(for: limit)
+                if !Task.isCancelled { await self?.expire(id: id, token: token) }
+            }
+            waiters[id, default: []].append(Waiter(token: token, minVersion: minVersion, continuation: continuation, timeout: timeout))
+        }
+    }
+
+    /// Resumes the waiters of `id` whose version the document has reached (all of them if it is gone).
+    private func resumeWaiters(_ id: UUID) {
+        guard let list = waiters[id] else { return }
+        let version = documents[id]?.version
+        let (ready, rest) = list.reduce(into: ([Waiter](), [Waiter]())) { acc, w in
+            if let version, version < w.minVersion { acc.1.append(w) } else { acc.0.append(w) }
+        }
+        waiters[id] = rest.isEmpty ? nil : rest
+        for w in ready {
+            w.timeout.cancel()
+            w.continuation.resume()
+        }
+    }
+
+    private func expire(id: UUID, token: UInt64) {
+        guard var list = waiters[id], let index = list.firstIndex(where: { $0.token == token }) else { return }
+        let w = list.remove(at: index)
+        waiters[id] = list.isEmpty ? nil : list
+        w.continuation.resume()
+    }
+}
