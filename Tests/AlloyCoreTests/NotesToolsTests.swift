@@ -493,7 +493,7 @@ private final class Dirs: @unchecked Sendable {
             return try? JSONDecoder().decode(JSONValue.self, from: data)
         }
         let list = try await rpc(#"{"jsonrpc":"2.0","id":1,"method":"tools/list"}"#)
-        #expect(list?["result"]?["tools"]?.arrayValue?.compactMap { $0["name"]?.stringValue } == ["notes_lookup", "notes_read", "notes_write"])
+        #expect(list?["result"]?["tools"]?.arrayValue?.compactMap { $0["name"]?.stringValue } == ["notes_lookup", "notes_read", "notes_write", "sessions_changes", "send_message", "claim_region", "release_region"])
         let call = try await rpc(#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"notes_read","arguments":{"path":"a.txt"}}}"#)
         #expect(call?["result"]?["content"]?.arrayValue?.first?["text"]?.stringValue == "1\tone\n2\ttwo")
         let w = try await rpc(#"{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"notes_write","arguments":{"topic":"x","text":"hello"}}}"#)

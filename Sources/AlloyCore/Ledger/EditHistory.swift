@@ -219,6 +219,23 @@ struct EditHistory: Codable, Equatable, Sendable {
         lineAttribution(of: fragments.filter(isVisible)) { owner($0) }
     }
 
+    /// Where each live edit's deletions sit in the visible text: the 1-based number of the visible line the
+    /// tombstones fall in (a deletion of whole lines sits at the line that followed them), ascending and without
+    /// repeats. Whole-line deletes count too. One pass over the fragments.
+    func deletionAnchors() -> [UUID: [Int]] {
+        var out: [UUID: [Int]] = [:]
+        var visibleNewlines = 0
+        for f in fragments {
+            if isVisible(f) {
+                visibleNewlines += f.text.utf8.reduce(0) { $0 + ($1 == 0x0A ? 1 : 0) }
+            } else if isInserted(f) {
+                let k = visibleNewlines + 1
+                for d in f.deletedBy where metas[d]?.state == .live && out[d]?.last != k { out[d, default: []].append(k) }
+            }
+        }
+        return out
+    }
+
     /// The text before live edits: baseline and kept insertions, with live edits' tombstones shown.
     func oldViewFragments() -> [Fragment] { fragments.filter(inOldView) }
 

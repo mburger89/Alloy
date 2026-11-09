@@ -133,6 +133,41 @@ public final class Workspace {
     @ObservationIgnored var compactionGeneration: [UUID: Int] = [:]
     /// Task 4 fills this with "does the notes store hold a current note for this path and stamp".
     @ObservationIgnored var hasCurrentNote: @MainActor (String, FileStamp) -> Bool = { _, _ in false }
+    /// Who has pending and applied changes where (Plan 5b); the hook handler asks it.
+    @ObservationIgnored lazy var overlapIndex = OverlapIndex(
+        ledger: { [weak self] in self?.ledger.files[$0] }, document: { [weak self] in self?.documents[$0] },
+        now: { [weak self] in self?.now() ?? Date() })
+    /// What each session was told about overlaps (`overlapTold.json`): key -> the compaction generation it was told at.
+    @ObservationIgnored var overlapTold: [UUID: [String: Int]] = [:]
+    @ObservationIgnored var overlapToldSnapshot: [String: [String: Int]]?
+    @ObservationIgnored var overlapToldWriteQueued = false
+    @ObservationIgnored var overlapToldWrite: Task<Void, Never>?
+    /// Tug-of-war alerts for Task 7's UI. Live-only by design: they are never written to disk, so a restart
+    /// starts with none (an alert is about the last ten minutes of edits, which a restart makes stale).
+    public internal(set) var tugAlerts: [TugAlert] = []
+    @ObservationIgnored var tug = TugState()
+    /// Overlap warnings the sessions were told about, for the markers and the notice (see `coordinationWarnings`).
+    /// Live-only, like the tug alerts.
+    var overlapWarnings: [OverlapWarningRecord] = []
+    /// Warnings whose notice strip the user dismissed or followed.
+    public internal(set) var dismissedWarnings: Set<DismissedWarning> = []
+    /// Wakes when the earliest warning expires, so the screen drops it without a per-frame timer. Not tracked, so
+    /// `settle()` never waits for it; `stopAll()` cancels it.
+    @ObservationIgnored var warningSleeper: Task<Void, Never>?
+    @ObservationIgnored var warningSleeperExpiry: Date?
+    /// Advisory claims on regions of files (`claims.json`).
+    @ObservationIgnored public internal(set) var claims: [Claim] = []
+    @ObservationIgnored var claimsSnapshot: [Claim]?
+    @ObservationIgnored var claimsWriteQueued = false
+    @ObservationIgnored var claimsWrite: Task<Void, Never>?
+    /// The four coordination tools the local server offers next to the notes tools.
+    @ObservationIgnored public private(set) var coordinationTools: [MCPTool] = []
+    /// Session messages delivered within the last minute, for the rate limits.
+    @ObservationIgnored var messageLog: [(from: UUID, to: UUID, at: Date)] = []
+    /// The project root as hook paths may spell it: standardised and symlink-resolved (computed once, in `init`).
+    @ObservationIgnored var hookRootForms: [String] = []
+    /// Hook `file_path` -> project-relative path, so a repeated path costs a lookup.
+    @ObservationIgnored var hookPathCache: [String: String] = [:]
     /// Read tool_use ids already judged, so a repeated delivery of a block is not counted twice.
     @ObservationIgnored var judgedReads: Set<String> = []
     /// Read tool_use id -> file_path, until the result arrives (a subagent's result has no structured file info).
@@ -237,6 +272,8 @@ public final class Workspace {
         await readsWrite?.value
         await notesWrite?.value
         await toldWrite?.value
+        await overlapToldWrite?.value
+        await claimsWrite?.value
         await serverStart?.value
     }
     public var changedFiles: [ChangedFile] { ledger.changedFiles() }
@@ -332,6 +369,8 @@ public final class Workspace {
             self?.notes.notes(for: .file(path)).contains { $0.stamp == stamp } ?? false
         }
         self.notesTools = NotesTools.make(workspace: self)
+        self.coordinationTools = CoordinationTools.make(workspace: self)
+        self.hookRootForms = Self.hookRootForms(of: projectRoot)
     }
 
     // MARK: Local server
@@ -345,9 +384,14 @@ public final class Workspace {
         guard !isShuttingDown else { return }
         let task = Task { @MainActor [weak self] in
             guard let self else { return }
-            let server = LocalServer(tools: notesTools, onListenerFailure: { [weak self] error in
+            let server = LocalServer(tools: notesTools + coordinationTools, onListenerFailure: { [weak self] error in
                 Task { @MainActor in await self?.listenerFailed(error) }
+            }, report: { [weak self] message in
+                Task { @MainActor in self?.report(message) }
             })
+            await server.setHookHandler { [weak self] request, caller in
+                await self?.answerHook(request, caller) ?? HookReply()
+            }
             do {
                 if failServerStartForTesting { throw CocoaError(.fileWriteUnknown) }
                 let url = try await server.start()
@@ -402,7 +446,8 @@ public final class Workspace {
     @discardableResult
     public func newSession(name: String) async -> Session {
         ensureLoaded()
-        let s = Session(id: UUID(), name: name, colorIndex: records.count % 8, projectRoot: projectRoot)
+        let s = Session(id: UUID(), name: allowedName(name, for: nil), colorIndex: records.count % 8, projectRoot: projectRoot)
+        if Self.isReserved(name) { s.transcript.appendNotice(kind: .commandOutput, text: Self.reservedNotice(for: s.name)) }
         if isShuttingDown {
             // Not registered and never launched; the caller gets a stopped session.
             s.status = .exited(status: 0, message: "Stopped")
@@ -528,10 +573,11 @@ public final class Workspace {
             if isShuttingDown || session(id) == nil { return nil }
         }
         let trimmed = name?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        let fork = Session(id: UUID(), name: trimmed.isEmpty ? "\(source.name) (fork)" : trimmed,
+        let fork = Session(id: UUID(), name: trimmed.isEmpty ? "\(source.name) (fork)" : allowedName(trimmed, for: nil),
                            colorIndex: records.count % 8, projectRoot: projectRoot,
                            hasConversation: true, model: source.model, permissionMode: source.permissionMode,
                            forkSource: source.forkSource ?? source.cliSessionID, forkPoint: point)
+        if Self.isReserved(trimmed) { fork.transcript.appendNotice(kind: .commandOutput, text: Self.reservedNotice(for: fork.name)) }
         sessions.append(fork)
         // Before the selection: selecting a session with pending history is what loads it, at the fork point.
         historyPending.insert(fork.id)
@@ -542,6 +588,7 @@ public final class Workspace {
                        fromGeneration: compactionGeneration[source.id, default: 0])
         persistReads()
         copyTold(from: source.id, to: fork.id)
+        copyOverlapTold(from: source.id, to: fork.id)
         persistSessions()
         await launch(fork, resume: true, forkFrom: fork.forkSource, forkAt: fork.forkPoint)
         return fork
@@ -633,8 +680,9 @@ public final class Workspace {
         if configuration.resumeSessionAt != nil { launchedAtForkPoint.insert(s.id) } else { launchedAtForkPoint.remove(s.id) }
         if let token, let url = serverURL {
             configuration.mcpConfigJSON = MCPServer.config(url: url, token: token)
+            configuration.extraSettingsJSON = Hooks.settingsJSON(url: url, token: token)
             configuration.appendSystemPrompt = Guidance.text
-            configuration.allowedTools = settings.askBeforeSharedNotes ? [] : Guidance.notesToolNames
+            configuration.allowedTools = settings.askBeforeSharedNotes ? [] : Guidance.alloyToolNames
         }
         let transport = makeTransport(configuration)
         let stream: AsyncStream<ProcessEvent>
@@ -725,6 +773,7 @@ public final class Workspace {
         turnPending.remove(s.id)
         revokeToken(for: s.id)
         forgetPending(for: s.id)
+        dropClaims(session: s.id)
         releaseAwaitingEcho(for: s.id)
         discardQueue(for: s.id)
         deferredControls.removeValue(forKey: s.id)
@@ -751,7 +800,7 @@ public final class Workspace {
         sessionMayBeIdle(s)
         trackShellWindows(event, session: s)
         trackReads(event, session: s)
-        if case .message(.userEcho(_, _, let uuid, _)) = event { noteEcho(uuid: uuid, session: s) }
+        if case .message(.userEcho(_, _, let uuid, _)) = event { noteEcho(uuid: uuid, session: s); noteTugEcho(uuid: uuid) }
         if case .message(.controlRequest(let req)) = event, case .canUseTool(let name, let input, _, _, _) = req.kind,
            name == "AskUserQuestion" || name == "ExitPlanMode" {
             promptInputs[req.requestID] = (s.id, input)
@@ -762,6 +811,7 @@ public final class Workspace {
             releaseIdleWaiters(s.id, reachedIdle: false)
             revokeToken(for: s.id)
             forgetPending(for: s.id)
+            dropClaims(session: s.id)
             releaseAwaitingEcho(for: s.id)
             if case .exited(_, let tail) = event, launchedAtForkPoint.remove(s.id) != nil, s.forkPoint != nil,
                Self.rejectsForkPoint(tail) {
@@ -778,6 +828,9 @@ public final class Workspace {
         }
         if persistedState(s) != persisted { persistSessions() }
         if case .message(.toolResult(let r)) = event {
+            // The tool finished (or failed): its proposal is over even if the PostToolUse hook never arrived.
+            overlapIndex.resolve(toolUseID: r.toolUseID)
+            if r.isError { dropWarnings(ofFailedTool: r.toolUseID) }
             let fileCount = ledger.files.count
             let recs = ledger.record(r.result, author: .session(s.id), toolUseID: r.toolUseID, date: now())
             if !recs.isEmpty {
@@ -795,6 +848,7 @@ public final class Workspace {
                 }
             }
             if !recs.isEmpty || ledger.files.count != fileCount { persistLedger() }
+            if !recs.isEmpty, !overlapTold.isEmpty { persistOverlapTold() }
             resumeToolResultWaiters()
         }
     }
@@ -809,7 +863,7 @@ public final class Workspace {
             s.transcript.appendNotice(kind: .error, text: "Message not sent: Alloy is quitting")
             return
         }
-        switch message.images.isEmpty ? SlashCommands.route(message.text) : .passThrough {
+        switch message.images.isEmpty && message.origin == nil ? SlashCommands.route(message.text) : .passThrough {
         case .passThrough: break
         case .setModel(let name): await setModel(name, for: id); return
         case .setMode(let mode): await setPermissionMode(mode, for: id); return
@@ -826,15 +880,21 @@ public final class Workspace {
         }
         // The bubble appears at once; building the shared context (an off-main hop over the candidate files) must
         // not delay the echo of what the user typed. A queue priority only means something while a turn runs.
-        let uuid = UUID()
+        let uuid = message.uuid ?? UUID()
         let busy = s.status == .working || s.status == .awaitingPermission
         let priority = busy ? message.priority : nil
         let waitsForProcess = s.status == .dormant || s.status == .starting || draining.contains(id)
-        s.transcript.appendUser(text: message.text, imageCount: message.images.count, id: uuid, queued: waitsForProcess ? nil : priority)
+        if let origin = message.origin {
+            s.transcript.appendSessionMessage(id: uuid, direction: origin.isSystem ? .system : .from, peer: AlreadyRead.oneLine(origin.senderName), peerID: origin.sender,
+                                              text: origin.body, queued: waitsForProcess ? nil : priority, wire: message.text)
+        } else {
+            s.transcript.appendUser(text: message.text, imageCount: message.images.count, id: uuid, queued: waitsForProcess ? nil : priority)
+        }
         // The shared-knowledge block is built once, here, so queued and live sends agree. The bubble keeps the typed
         // text; the block only joins the wire content. Sends of one session pass this point in order.
         await acquireContext(id)
-        let context = await sharedContext(for: s, message: message.text)
+        // A message from another session is not the user's: it names no files to share.
+        let context = message.origin == nil ? await sharedContext(for: s, message: message.text) : nil
         releaseContext(id)
         if isShuttingDown {
             settleTold(context?.pending, sent: false)
@@ -905,16 +965,32 @@ public final class Workspace {
     public func rename(_ id: Session.ID, to name: String) {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, let s = session(id) else { return }
-        s.name = trimmed
+        s.name = allowedName(trimmed, for: id)
+        if Self.isReserved(trimmed) { s.transcript.appendNotice(kind: .commandOutput, text: Self.reservedNotice(for: s.name)) }
         persistSessions()
+    }
+
+    static func reservedNotice(for chosen: String) -> String {
+        "\"Alloy\" is reserved for Alloy's own messages; this session is named \"\(chosen)\""
+    }
+
+    /// `name`, or when it is the reserved one a free "Alloy session", "Alloy session 2", ... so `send_message` never
+    /// meets two sessions of one name. `id` is the session being renamed, which does not clash with itself.
+    func allowedName(_ name: String, for id: UUID?) -> String {
+        guard Self.isReserved(name) else { return name }
+        let taken = Set(sessions.filter { $0.id != id }.map { AlreadyRead.oneLine($0.name.trimmingCharacters(in: .whitespacesAndNewlines)).lowercased() })
+        var candidate = Self.unreserved(name), n = 1
+        while taken.contains(candidate.lowercased()) { n += 1; candidate = "\(Messages.reservedName) session \(n)" }
+        return candidate
     }
 
     // MARK: Control
 
-    /// Drops everything still waiting on a session's process: control answers and open prompts.
+    /// Drops everything still waiting on a session's process: control answers, open prompts and announced changes.
     private func forgetPending(for id: UUID) {
         pendingControls = pendingControls.filter { $0.value.session != id }
         promptInputs = promptInputs.filter { $0.value.session != id }
+        overlapIndex.dropProposals(session: id)
     }
 
     private func sendControl(_ subtype: ControlSubtype, kind: PendingControlKind, via t: any SessionTransport, to s: Session) async {
@@ -1056,6 +1132,7 @@ public final class Workspace {
         turnPending.remove(id)
         releaseIdleWaiters(id, reachedIdle: false)
         forgetPending(for: id)
+        dropClaims(session: id)
         releaseAwaitingEcho(for: id)
         revokeToken(for: id)
         guard let entry = live.removeValue(forKey: id) else {
@@ -1079,6 +1156,7 @@ public final class Workspace {
     /// SIGKILL, bounded at about 3 s) concurrently, and this returns only once they have exited.
     public func stopAll() async {
         isShuttingDown = true
+        warningSleeper?.cancel(); warningSleeper = nil; warningSleeperExpiry = nil
         for id in Array(idleWaiters.keys) { releaseIdleWaiters(id, reachedIdle: false) }
         stopWatching()
         await serverStart?.value
@@ -1585,8 +1663,11 @@ public final class Workspace {
 
     public func editRecord(id: UUID) -> EditRecord? { recordIndex[id] }
 
-    private func reindex(_ path: String) {
+    /// `detectTug` is false when the ledger was just loaded: old edits are not new activity.
+    private func reindex(_ path: String, detectTug: Bool = true) {
         for r in ledger.files[path]?.edits ?? [] { recordIndex[r.id] = r }
+        if detectTug { scanTugOfWar(path) } else { markTugSeen(path) }
+        refreshOverlapWarnings(path)
     }
 
     public func keep(edit: UUID, path: String) {
@@ -1754,7 +1835,7 @@ public final class Workspace {
     private func ensureLoaded() {
         guard !loaded else { return }
         loaded = true
-        if let l = loadFile(ledgerURL, { try JSONDecoder().decode(ProjectLedger.self, from: $0) }) { ledger = l; for p in l.files.keys { reindex(p) } }
+        if let l = loadFile(ledgerURL, { try JSONDecoder().decode(ProjectLedger.self, from: $0) }) { ledger = l; for p in l.files.keys { reindex(p, detectTug: false); overlapIndex.invalidate(path: p) } }
         if let x = loadFile(readsURL, { try ReadsFile.decode($0) }) {
             readIndex = x.index
             for (k, v) in x.generations { if let id = UUID(uuidString: k) { compactionGeneration[id] = v } }
@@ -1765,6 +1846,11 @@ public final class Workspace {
         }
         if let t = loadFile(toldURL, { try JSONDecoder().decode([String: [String: ToldEntry]].self, from: $0) }) {
             for (k, v) in t { if let id = UUID(uuidString: k) { told[id] = v } }
+        }
+        if let c = loadFile(claimsURL, { try JSONDecoder().decode([Claim].self, from: $0) }) { claims = c }
+        if let t = loadFile(overlapToldURL, { try JSONDecoder().decode([String: [String: Int]].self, from: $0) }) {
+            for (k, v) in t { if let id = UUID(uuidString: k) { overlapTold[id] = v } }
+            pruneOverlapTold()
         }
         if let r = loadFile(sessionsURL, { try JSONDecoder().decode([SessionRecord].self, from: $0) }) { records = r }
     }
@@ -1945,16 +2031,24 @@ public final class Workspace {
         guard !restored else { return }
         restored = true
         await startServer()
+        var renamedOnRestore = false
         for r in records where session(r.id) == nil {
             let s = Session(id: r.id, name: r.name, colorIndex: r.colorIndex, projectRoot: projectRoot,
                             hasConversation: r.hasConversation, cliSessionID: r.cliSessionID,
                             model: r.model, permissionMode: r.permissionMode, forkSource: r.forkSource, forkPoint: r.forkPoint)
             s.status = .dormant
+            // A name saved before "Alloy" was reserved.
+            if Self.isReserved(r.name) {
+                s.name = allowedName(r.name, for: r.id)
+                s.transcript.appendNotice(kind: .commandOutput, text: Self.reservedNotice(for: s.name))
+                renamedOnRestore = true
+            }
             if let commands = r.slashCommands { s.restoreCommands(commands) }
             if r.hasConversation { historyPending.insert(r.id) }
             sessions.append(s)
             if selectedSessionID == nil { selectedSessionID = s.id }
         }
+        if renamedOnRestore { persistSessions() }
         // Commits made while Alloy was closed: files the ledger still shows as changed may now equal HEAD.
         track { [weak self] in await self?.checkGitBaselines() }
     }
@@ -2039,9 +2133,18 @@ public struct OutgoingMessage: Sendable, Equatable {
     public var text: String
     public var images: [ImageAttachment]
     public var priority: Priority?
+    /// Set for a message from another session or from Alloy: it shows as a session-message row and gets no
+    /// "already read" block.
+    var origin: SessionMessageOrigin?
+    /// The id the message goes out under (the CLI echoes it); nil lets `send` pick one.
+    var uuid: UUID?
 
     public init(text: String, images: [ImageAttachment] = [], priority: Priority? = nil) {
         self.text = text; self.images = images; self.priority = priority
+    }
+
+    init(text: String, priority: Priority?, origin: SessionMessageOrigin) {
+        self.text = text; self.images = []; self.priority = priority; self.origin = origin
     }
 }
 

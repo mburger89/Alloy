@@ -91,3 +91,69 @@ starts from its latest point." and launches without the flag. The point is clear
 the exact point; the fork starts from the source's latest point." and launches once more without the flag. The retry
 carries no point, so there is no third attempt. The point is the source's last assistant record (a user record is not
 used, and a user uuid was not probed).
+
+## Plan 5b Task 1: http hooks, live probe (CLI 2.1.319, model haiku, 2026-11-09)
+
+Setup: a scratch dir under the session scratchpad, a 20-line Python server logging every request, `claude -p --model haiku --output-format stream-json --verbose --include-hook-events --settings '<hooks only>' --allowedTools Edit,MultiEdit,NotebookEdit,Read`, prompt on stdin. The `--settings` JSON was the shape `Hooks.settingsJSON` builds (matcher `Edit|MultiEdit|Write|NotebookEdit`, `type:"http"`, `headers:{"Authorization":"Bearer probe-token-123"}`, `timeout:3`).
+
+- **Header auth works.** Every Pre and Post request carried `Authorization: Bearer probe-token-123` verbatim (8 of 8). No env-var interpolation is needed.
+- **The user's own hooks still run.** The machine's user settings have a `PreToolUse` `*` command hook (async). The stream showed two `hook_started` events per `PreToolUse:Edit`, the user's and Alloy's; Alloy's finished `success`. The user's hook reported `error` on its own (it also errored on Read, which Alloy's matcher does not cover), so that is independent of Alloy. Alloy's hooks neither replace nor break the user's.
+- **MultiEdit does not exist in 2.1.319.** `system/init` lists `Edit`, `NotebookEdit` and `Write` only; asked to use MultiEdit the model made two `Edit` calls. The matcher keeps `MultiEdit` (harmless) but no real MultiEdit body could be captured. Code must not depend on a MultiEdit shape.
+- **Edit body.** Pre: `tool_input {file_path, old_string, new_string, replace_all}`; there are no line numbers. Post adds `tool_response {filePath, oldString, newString, originalFile (whole file), structuredPatch [{oldStart, oldLines, newStart, newLines, lines}], userModified, replaceAll}`; line numbers come from `structuredPatch` (Post) or from locating `old_string` (Pre).
+- **NotebookEdit body.** Pre: `tool_input {notebook_path, cell_id, new_source}` (plus `edit_mode` and `cell_type` when the model passes them). Post: `tool_response {new_source, old_source, cell_type, language, edit_mode, cell_id, error, notebook_path, original_file (whole notebook JSON), updated_file}`. Bodies carry whole files, so a large file makes a large hook body.
+- Common fields: `session_id`, `transcript_path`, `cwd`, `prompt_id`, `permission_mode`, `effort`, `hook_event_name`, `tool_name`, `tool_input`, `tool_use_id`; Post also `duration_ms`.
+- Fixtures: `Tests/AlloyCoreTests/Fixtures/hook-edit.jsonl` (8 bodies: three Edit pairs and one NotebookEdit pair, scrubbed with `tools/ccprobe/scrub.py`) and `hook-write.jsonl` (Write pair from Plan 5's probe).
+
+## Plan 5b Task 8: live check of coordination (claude 2.1.319, model claude-haiku-5-5, 2026-11-09)
+
+Run with `ALLOY_LIVE=1 swift test --filter LiveCoordinationTests` (opt-in; skipped otherwise). It drives a real
+`Workspace` with the real `ClaudeProcess` (wrapped in a recorder), a temp `appSupport`, `/model haiku`, and a scratch git
+repo under the temporary directory with one 11-line `calc.py`. Two sessions, A and B. Each scripted edit is "Read
+calc.py, then Edit this exact line"; when no Edit succeeded the test retries once with a firmer prompt. Teardown is
+`stopAll`; afterwards `pgrep -f alloy-live-coord` found nothing. Final run about 40 s; cost A about $0.012 (600k tokens,
+mostly cache reads), B about $0.010 (380k to 570k). Four runs in all while finding the bug below.
+
+| Assertion | Result | Evidence |
+|---|---|---|
+| (a) The PreToolUse hook reaches Alloy as session A and Alloy records an overlap | pass | after B changed line 2 and A edited it, `overlapWarnings` held `"A" and "B" are both changing calc.py line 2`; both chats got a warning notice |
+| (a) A receives `additionalContext` | pass | A's CLI transcript has an attachment `hook_additional_context` (`hookName` `PreToolUse:Edit`), rendered as a system reminder (excerpt below) |
+| (a) The edit is not blocked | pass | A's Edit succeeded; the file reads `result = 5` |
+| (b) `send_message` A to B runs without a permission card | pass | the call succeeded, zero permission blocks for Alloy tools |
+| (b) B's chat shows a From row | pass | row from "A" with the text |
+| (c) A -> B -> A on the same lines raises a tug alert | pass | `tugAlerts` has one entry for calc.py line 5 |
+| (c) The stop arrives as "Message from Alloy itself (via Alloy): ..." | pass | on A's stdin wire (excerpt below) and as a System row in A's chat |
+
+Findings (honest record):
+- **A real bug the live run found.** In the first three runs (a) failed: hooks reached Alloy (HTTP 200, session
+  resolved) but every one answered `{}`. The CLI sends the real path (`/private/var/folders/...`), while the scratch
+  project was opened as `/var/folders/...`. `Workspace.hookRootForms` resolved symlinks with
+  `URL.resolvingSymlinksInPath()`, which strips the `/private` prefix again, so the CLI's path matched no root, the
+  change was never registered and no overlap could be found. The unit tests used paths without a symlink. Fixed with
+  `realpath(3)` (still computed once per workspace, the only disk access of the hook path code), and
+  `HookRootFormsTests` pins it. It affects any project opened through a symlinked path (`/var`, `/tmp`, `/etc`, or a
+  symlinked folder).
+- The first assertion version matched any `hook_additional_context`; the user's own SessionStart hook also produces
+  one. The test now requires Alloy's text (the file name and the other session's change).
+- Tool use is guidance: the model sometimes needed the firmer prompt for an edit, and once called `send_message` with
+  `message` instead of `text`; the server answered `Error: Unknown argument "message". send_message takes text, to.` and
+  the retry succeeded (the Task 9 argument check works for the new tool).
+- The tug also sent B a stop message. That is correct, not a double fire: the tug lines (5) lie within the 3-line
+  margin of phase (a)'s lines (2), where B edited first and A second, so B's edit of line 5 is itself a B -> A -> B
+  sequence. A scripted tug on lines more than three apart from earlier edits would stop only A.
+- The machine's recalled-memory and `*` PreToolUse hooks ran beside Alloy's; Alloy's `hook_success` entries show
+  `exitCode 200` for each Pre and Post.
+- Alloy's hooks do not appear in the stream-json output (Alloy does not pass `--include-hook-events`); the evidence of
+  delivery is the CLI's own transcript file.
+
+Scrubbed excerpts (`tools/ccprobe/scrub.py`):
+
+```
+A transcript attachment (PreToolUse:Edit), A editing line 2 after B had changed it:
+  {"type":"hook_additional_context","content":["\"B\" changed calc.py line 2 less than a minute ago:\n-    result = 0\n+    result = 100"],
+   "hookName":"PreToolUse:Edit","hookEvent":"PreToolUse"}
+  rendered: <system-reminder>PreToolUse:Edit hook additional context: "B" changed calc.py line 2 less than a minute ago: ...
+A send_message {"to":"B","text":"Hello from A: please leave calc.py's total function alone."} -> Message sent to "B".
+B chat row (From): A: Hello from A: please leave calc.py's total function alone.
+A stdin, tug stop: {"message":{"content":"Message from Alloy itself (via Alloy): Lines 5-5 of calc.py are going back and forth
+  between you and \"B\". Leave them as they are now and move on with the rest of your task.","role":"user"},"priority":"next","type":"user"}
+```

@@ -52,7 +52,7 @@
 | `Overlap.margin` | 3 lines |
 | `Overlap.maxMessageCharacters` | 4,000 |
 | Coordination tool names | `sessions_changes`, `send_message`, `claim_region`, `release_region` (wire names `mcp__alloy__…`) |
-| `Messages.perPairPerMinute` | 3 |
+| `Messages.perPairPerMinute` | 5 |
 | `Messages.perSessionPerMinute` | 10 |
 | `Claims.expiry` | 10 minutes without an edit from the claimant |
 | Tug-of-war | the same lines changed A → B → A within 10 minutes |

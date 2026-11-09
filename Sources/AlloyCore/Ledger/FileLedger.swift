@@ -72,6 +72,9 @@ public struct FileLedger: Codable, Sendable, Equatable {
     /// The visible text.
     public var text: TextLines { TextLines(history.visibleText) }
 
+    /// The visible text as one string, without the line split `text` does.
+    var currentText: String { history.visibleText }
+
     var fragmentCount: Int { history.fragments.count }
 
     // MARK: Recording edits
@@ -157,6 +160,9 @@ public struct FileLedger: Codable, Sendable, Equatable {
 
     /// "Latest" is record sequence (the order edits were recorded), not date.
     public func lineOwners() -> [UUID?] { history.lineOwners() }
+
+    /// Per live edit, the visible lines where its deleted text used to be (see `EditHistory.deletionAnchors`).
+    public func deletionAnchors() -> [UUID: [Int]] { history.deletionAnchors() }
 
     /// Changed lines are attributed by identity, never by position, and lines are paired by identity too
     /// (an old and a new line are the same line only if they are each other's only survivors and byte-equal),

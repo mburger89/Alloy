@@ -24,7 +24,7 @@ Gaps G1-G7 come from spec section 5. Each was sent to the MetalUI session. Stopg
 ## G3 Icons
 - Status: adopted (Plan 3 Task 6)
 - Use case: an icon per chat block type and in the sidebar.
-- Adopted as: `Image(systemName:)` for the block chrome (`Sources/AlloyKit/BlockStyle.swift`). Five names were outside MetalUI's bundled set and draw on macOS only: `checklist`, `questionmark.bubble`, `list.bullet.clipboard`, `puzzlepiece.extension`, `info.circle`.
+- Adopted as: `Image(systemName:)` for the block chrome (`Sources/AlloyKit/BlockStyle.swift`). Six names are outside MetalUI's bundled set and draw on macOS only: the first five from Plan 3 (`checklist`, `questionmark.bubble`, `list.bullet.clipboard`, `puzzlepiece.extension`, `info.circle`) and `envelope` (the session-message row, Plan 5b Task 5). The six draw on macOS only; on Linux and Windows the row would show no icon until MetalUI bundles them, and the row's text and ids are unaffected. Not yet filed upstream: send the six names to the MetalUI session.
 - Upstream: the five icons are merged in MetalUI (7ac6e929, together with paperclip, photo and gearshape). Alloy picks them up when `../MetalUI` is fast-forwarded after Plan 3.
 
 ## G4 Tabs
@@ -155,8 +155,9 @@ Gaps G1-G7 come from spec section 5. Each was sent to the MetalUI session. Stopg
 - Wanted: a stronger selected-segment treatment (border or accent), or a theme key.
 
 ## G24 Menu items cannot carry an identifier or a tooltip
-- Status: open (filed with Plan 5a Task 7)
+- Status: merged upstream (MetalUI #253, "Menu items carry a Button's accessibilityIdentifier and help"); Alloy has not adopted it yet and adopts it on the next `../MetalUI` fast-forward (filed with Plan 5a Task 7)
 - Used by: the session menu in the sidebar (Fork, Rename).
 - Gap: a `Menu` item is a `MenuNode` (title, enabled, shortcut); `.accessibilityIdentifier` and `.help` on a `Button` inside a `Menu` are dropped. The plan asks for `fork-<uuid>` on the Fork item and a "Nothing to fork yet" tooltip on it when disabled.
 - Alloy workaround: the menu button has `session-menu-<uuid>`; tests choose items by title; when Fork is disabled a disabled text item "Nothing to fork yet" follows it.
-- Wanted API: per-item identifier and help text on menu items (and the platform menu nodes).
+- Wanted API: per-item identifier and help text on menu items (and the platform menu nodes). Upstream now provides it.
+- On adoption: give Fork the id `fork-<uuid>` and, while disabled, the tooltip "Nothing to fork yet"; then drop the disabled text item and the by-title test lookups.

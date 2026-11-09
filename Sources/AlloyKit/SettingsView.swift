@@ -53,7 +53,7 @@ struct SettingsView: Component {
                 Text("Shared knowledge").font(size: 12).foregroundColor(.mutedInk)
                 Toggle(isOn: flag(\.shareKnowledge)) { Text("Share knowledge between sessions").font(size: 13) }
                     .accessibilityIdentifier("settings-share-knowledge")
-                Toggle(isOn: flag(\.askBeforeSharedNotes)) { Text("Ask before sessions use shared notes").font(size: 13) }
+                Toggle(isOn: flag(\.askBeforeSharedNotes)) { Text("Ask before sessions use Alloy's tools").font(size: 13) }
                     .accessibilityIdentifier("settings-ask-shared-notes")
                 Text("Running sessions pick up a change when they are next idle.").font(size: 11).foregroundColor(.mutedInk)
                 Button("Back to defaults") { resetKnowledge() }.accessibilityIdentifier("settings-reset")

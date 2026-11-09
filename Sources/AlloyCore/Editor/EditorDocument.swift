@@ -28,7 +28,7 @@ public final class EditorDocument: Identifiable {
     @ObservationIgnored private var editCursor: CodeEditCursor
     /// Events drained from `editCursor` that are newer than `savedVersion`.
     @ObservationIgnored private var editLog: [CodeEdit] = []
-    @ObservationIgnored private var editLogLost = false
+    @ObservationIgnored var editLogLost = false
     /// Set when a merge could not be followed by a successful save: the next merge keeps all user text.
     @ObservationIgnored var mergeUnreliable = false
     /// The disk text last merged into the buffer since the last save.

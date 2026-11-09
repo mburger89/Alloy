@@ -18,12 +18,18 @@ public actor LocalServer {
         public var idleTimeout: TimeInterval = 60
         /// How long an error reply waits for the client to finish uploading before the connection is closed.
         public var drainDeadline: TimeInterval = 5
+        /// How long a hook handler may take before the CLI is answered `{}` and proceeds.
+        public var hookDeadline: Duration = .seconds(1)
         public init() {}
     }
 
     private let tools: [MCPTool]
     private let limits: Limits
     private let onListenerFailure: (@Sendable (Error) -> Void)?
+    private let report: (@Sendable (String) -> Void)?
+    public typealias HookHandler = @Sendable (HookRequest, MCPCaller) async -> HookReply
+    private var hookHandler: HookHandler?
+    private var hookProblemReported: Set<UUID> = []
     private let queue = DispatchQueue(label: "alloy.local-server")
     private var listener: NWListener?
     private var port: UInt16 = 0
@@ -37,7 +43,9 @@ public actor LocalServer {
     private var nextConnectionID = 0
 
     /// Tool names must be unique and every input schema must be a JSON Schema object.
-    public init(tools: [MCPTool], limits: Limits = Limits(), onListenerFailure: (@Sendable (Error) -> Void)? = nil) {
+    public init(tools: [MCPTool], limits: Limits = Limits(), onListenerFailure: (@Sendable (Error) -> Void)? = nil,
+                report: (@Sendable (String) -> Void)? = nil) {
+        self.report = report
         precondition(Set(tools.map(\.name)).count == tools.count, "MCP tool names must be unique")
         precondition(tools.allSatisfy { $0.inputSchema["type"]?.stringValue == "object" }, "MCP tool inputSchema must have type \"object\"")
         self.tools = tools
@@ -126,7 +134,11 @@ public actor LocalServer {
         return token
     }
 
+    /// Sets the closure that answers hooks. Until one is set every hook is answered `{}`.
+    public func setHookHandler(_ handler: @escaping HookHandler) { hookHandler = handler }
+
     public func revoke(session: UUID) {
+        hookProblemReported.remove(session)
         if let token = sessionToToken.removeValue(forKey: session) { tokenToSession[token] = nil }
     }
 
@@ -215,7 +227,8 @@ public actor LocalServer {
             guard let caller else {
                 await fail(conn, 401, declared: declared ?? 0, have: have); return
             }
-            guard head.path == "/mcp" else {
+            let hookEvent: HookEvent? = [HookEvent.preToolUse, .postToolUse].first { $0.path == head.path }
+            guard head.path == "/mcp" || hookEvent != nil else {
                 await fail(conn, 404, declared: declared ?? 0, have: have); return
             }
             guard head.method == "POST" else {
@@ -227,8 +240,22 @@ public actor LocalServer {
             guard let length = declared else {
                 await fail(conn, 411, declared: 0); return
             }
+            let connectionHeader = head.headers["connection"]?.lowercased()
+            let keepAlive = head.http11 ? connectionHeader != "close" : connectionHeader == "keep-alive"
             if length > Self.maxBodyBytes {
-                await fail(conn, 413, declared: length, have: have); return
+                guard let hookEvent else { await fail(conn, 413, declared: length, have: have); return }
+                // A hook never fails the CLI: discard the body within the drain limits and answer `{}`.
+                noteHookProblem(hookEvent, "its body was over \(Self.maxBodyBytes / 1024 / 1024) MB", caller: caller)
+                var drained = false
+                if length <= Self.maxDrainBytes {
+                    if have < length, head.headers["expect"]?.lowercased() == "100-continue" {
+                        await send(conn, Data("HTTP/1.1 100 Continue\r\n\r\n".utf8))
+                    }
+                    drained = await discard(conn, buffer: &buffer, from: bodyStart, length: length)
+                }
+                await send(conn, Self.response(200, body: HookReply.empty, close: !(drained && keepAlive)))
+                if !(drained && keepAlive) { return }
+                continue
             }
 
             // Read the body.
@@ -241,6 +268,14 @@ public actor LocalServer {
             let body = buffer.subdata(in: bodyStart..<(bodyStart + length))
             buffer = buffer.subdata(in: (bodyStart + length)..<buffer.count)
 
+            // Hooks never fail the CLI: every outcome after auth is 200 with a JSON object.
+            if let hookEvent {
+                let out = await answerHook(hookEvent, body: body, caller: caller)
+                await send(conn, Self.response(200, body: out, close: !keepAlive))
+                if !keepAlive { return }
+                continue
+            }
+
             // Dispatch.
             let message = JSONValue.parse(body)
             let version = head.headers["mcp-protocol-version"] ?? MCPServer.defaultVersion
@@ -250,8 +285,6 @@ public actor LocalServer {
                 await fail(conn, 400, declared: 0); return
             }
             let reply = await MCPServer.handle(message, tools: tools, caller: caller)
-            let connection = head.headers["connection"]?.lowercased()
-            let keepAlive = head.http11 ? connection != "close" : connection == "keep-alive"
             switch reply {
             case .accepted:
                 await send(conn, Self.response(202, body: nil, close: !keepAlive))
@@ -259,6 +292,60 @@ public actor LocalServer {
                 await send(conn, Self.response(200, body: data, close: !keepAlive))
             }
             if !keepAlive { return }
+        }
+    }
+
+    /// Reports a hook problem once per session; the session proceeds without coordination.
+    private func noteHookProblem(_ event: HookEvent, _ what: String, caller: MCPCaller) {
+        if hookProblemReported.insert(caller.sessionID).inserted {
+            report?("A \(event.rawValue) hook was ignored because \(what); the session proceeds without coordination.")
+        }
+    }
+
+    /// Reads and drops `length` body bytes (some may already be buffered) within the request and drain deadlines.
+    /// True when the whole body was consumed; `buffer` then holds only bytes after it.
+    private func discard(_ conn: NWConnection, buffer: inout Data, from bodyStart: Int, length: Int) async -> Bool {
+        var remaining = length - (buffer.count - bodyStart)
+        if remaining <= 0 {
+            buffer = buffer.subdata(in: (bodyStart + length)..<buffer.count)
+            return true
+        }
+        buffer = Data()
+        let started = ContinuousClock.now
+        while remaining > 0 {
+            let left = limits.requestDeadline - Self.seconds(started.duration(to: .now))
+            guard left > 0, let chunk = await receive(conn, timeout: left) else { return false }
+            if chunk.count > remaining {
+                buffer = chunk.subdata(in: remaining..<chunk.count)
+                remaining = 0
+            } else {
+                remaining -= chunk.count
+            }
+        }
+        return true
+    }
+
+    /// Decodes the hook body, runs the handler against `limits.hookDeadline` and returns the reply body.
+    private func answerHook(_ event: HookEvent, body: Data, caller: MCPCaller) async -> Data {
+        guard let request = HookRequest(body: body), request.event == event else {
+            noteHookProblem(event, "its body could not be read", caller: caller)
+            return HookReply.empty
+        }
+        guard let handler = hookHandler else { return HookReply.empty }
+        let reply = await Self.race(handler: { await handler(request, caller) }, deadline: limits.hookDeadline)
+        return (reply ?? HookReply()).json(for: event)
+    }
+
+    /// The handler's reply, or nil when the deadline passes first. The handler is cancelled, not awaited.
+    private static func race(handler: @escaping @Sendable () async -> HookReply, deadline: Duration) async -> HookReply? {
+        await withCheckedContinuation { (cont: CheckedContinuation<HookReply?, Never>) in
+            let gate = RaceGate(cont)
+            let work = Task { gate.finish(await handler()) }
+            let timer = Task {
+                try? await Task.sleep(for: deadline, clock: ContinuousClock())
+                gate.finish(nil)
+            }
+            gate.onFinish = { work.cancel(); timer.cancel() }
         }
     }
 
@@ -350,6 +437,37 @@ public actor LocalServer {
         var out = Data(head.utf8)
         if let body { out.append(body) }
         return out
+    }
+}
+
+/// Resumes a continuation with the first outcome and runs a cleanup once.
+private final class RaceGate: @unchecked Sendable {
+    private let lock = NSLock()
+    private var cont: CheckedContinuation<HookReply?, Never>?
+    private var finished = false
+    private var _onFinish: (@Sendable () -> Void)?
+    init(_ cont: CheckedContinuation<HookReply?, Never>) { self.cont = cont }
+
+    var onFinish: (@Sendable () -> Void)? {
+        get { lock.withLock { _onFinish } }
+        set {
+            lock.lock()
+            _onFinish = newValue
+            let run = finished
+            lock.unlock()
+            if run { newValue?() }
+        }
+    }
+
+    func finish(_ value: HookReply?) {
+        lock.lock()
+        guard let c = cont else { lock.unlock(); return }
+        cont = nil
+        finished = true
+        let cleanup = _onFinish
+        lock.unlock()
+        c.resume(returning: value)
+        cleanup?()
     }
 }
 

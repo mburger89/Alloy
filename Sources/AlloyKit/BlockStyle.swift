@@ -3,7 +3,7 @@ import MetalUI
 /// What a transcript block is, for colour and icon. One entry per row kind of the chat.
 enum BlockKind: CaseIterable {
     case thinking, read, search, shell, edit, write, web, subagent, todo, question, plan, mcp, other
-    case error, overlap, notice, command, user
+    case error, overlap, notice, command, user, sessionMessage
 }
 
 /// The tint behind a block, the ink its header icon draws in, and its SF Symbol name.
@@ -12,8 +12,8 @@ struct BlockStyle {
     var ink: Color
     var icon: String
 
-    // `checklist`, `questionmark.bubble`, `list.bullet.clipboard`, `puzzlepiece.extension` and `info.circle`
-    // are outside MetalUI's bundled icon set: they draw on macOS only (docs/metalui-gaps.md, G3).
+    // `checklist`, `questionmark.bubble`, `list.bullet.clipboard`, `puzzlepiece.extension`, `info.circle` and
+    // `envelope` are outside MetalUI's bundled icon set: they draw on macOS only (docs/metalui-gaps.md, G3).
     static func style(_ kind: BlockKind) -> BlockStyle {
         switch kind {
         case .thinking: BlockStyle(tint: .thinkingTint, ink: .thinkingInk, icon: "brain.head.profile")
@@ -34,6 +34,7 @@ struct BlockStyle {
         case .notice: BlockStyle(tint: .panelFill, ink: .mutedInk, icon: "info.circle")
         case .command: BlockStyle(tint: .commandTint, ink: .mutedInk, icon: "chevron.right")
         case .user: BlockStyle(tint: .sidebarFill, ink: .mutedInk, icon: "person")
+        case .sessionMessage: BlockStyle(tint: .sidebarFill, ink: .mutedInk, icon: "envelope")
         }
     }
 

@@ -118,6 +118,9 @@ public enum ChatBlock: Identifiable, Sendable, Equatable {
     case question(QuestionBlock)
     case plan(PlanBlock)
     case notice(id: UUID, kind: NoticeKind, text: String)
+    /// A message between sessions: `.from` in the chat of the one that received it, `.to` in the sender's.
+    /// `peerID` is the other session (nil for Alloy itself, or when the peer is only known by name from history).
+    case sessionMessage(id: UUID, direction: SessionMessageDirection, peer: String, peerID: UUID?, text: String)
 
     public var id: String {
         switch self {
@@ -129,9 +132,14 @@ public enum ChatBlock: Identifiable, Sendable, Equatable {
         case .question(let q): return "q-\(q.requestID)"
         case .plan(let p): return "plan-\(p.requestID)"
         case .notice(let id, _, _): return id.uuidString
+        case .sessionMessage(let id, _, _, _, _): return "session-message-\(id.uuidString)"
         }
     }
 }
+
+/// `.from` / `.to`: another session, by name. `.system`: Alloy itself ("From Alloy"), never a session, so it takes
+/// no session colour; a session cannot pass for it because its wire form is one no session name can produce.
+public enum SessionMessageDirection: Sendable, Equatable { case from, to, system }
 
 /// Reduces the inbound message stream into display blocks.
 ///
@@ -177,6 +185,25 @@ public struct Transcript: Sendable, Equatable {
     public mutating func appendUser(text: String, imageCount: Int = 0, id: UUID, queued: Priority? = nil) {
         pendingEchoes.append(PendingEcho(id: id, text: text, queued: queued != nil, next: queued == .next))
         push(.user(id: id, text: text, imageCount: imageCount, state: queued.map { .queued($0) } ?? .sent))
+    }
+
+    /// Adds a message between sessions. `id` is the uuid the message goes out under, so its CLI echo lands here
+    /// instead of becoming a user bubble. `queued` keeps the echo expected across a running turn, as for a user message.
+    public mutating func appendSessionMessage(id: UUID, direction: SessionMessageDirection, peer: String, peerID: UUID?,
+                                              text: String, queued: Priority? = nil, wire: String? = nil) {
+        if let wire { pendingEchoes.append(PendingEcho(id: id, text: wire, queued: queued != nil, next: queued == .next)) }
+        let block = ChatBlock.sessionMessage(id: id, direction: direction, peer: peer, peerID: peerID, text: text)
+        // The sender's row belongs right after the send_message call that produced it. The "To" row is live-only:
+        // the transcript file records what the sender's model said (the tool call), not Alloy's row, so a replay
+        // shows no "To" row. "From" rows survive replay: the receiver's file holds the wire text.
+        if direction == .to, let i = blocks.lastIndex(where: {
+            if case .tool(let t) = $0 { return t.name.hasSuffix("send_message") && t.status == .running } else { return false }
+        }) {
+            blocks.insert(block, at: i + 1)
+            reindex()
+        } else {
+            push(block)
+        }
     }
 
     /// Puts earlier history (replayed from the CLI's transcript file) in front of what is already shown.
@@ -259,8 +286,20 @@ public struct Transcript: Sendable, Equatable {
                 if matched.next { expectedReechoes[matched.text, default: 0] += 1 }
             } else if isReplay, let n = expectedReechoes[text], n > 0 {
                 expectedReechoes[text] = n == 1 ? nil : n - 1
-            } else if let echoID, indexOf(echoID.uuidString) != nil {
+            } else if let echoID, indexOf(echoID.uuidString) != nil || indexOf("session-message-\(echoID.uuidString)") != nil {
                 break
+            } else if let wire = SessionMessageWire.parse(text) {
+                // A message from another session (history, or a resumed process replaying it).
+                // With a uuid, the id check above already dropped a repeat; only a uuid-less replay falls back to
+                // comparing with the last row.
+                let direction: SessionMessageDirection = wire.sender == nil ? .system : .from
+                let peer = wire.sender ?? Messages.systemSender
+                if isReplay, echoID == nil, case .sessionMessage(_, direction, peer, _, wire.body)? = blocks.last(where: {
+                    if case .sessionMessage(_, .from, _, _, _) = $0 { return true }
+                    if case .sessionMessage(_, .system, _, _, _) = $0 { return true }
+                    return false
+                }) { break }
+                push(.sessionMessage(id: echoID ?? UUID(), direction: direction, peer: peer, peerID: nil, text: wire.body))
             } else if isReplay, case .user(_, let last, _, _)? = blocks.last(where: { if case .user = $0 { return true } else { return false } }), last == text {
                 break
             } else {

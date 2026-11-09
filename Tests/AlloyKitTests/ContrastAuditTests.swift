@@ -114,6 +114,9 @@ private func ratio(_ a: RGB, _ b: RGB) -> Double {
         add("chat.empty", secondary, [.chatFill], 4.5)
         add("chat.user.text", text, [.sidebarFill], 4.5)
         add("chat.user.caption", secondary, [.sidebarFill], 4.5)
+        add("chat.sessionMessage.text", text, [.sidebarFill], 4.5)
+        add("chat.sessionMessage.title", secondary, [.sidebarFill], 4.5)
+        for (i, s) in sessions.enumerated() { add("chat.sessionMessage.stripe\(i)", s, [.sidebarFill], 3) }
         add("chat.link", .linkInk, [.chatFill], 4.5)
         add("chat.error.body", .errorInk, [.errorTint], 4.5)
         add("chat.warning.body", .warningInk, [.warningTint], 4.5)
@@ -200,6 +203,15 @@ private func ratio(_ a: RGB, _ b: RGB) -> Double {
         add("sidebar.rereads", secondary, [.sidebarFill], 4.5)
         add("sidebar.selected.rereads", secondary, [.sidebarFill, selection], 4.5)
 
+        // Coordination warnings: the marker glyph and the notice strip, in the warning tokens and, for an escalated tug, the
+        // error tokens. The marker sits on its own tint, so the row behind it does not matter.
+        for (name, ink, tint) in [("warning", Color.warningInk, Color.warningTint), ("error", Color.errorInk, Color.errorTint)] {
+            add("coordination.mark.\(name)", ink, [tint], 3)
+            add("coordination.notice.\(name).icon", ink, [tint], 3)
+            add("coordination.notice.\(name).text", text, [tint], 4.5)
+            add("coordination.notice.\(name).dismiss", text, [tint], 3)
+        }
+
         // Disabled controls: MetalUI draws them at half opacity.
         add("disabled.onSurface", text.opacity(0.5), [.surface], 3, .metalUI)
         add("disabled.onChat", text.opacity(0.5), [.chatFill], 3, .metalUI)
@@ -253,7 +265,7 @@ private func ratio(_ a: RGB, _ b: RGB) -> Double {
         let ids = Set(Self.pairs().map(\.id))
         #expect(ids.count > 250)
         for must in ["sidebar.selected.secondary", "chat.shell.title", "syntax.keyword.panelRemoved", "composer.placeholder",
-                     "panel.code.gutter", "tabs.hover", "disabled.onSurface", "settings.secondary"] {
+                     "panel.code.gutter", "coordination.mark.error", "coordination.notice.warning.text", "tabs.hover", "disabled.onSurface", "settings.secondary"] {
             #expect(ids.contains(must), "\(must) is audited")
         }
     }

@@ -10,7 +10,8 @@ public struct AlloySettings: Codable, Equatable, Sendable {
     /// Sessions share notes about files through Alloy's local MCP server.
     public var shareKnowledge: Bool
 
-    /// With sharing on, still ask before a session uses the notes tools.
+    /// With sharing on, still ask before a session uses Alloy's tools (notes and coordination). The stored key keeps its
+    /// original name so an older settings file still loads.
     public var askBeforeSharedNotes: Bool
 
     public init(claudePath: String? = nil, lastProjectPath: String? = nil,

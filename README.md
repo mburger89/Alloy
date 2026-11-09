@@ -18,7 +18,7 @@ the same files. Alloy is an editor designed around that situation:
 ## Status
 
 An early-stage personal project. macOS only for now. Expect rough edges and changing internals.
-Coordination between sessions is in progress and not built yet.
+Coordination between sessions is implemented; its hands-on check in the app is still pending.
 
 ## Features
 
@@ -50,8 +50,26 @@ Shared knowledge (on by default)
   saying whether the file changed since. Note text is marked as written by another session and treated as a hint.
 - Redundant-read counts per session and per project; a Settings view with the `claude` path and sharing switches.
 
-Not built yet
-- Coordination between sessions (planned; see [docs/superpowers/plans](docs/superpowers/plans)).
+Coordination between sessions
+- Overlap warnings, which never block. Alloy registers PreToolUse and PostToolUse `http` hooks (for Edit, Write,
+  MultiEdit and NotebookEdit) on its loopback server. When a session is about to change lines that another session (or
+  you, with unsaved typing) has changed or is changing, within three lines, the hook answers with a short note that the
+  CLI hands to the model (`additionalContext`) and the edit goes ahead. Each overlap is told once per session (again
+  after a compaction), and also appears as a notice in the chats involved.
+- Four more tools next to the notes tools: `sessions_changes` (what the other sessions are doing: files, lines,
+  claims), `send_message` (a short message to another session by name), and `claim_region` / `release_region`. A claim
+  is a hint, not a lock: it shows in other sessions' overlap notes and ends ten minutes after its owner last edited
+  the file.
+- Messages between sessions arrive as the other session's next input and show in its chat as a "From" row. Limits: 5
+  per minute between two sessions (both directions together) and 10 per minute per session; the sender is told when
+  a limit is hit. No session can be named "Alloy", so "From Alloy" is never a session.
+- Tug-of-war detection: when two parties change the same lines back and forth (A, then B, then A within ten minutes),
+  Alloy raises an alert, tells the session that just edited to leave those lines and move on (a message from Alloy
+  itself), and escalates the alert once if that session edits them again. Alerts are not saved across a restart.
+- Warnings in the UI: a mark on the affected sessions and files in the sidebar, and a notice above the chat. They clear
+  when the edits are kept, reverted or committed, and after ten minutes without activity; a dismissed warning stays
+  dismissed unless it escalates.
+- Settings: "Ask before sessions use Alloy's tools" covers all seven Alloy tools.
 
 ## Requirements
 
@@ -82,7 +100,11 @@ swift test
 
   ```sh
   ALLOY_LIVE=1 swift test --filter LiveKnowledgeTests
+  ALLOY_LIVE=1 swift test --filter LiveCoordinationTests
   ```
+
+- The absolute timing bounds of `OverlapIndexTests` (the relative ones always run) need `ALLOY_PERF=1`, on a quiet
+  machine: `ALLOY_PERF=1 swift test --filter OverlapIndexTests`.
 
 - To package an app bundle: `scripts/bundle-macos.sh` produces `build/Alloy.app`, signed ad hoc (bundle id
   `dev.alloy.Alloy`). Put a 1024 x 1024 `Packaging/icon-1024.png` in place first for an icon; set
@@ -99,10 +121,14 @@ open, and never edits their settings. It needs Screen Recording and Accessibilit
 
 - Alloy never writes to `~/.claude` or to the project's `.claude/` directory. It reads the CLI's own transcript
   files to replay history. Its own state lives in `~/Library/Application Support/Alloy`.
-- Alloy's tool server for the notes tools listens on 127.0.0.1 only, on an ephemeral port, and every session has its
-  own random bearer token.
-- The only tools pre-approved (`--allowedTools`) are the three notes tools. Turn on "Ask before sessions use shared
-  notes" in Settings to disable that pre-approval. Everything else follows your Claude Code permission settings and
+- The hooks and tools are passed to each `claude` process on its command line (`--settings`, `--mcp-config`), never
+  written to a settings file. Your own hooks and settings keep running beside them. A hook that fails or times out
+  never blocks a tool call.
+- Alloy's tool and hook server listens on 127.0.0.1 only, on an ephemeral port, and every session has its own random
+  bearer token.
+- The only tools pre-approved (`--allowedTools`) are Alloy's seven: the three notes tools and the four coordination
+  tools (`sessions_changes`, `send_message`, `claim_region`, `release_region`). Turn on "Ask before sessions use
+  Alloy's tools" in Settings to disable that pre-approval. Everything else follows your Claude Code permission settings and
   asks through permission cards.
 
 ## Project layout

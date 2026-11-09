@@ -51,9 +51,13 @@ struct AlloyScreen: Component {
             HSplitView {
                 SidebarView(workspace: workspace, showSettings: settingsShown)
                     .frame(minWidth: Pixels(200), idealWidth: Pixels(250), maxWidth: Pixels(380))
-                ZStack {
-                    ChatView(workspace: workspace, store: store)
-                    if showSettings { SettingsView(workspace: workspace, close: { settingsShown.wrappedValue = false }) }
+                VStack(spacing: 0) {
+                    CoordinationNotice(workspace: workspace)
+                    ZStack {
+                        ChatView(workspace: workspace, store: store)
+                        if showSettings { SettingsView(workspace: workspace, close: { settingsShown.wrappedValue = false }) }
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
                 .frame(minWidth: Pixels(320), maxWidth: .infinity)
                 FilePanelView(workspace: workspace, store: store, panel: panel, quickOpen: quickOpen)

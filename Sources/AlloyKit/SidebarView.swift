@@ -8,6 +8,8 @@ struct SidebarView: Component {
     @Binding var showSettings: Bool
 
     var content: some ElementGroup {
+        // Once per body, for every row below.
+        let warnings = workspace.coordinationWarnings
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 0) {
                 SectionHeader(title: "Sessions")
@@ -28,7 +30,7 @@ struct SidebarView: Component {
             ScrollView {
                 List(workspace.sessions, selection: selection, rowHeight: Pixels(62)) { session in
                     // The List's tint is the selection fill; controls inside the row (the rename field) keep the accent.
-                    Column { SessionRow(workspace: workspace, session: session) }.tint(Color(ColorToken.accent))
+                    Column { SessionRow(workspace: workspace, session: session, warnings: warnings) }.tint(Color(ColorToken.accent))
                 }
                 .tint(.sessionSelection)   // MetalUI fills the selected row in the tint, else the accent
             }
@@ -36,7 +38,7 @@ struct SidebarView: Component {
             KnowledgeStats(workspace: workspace)
             SettingsButton(workspace: workspace, showSettings: $showSettings)
             Divider()
-            ChangedFilesSection(workspace: workspace)
+            ChangedFilesSection(workspace: workspace, warnings: warnings)
             if !workspace.errors.isEmpty {
                 ErrorList(errors: workspace.errors)
             }
@@ -94,6 +96,7 @@ func modeBadge(_ mode: String?) -> String? {
 struct SessionRow: Component {
     let workspace: Workspace
     let session: Session
+    var warnings: [CoordinationWarning] = []
     @State var renaming = false
     @State var draft = ""
     @FocusState var renameFocused: Bool
@@ -140,6 +143,9 @@ struct SessionRow: Component {
                 }
             }
             Spacer()
+            if let warning = CoordinationStyle.headline(warnings.filter { $0.sessions.contains(id) }) {
+                WarningMark(warning: warning, identifier: "session-warning-\(id.uuidString)")
+            }
             // Menu items cannot carry identifiers or tooltips (G24): tests choose them by title, and the reason
             // Fork is unavailable is a disabled item of its own.
             Menu {
@@ -186,6 +192,7 @@ struct KnowledgeStats: Component {
 
 struct ChangedFilesSection: Component {
     let workspace: Workspace
+    var warnings: [CoordinationWarning] = []
 
     var content: some ElementGroup {
         let files = workspace.changedFiles
@@ -195,7 +202,7 @@ struct ChangedFilesSection: Component {
                 Text("No changes yet").font(size: 12).foregroundColor(.mutedInk).padding(inset(10, 4))
             }
             ForEach(files, id: \.path) { file in
-                ChangedFileRow(workspace: workspace, file: file)
+                ChangedFileRow(workspace: workspace, file: file, warnings: warnings.filter { $0.path == file.path })
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -206,6 +213,7 @@ struct ChangedFilesSection: Component {
 struct ChangedFileRow: Component {
     let workspace: Workspace
     let file: ChangedFile
+    var warnings: [CoordinationWarning] = []
 
     var content: some ElementGroup {
         HStack(spacing: Pixels(4)) {
@@ -215,6 +223,9 @@ struct ChangedFileRow: Component {
             }
             Text(file.path).font(size: 12)
             Spacer()
+            if let warning = CoordinationStyle.headline(warnings) {
+                WarningMark(warning: warning, identifier: "changed-file-warning-\(file.path)")
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(inset(10, 3))

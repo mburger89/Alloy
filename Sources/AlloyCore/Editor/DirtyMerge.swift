@@ -63,17 +63,7 @@ public enum DirtyMerge {
     public static func merge(buffer: CodeBuffer, savedVersion: UInt64, hunks: [SessionHunk], oldDisk: [UInt8],
                              userEdits: [CodeEdit]?) -> MergeOutcome {
         guard let userEdits else { return MergeOutcome(applied: 0, conflicts: hunks.map(\.newLines)) }
-        // The ranges the user's edits occupy now. Each is its inserted text (or the point of a deletion),
-        // carried forward through the later edits.
-        var touched: [Range<Int>] = []
-        for (i, e) in userEdits.enumerated() where e.origin != .external {
-            var lo = e.range.lowerBound, hi = lo + e.newText.utf8.count
-            for later in userEdits[(i + 1)...] {
-                lo = advance(lo, through: later, bias: .before)
-                hi = advance(hi, through: later, bias: .after)
-            }
-            touched.append(lo..<max(lo, hi))
-        }
+        let touched = touchedRanges(userEdits)
         let snap = buffer.snapshot()
         var edits: [CodeTextEdit] = [], conflicts: [ClosedRange<Int>] = []
         for h in hunks {
@@ -95,6 +85,22 @@ public enum DirtyMerge {
             catch { return MergeOutcome(applied: 0, conflicts: hunks.map(\.newLines)) }
         }
         return MergeOutcome(applied: edits.count, conflicts: conflicts)
+    }
+
+    /// The ranges the user's edits occupy now (UTF-8 offsets in the current text). Each is its inserted text (or
+    /// the point of a deletion), carried forward through the later edits. Edits from `.external` are not the
+    /// user's.
+    static func touchedRanges(_ userEdits: [CodeEdit]) -> [Range<Int>] {
+        var touched: [Range<Int>] = []
+        for (i, e) in userEdits.enumerated() where e.origin != .external {
+            var lo = e.range.lowerBound, hi = lo + e.newText.utf8.count
+            for later in userEdits[(i + 1)...] {
+                lo = advance(lo, through: later, bias: .before)
+                hi = advance(hi, through: later, bias: .after)
+            }
+            touched.append(lo..<max(lo, hi))
+        }
+        return touched
     }
 
     /// Whether a user edit and a (mapped) session hunk share bytes. An empty range is a point: it conflicts

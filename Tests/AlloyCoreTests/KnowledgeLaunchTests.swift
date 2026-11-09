@@ -36,7 +36,9 @@ private final class KHarness: @unchecked Sendable {
                   locate: { _ in URL(fileURLWithPath: "/fake/claude") }, makeTransport: h.factory, now: Date.init)
     }
 
-    private let tools = ["mcp__alloy__notes_lookup", "mcp__alloy__notes_read", "mcp__alloy__notes_write"]
+    private let tools = ["mcp__alloy__notes_lookup", "mcp__alloy__notes_read", "mcp__alloy__notes_write",
+                         "mcp__alloy__sessions_changes", "mcp__alloy__send_message",
+                         "mcp__alloy__claim_region", "mcp__alloy__release_region"]
 
     @Test @MainActor func launchPassesNotesServerGuidanceAndAllowRule() async throws {
         let h = KHarness()
@@ -50,8 +52,52 @@ private final class KHarness: @unchecked Sendable {
         #expect(json.contains(try #require(ws.serverURL).absoluteString))
         #expect(c.appendSystemPrompt == Guidance.text)
         #expect(c.allowedTools == tools)
-        #expect(c.extraSettingsJSON == nil)
         #expect(c.arguments().contains("--allowedTools"))
+        let settings = try #require(c.extraSettingsJSON)
+        let token = try #require(json.components(separatedBy: "Bearer ").dropFirst().first?.prefix(while: { $0 != "\"" }))
+        #expect(settings == Hooks.settingsJSON(url: try #require(ws.serverURL), token: String(token)))
+        #expect(c.arguments().contains("--settings"))
+        await ws.stopAll()
+    }
+
+    @Test @MainActor func launchPassesHookSettingsOnlyWithSharingOn() async throws {
+        let off = KHarness()
+        let wsOff = workspace(AlloySettings(shareKnowledge: false), off)
+        _ = await wsOff.newSession(name: "a")
+        await wsOff.settle()
+        #expect(off.configs.first?.extraSettingsJSON == nil)
+        #expect(off.configs.first?.arguments().contains("--settings") == false)
+        await wsOff.stopAll()
+
+        let failed = KHarness()
+        let wsFail = workspace(AlloySettings(), failed)
+        wsFail.failServerStartForTesting = true
+        _ = await wsFail.newSession(name: "a")
+        await wsFail.settle()
+        #expect(failed.configs.first?.extraSettingsJSON == nil)
+        await wsFail.stopAll()
+
+        let on = KHarness()
+        let wsOn = workspace(AlloySettings(askBeforeSharedNotes: true), on)
+        _ = await wsOn.newSession(name: "a")
+        await wsOn.settle()
+        #expect(on.configs.first?.extraSettingsJSON?.contains("\"hooks\"") == true)
+        await wsOn.stopAll()
+    }
+
+    @Test @MainActor func relaunchWithSharingOffHasNoSettingsArgument() async throws {
+        let h = KHarness()
+        let ws = workspace(AlloySettings(), h)
+        let s = await ws.newSession(name: "a")
+        await h.transports[0].emit(.result(TurnResult(subtype: "success", isError: false, costUSD: 0, inputTokens: 0,
+                                                       outputTokens: 0, sessionID: "s", terminalReason: nil)))
+        await waitUntil("idle with conversation") { s.status == .idle && s.hasConversation }
+        #expect(h.configs[0].arguments().contains("--settings"))
+        try ws.updateSettings(AlloySettings(shareKnowledge: false))
+        await ws.settle()
+        let last = try #require(h.configs.last)
+        #expect(h.configs.count == 2 && last.resume, "configs \(h.configs.count) resume \(last.resume) status \(s.status)")
+        #expect(last.extraSettingsJSON == nil && !last.arguments().contains("--settings"))
         await ws.stopAll()
     }
 

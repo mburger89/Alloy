@@ -13,7 +13,7 @@ import Testing
         let tints = kinds.map { BlockStyle.style($0).tint }
         #expect(Set(tints).count == kinds.count)
         for kind in BlockKind.allCases { #expect(!BlockStyle.style(kind).icon.isEmpty, "\(kind)") }
-        #expect(BlockKind.allCases.count == 18)
+        #expect(BlockKind.allCases.count == 19)
         // Icons are distinct except where kinds deliberately share a family (none do).
         #expect(Set(BlockKind.allCases.map { BlockStyle.style($0).icon }).count == BlockKind.allCases.count)
     }

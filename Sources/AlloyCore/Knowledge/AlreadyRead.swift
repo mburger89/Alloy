@@ -126,9 +126,13 @@ public enum AlreadyRead {
 
     /// Text some session wrote, as data on one line: no line breaks, no double quotes (the caller quotes it), and never
     /// the block's own header, so it cannot pass for the start of a block or for a line of one.
-    public static func oneLine(_ s: String) -> String {
-        s.replacingOccurrences(of: header, with: "(block header removed)")
-            .replacingOccurrences(of: "\"", with: "'").split(whereSeparator: \.isNewline)
+    public static func oneLine(_ s: String) -> String { oneLine(s, keepingQuotes: false) }
+
+    /// `oneLine`, optionally leaving double quotes alone. Only for Alloy's own fixed wording; anything a session or a
+    /// file supplied goes through the quote-replacing form first.
+    static func oneLine(_ s: String, keepingQuotes: Bool) -> String {
+        let flat = s.replacingOccurrences(of: header, with: "(block header removed)")
+        return (keepingQuotes ? flat : flat.replacingOccurrences(of: "\"", with: "'")).split(whereSeparator: \.isNewline)
             .map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }.joined(separator: " ")
     }
 

@@ -30,6 +30,9 @@ struct ChatBlockView: Component {
             case .question(let q): QuestionCard(workspace: workspace, sessionID: session.id, block: q, draft: draft ?? .constant(CardDraft()))
             case .plan(let p): PlanCard(workspace: workspace, sessionID: session.id, block: p, draft: draft ?? .constant(CardDraft()), cache: cache)
             case .notice(_, let kind, let text): NoticeRow(id: block.id, kind: kind, text: text, cache: cache)
+            case .sessionMessage(_, let direction, let peer, let peerID, let text):
+                SessionMessageRow(blockID: block.id, direction: direction, peer: peer, text: text,
+                                  colorIndex: SessionMessageRow.colorIndex(direction, peer: peer, peerID: peerID, sessions: workspace.sessions))
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -134,6 +137,50 @@ struct ThinkingRow: Component {
                 Text(verbatim: text).font(size: 12).italic().foregroundColor(.mutedInk)
             }
         }
+    }
+}
+
+/// A message between sessions: "From <name>" in the receiver's chat, "To <name>" in the sender's. A stripe in the
+/// other session's colour marks who it is; Alloy's own messages and unknown senders get a neutral stripe.
+struct SessionMessageRow: Component {
+    let blockID: String
+    let direction: SessionMessageDirection
+    let peer: String
+    let text: String
+    var colorIndex: Int?
+
+    /// The other session's colour: by id, else by name (history knows only the name). Alloy's own rows get none.
+    static func colorIndex(_ direction: SessionMessageDirection, peer: String, peerID: UUID?, sessions: [Session]) -> Int? {
+        guard direction != .system else { return nil }
+        return (sessions.first { $0.id == peerID } ?? sessions.first { $0.name == peer })?.colorIndex
+    }
+
+    static func title(_ direction: SessionMessageDirection, peer: String) -> String {
+        (direction == .to ? "To " : "From ") + peer
+    }
+
+    var content: some ElementGroup {
+        let style = BlockStyle.style(.sessionMessage)
+        HStack(spacing: 0) {
+            Rectangle().fill(colorIndex.map { Color.sessionColor($0) } ?? style.ink)
+                .frame(width: Pixels(4))
+                .frame(maxHeight: .infinity)
+                .accessibilityIdentifier("session-message-stripe-\(blockID)")
+            VStack(alignment: .leading, spacing: Pixels(4)) {
+                HStack(spacing: Pixels(6)) {
+                    Image(systemName: style.icon).font(.system(size: 12)).foregroundColor(style.ink).accessibilityHidden(true)
+                    Text(verbatim: Self.title(direction, peer: peer)).font(size: 12).foregroundColor(.mutedInk)
+                        .accessibilityIdentifier("session-message-title-\(blockID)")
+                }
+                Text(verbatim: text).font(size: 13)
+                    .accessibilityIdentifier("session-message-text-\(blockID)")
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(inset(10, 8))
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(style.tint)
+        .cornerRadius(Pixels(8))
     }
 }
 
