@@ -239,15 +239,15 @@ private func settle(_ condition: @MainActor () -> Bool) async {
         let menu = try #require(window.presentedMenu)
         #expect(menu.items.map(\.title) == ["Fork", "Rename"])
         let fork = try #require(menu.item(accessibilityIdentifier: "fork-\(s.id.uuidString)"))
-        #expect(fork.isEnabled && fork.help == "Fork this session")
+        #expect(fork.isEnabled && fork.help == nil || fork.help == "")
         #expect(menu.item(accessibilityIdentifier: "session-rename-\(s.id.uuidString)")?.title == "Rename")
-        try window.chooseMenuItem("Fork")
+        try window.chooseMenuItem(accessibilityIdentifier: "fork-\(s.id.uuidString)")
         try await window.runUntil { rig.workspace.sessions.count == 2 }
         #expect(rig.workspace.sessions[1].name == "A (fork)")
 
         try window.click(window.element(identifier: "session-menu-\(s.id.uuidString)"))
         window.tick()
-        try window.chooseMenuItem("Rename")
+        try window.chooseMenuItem(accessibilityIdentifier: "session-rename-\(s.id.uuidString)")
         try await window.runUntil { (try? window.element(identifier: "rename-\(s.id.uuidString)")) != nil }
         try window.typeText("X", into: window.element(identifier: "rename-\(s.id.uuidString)"))
         window.typeKey(.return)
@@ -266,7 +266,7 @@ private func settle(_ condition: @MainActor () -> Bool) async {
         let fork = try #require(menu.item(accessibilityIdentifier: "fork-\(s.id.uuidString)"))
         #expect(fork.isEnabled == false)
         #expect(fork.help == "Nothing to fork yet")
-        #expect(throws: (any Error).self) { try window.chooseMenuItem("Fork") }
+        #expect(throws: (any Error).self) { try window.chooseMenuItem(accessibilityIdentifier: "fork-\(s.id.uuidString)") }
         try window.dismissMenu()
         #expect(rig.workspace.sessions.count == 1)
     }

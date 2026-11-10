@@ -149,7 +149,7 @@ struct SessionRow: Component {
             Menu {
                 Button("Fork") { Task { await workspace.fork(id, name: nil) } }
                     .disabled(!session.hasConversation)
-                    .help(session.hasConversation ? "Fork this session" : "Nothing to fork yet")
+                    .help(session.hasConversation ? "" : "Nothing to fork yet")
                     .accessibilityIdentifier("fork-\(id.uuidString)")
                 Button("Rename") { draft = session.name; renaming = true }
                     .accessibilityIdentifier("session-rename-\(id.uuidString)")

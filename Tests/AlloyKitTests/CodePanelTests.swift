@@ -416,7 +416,7 @@ func emitEdit(_ rig: Rig, old: String, new: String, toolUseID: String) async thr
         let window = try await opened(rig)
         let id = try await contextMenu(rig, window)
         #expect(rig.workspace.editRecord(id: id)?.state == .live)
-        try window.chooseMenuItem("Keep")
+        try window.chooseMenuItem(accessibilityIdentifier: "keep-\(id.uuidString)")
         #expect(rig.workspace.editRecord(id: id)?.state == .kept)
     }
 
@@ -424,7 +424,7 @@ func emitEdit(_ rig: Rig, old: String, new: String, toolUseID: String) async thr
         let (rig, _) = try await editedRig()
         let window = try await opened(rig)
         let id = try await contextMenu(rig, window)
-        try window.chooseMenuItem("Revert")
+        try window.chooseMenuItem(accessibilityIdentifier: "revert-\(id.uuidString)")
         let doc = try #require(rig.workspace.document("login.swift"))
         try await window.runUntil { doc.buffer.snapshot().text == panelOldText }
         await rig.workspace.settle()
@@ -437,19 +437,19 @@ func emitEdit(_ rig: Rig, old: String, new: String, toolUseID: String) async thr
         let b = await rig.workspace.newSession(name: "B")
         rig.workspace.selectedSessionID = b.id
         let window = try await opened(rig)
-        _ = try await contextMenu(rig, window)
+        let id = try await contextMenu(rig, window)
         #expect(rig.workspace.selectedSessionID == b.id)
-        try window.chooseMenuItem("Show in chat")
+        try window.chooseMenuItem(accessibilityIdentifier: "show-in-chat-\(id.uuidString)")
         #expect(rig.workspace.selectedSessionID == a.id)
     }
 
     @Test func contextMenuSideBySideTogglesTheDiffMode() async throws {
         let (rig, _) = try await editedRig()
         let window = try await opened(rig)
-        _ = try await contextMenu(rig, window)
+        let id = try await contextMenu(rig, window)
         let doc = try #require(rig.workspace.document("login.swift"))
         #expect(doc.diffMode == .inline)
-        try window.chooseMenuItem("Side by side")
+        try window.chooseMenuItem(accessibilityIdentifier: "side-by-side-\(id.uuidString)")
         #expect(doc.diffMode == .sideBySide)
         try await window.runUntil { (try? window.element(identifier: "sbs-left")) != nil }
     }

@@ -178,7 +178,7 @@ import Testing
         let window = try alloyWindow(rig.workspace)
         try window.click(window.element(identifier: "model-menu"))
         window.tick()
-        try window.chooseMenuItem("Opus")
+        try window.chooseMenuItem(accessibilityIdentifier: "model-choice-opus")
         try await pollSent(rig, window) { $0.contains { if case .control(_, .setModel("opus")) = $0 { true } else { false } } }
         _ = session
     }
@@ -194,7 +194,7 @@ import Testing
         try await window.runUntil { window.presentedMenu != nil }
         #expect(window.presentedMenu != nil)
         #expect((try? window.element(identifier: "model-choice-haiku")) == nil)   // the inline stopgap row is gone
-        try window.chooseMenuItem("Haiku")
+        try window.chooseMenuItem(accessibilityIdentifier: "model-choice-haiku")
         try await pollSent(rig, window) { $0.contains { if case .control(_, .setModel("haiku")) = $0 { true } else { false } } }
         #expect(!session.requestModelPicker)
         #expect(window.presentedMenu == nil)

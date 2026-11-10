@@ -162,8 +162,11 @@ Gaps G1-G7 come from spec section 5. Each was sent to the MetalUI session. Stopg
 - Adopted as: the Fork item has `fork-<session uuid>` and `.help` ("Fork this session", or "Nothing to fork yet" while disabled); Rename has `session-rename-<session uuid>` (`rename-<uuid>` is the inline text field). The gutter-bar menu items carry `keep-`, `revert-`, `show-in-chat-`, `side-by-side-`/`inline-` plus the edit uuid, and the model menu items `model-choice-<alias>`. The disabled "Nothing to fork yet" text item is gone; tests look items up with `menu.item(accessibilityIdentifier:)`.
 - Remaining gap: `TestWindow.chooseMenuItem` still chooses by title only (no choose-by-identifier).
 
-## G26: choose a menu item by accessibility identifier in tests (forwarded)
-`TestWindow.chooseMenuItem(_:)` takes only a title. With G24, tests find items by id but must still choose by title. Also asked (low priority): `.help(String?)`, where nil means no tooltip.
+## G26: choose a menu item by accessibility identifier in tests
+- Status: adopted (MetalUI 1b281127). Tests use `chooseMenuItem(accessibilityIdentifier:)` for every item that has an id. `.help("")` now means no tooltip, so the enabled Fork item uses `.help("")` and only the disabled one says "Nothing to fork yet".
+
+## #257: TextField placeholder colour (partly adopted)
+- Status: MetalUI 1b281127 adds `prompt:` variants (`text:prompt:`, `prompt:axis:`, `selection:prompt:`, `selection:prompt:axis:`) but none with `selectedOffsets:`. The composer needs `selectedOffsets:` + `axis: .vertical` + `prompt:`, so it keeps the plain placeholder until that variant exists (gap reported upstream).
 
 ## G27: independent secondary and tertiary text levels (forwarded)
 MetalUI derives its secondary and tertiary text from one source, so a theme cannot set them separately. Forwarded; in progress upstream as PR #259.
@@ -173,3 +176,6 @@ The thumb is painted in `surface`, so on a theme whose page equals `surface` (So
 
 ## Note: MetalUI-internal colours with no token
 These are hard-coded white inside MetalUI and cannot follow a theme: the `Toggle` `.switch` knob, the `Toggle` `.button` on-label, and `borderedProminent` button labels. Alloy uses none of them today, but they would break on a theme with a light accent.
+
+## G29: TextField with selectedOffsets + prompt + axis (forwarded)
+The composer needs caret offsets, a coloured prompt and vertical growth together. Until this lands, the placeholder uses MetalUI's default `.secondary` (4.48:1).
