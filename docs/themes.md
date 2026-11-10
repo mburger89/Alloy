@@ -147,11 +147,11 @@ Where a published colour still failed its tier, only its lightness was changed (
 Each change is `slot: published → used`; where an in-palette colour passed it was used instead of a lightness nudge and is marked `(in-palette: baseNN)`. Colours that are not in a palette (muted text, borders, selection and find fills,
 panel and sidebar shades, author markers) were chosen to pass and are not listed. Block tints mix each ink into the chat
 fill at 18% where the palette allows it, and lower (Solarized Dark 10%, Solarized Light 10%, One Dark 10%) where a stronger
-tint would push a published ink or text colour under its minimum. Solarized follows its own design: base03 (dark) or base3 (light) are the content backgrounds of every surface, and base02 or base2 appear only in highlight fills (selection). Solarized Dark's base0 text is 4.75:1 on base03 but only about 3.95 to 4.27:1 on the block tints behind chat titles, which is why the in-palette base1 is used for its `textPrimary`. Alloy Dark and Alloy Light needed no changes.
+tint would push a published ink or text colour under its minimum. Solarized follows its own design: base03 (dark) or base3 (light) are the content backgrounds of every surface, and base02 or base2 appear only in highlight fills (selection). Solarized Dark's base0 text is 4.75:1 on base03 but only about 3.95 to 4.27:1 on the block tints behind chat titles, which is why its `textPrimary` starts from base1 (lightened further, see its entry). Alloy Dark and Alloy Light needed no changes.
 
 ### Text levels
 
-`textSecondary` and `textTertiary` are MetalUI's own secondary and tertiary text (placeholders, captions, Markdown code captions). Both are optional: a theme that leaves them out gets MetalUI's derivation from `textPrimary`. Every built-in sets both. Tertiary text is drawn nowhere that Alloy audits, so the tertiary values are the palettes' own muted colours and are not adjusted: Dracula comment #6272A4, Solarized Dark base01 #586E75, Solarized Light base1 #93A1A1, One Dark comment #5C6370; Alloy Dark and Alloy Light use #7B8294 and #7D838E. Secondary is audited at 4.5:1 on the background, surface, sidebar, chat, panel and Markdown code fills, and at 4.5:1 on the segmented-picker track and tab bar (`surfaceSecondary`, also under a hovered tab's 6% textPrimary wash), because MetalUI draws the unselected tab ink (label, close glyph, dirty dot) in `textSecondary` (MetalUI 0aec3e03). Alloy Dark and Alloy Light use their `mutedInk` (#C2C8D3, #4E545F) at 4.5:1 throughout, and the four adjustments are listed under Dracula, Solarized Dark, Solarized Light and One Dark.
+`textSecondary` and `textTertiary` are MetalUI's own secondary and tertiary text (placeholders, captions, Markdown code captions). Both are optional: a theme that leaves them out gets MetalUI's derivation from `textPrimary`. Every built-in sets both. Tertiary text is drawn nowhere that Alloy audits, so the tertiary values are the palettes' own muted colours and are not adjusted: Dracula comment #6272A4, Solarized Dark base01 #586E75, Solarized Light base1 #93A1A1, One Dark comment #5C6370; Alloy Dark and Alloy Light use #7B8294 and #7D838E. The text levels are ordered on `surface`: primary has a higher contrast ratio than secondary, and secondary than tertiary (enforced for every built-in). The unselected segmented-picker label, `textPrimary` on the track, is audited at 4.5:1 for every built-in. Secondary is audited at 4.5:1 on the background, surface, sidebar, chat, panel and Markdown code fills, and at 4.5:1 on the segmented-picker track and tab bar (`surfaceSecondary`, also under a hovered tab's 6% textPrimary wash), because MetalUI draws the unselected tab ink (label, close glyph, dirty dot) in `textSecondary` (MetalUI 0aec3e03). Alloy Dark and Alloy Light use their `mutedInk` (#C2C8D3, #4E545F) at 4.5:1 throughout, and the four adjustments are listed under Dracula, Solarized Dark, Solarized Light and One Dark.
 
 ### Dracula
 
@@ -164,11 +164,11 @@ tint would push a published ink or text colour under its minimum. Solarized foll
 
 ### Solarized Dark
 
-- `textSecondary`: #839496 → #94A2A4 (base0 lightened until the unselected tab ink reads on a hovered tab)
+- `textSecondary`: #839496 → #95A3A5 (base0 lightened until the unselected tab ink reads on a hovered tab)
 - `questionInk`: #6C71C4 → #ACAFDE
 - `errorInk`: #DC322F → #E77472
 - `warningInk`: #B58900 → #BF9100
-- `textPrimary`: #839496 → #93A1A1 (in-palette: base1)
+- `textPrimary`: #839496 → #9EAAAA (base1 lightened so it reads stronger than `textSecondary`: 6.28:1 against 5.76:1 on the page)
 - `linkInk`: #268BD2 → #4EA3DF
 - `syntax.comment`: #586E75 → #839496 (in-palette: base0)
 - `syntax.number`: #D33682 → #DD639E
@@ -193,8 +193,8 @@ tint would push a published ink or text colour under its minimum. Solarized foll
 - `errorInk`: #DC322F → #C52421
 - `warningInk`: #B58900 → #826100
 - `surfaceSecondary`: #D3D3C5 → #C0C4BB (halfway between base2 and in-palette base1; the picker track and unselected tabs now read darker than the page and the selected thumb, both base3, by 1.64:1)
-- `textPrimary`: #657B83 → #56696F
-- `textSecondary`: #93A1A1 → #444F4F (base1 darkened until it reads on the page and on the unselected-tab bar, where a hovered tab is the tightest fill at 4.5:1)
+- `textPrimary`: #657B83 → #3E494D (darker than `textSecondary` so the hierarchy holds: 8.60:1 against 8.09:1 on the page; also reads 5.23:1 as the unselected picker label on the track)
+- `textSecondary`: #93A1A1 → #434D4D (base1 darkened until it reads on the page and on the unselected-tab bar, where a hovered tab is the tightest fill at 4.5:1)
 - `linkInk`: #268BD2 → #1D6AA0
 - `syntax.keyword`: #859900 → #627000
 - `syntax.string`: #2AA198 → #1F756F
@@ -220,7 +220,8 @@ tint would push a published ink or text colour under its minimum. Solarized foll
 
 - `questionInk`: #C678DD → #DDAEEA
 - `errorInk`: #E06C75 → #E5848B
-- `textSecondary`: #7F848E → #B7BAC0
+- `textPrimary`: #ABB2BF → #BCC2CC (lightened so it reads stronger than `textSecondary`: 7.82:1 against 7.28:1 on the page)
+- `textSecondary`: #7F848E → #B8BBC1
 - `syntax.keyword`: #C678DD → #CC85E0
 - `syntax.comment`: #5C6370 → #9198A5
 - `syntax.property`: #E06C75 → #E5848B

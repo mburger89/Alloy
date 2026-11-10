@@ -201,12 +201,12 @@ private func ratio(_ a: RGB, _ b: RGB) -> Double {
                                                 ("markdownCodeFill", .markdownCodeFill)]
         for (name, fill) in levelSurfaces { add("text.secondary.on.\(name)", Color.secondary, [fill], 4.5) }
         // Segmented picker labels (MetalUI draws them in plain `textPrimary`, unselected and selected).
-        add("picker.unselected.onTrack", text, [.surfaceSecondary], 4.5, .metalUI)
+        add("picker.unselected.onTrack", text, [.surfaceSecondary], 4.5)
 
         // The Inline | Side by side picker (MetalUI segmented `Picker`): labels on the track and on the selected pill, and
         // the pill against the track.
         let pill = Color(light: .surface, dark: Color.textPrimary.opacity(0.18))
-        add("picker.unselected", text, [.surfaceSecondary], 4.5, .metalUI)
+        add("picker.unselected", text, [.surfaceSecondary], 4.5)
         add("picker.selected", text, [.surfaceSecondary, pill], 4.5, .metalUI)
         add("picker.selectedVsTrack", pill, [.surfaceSecondary], 3, .metalUI)
 

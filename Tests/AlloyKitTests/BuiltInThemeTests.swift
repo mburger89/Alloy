@@ -41,21 +41,21 @@ import Testing
         #expect(try hex("solarized-dark", "chatFill") == "#002B36")
         #expect(try hex("solarized-light", "chatFill") == "#FDF6E3")
         #expect(try hex("one-dark", "chatFill") == "#282C34")
-        #expect(try hex("one-dark", "textPrimary") == "#ABB2BF")
         #expect(try hex("one-dark", "syntax.string") == "#98C379")
         #expect(try hex("one-dark", "syntax.function") == "#61AFEF")
         // Adjusted for contrast; docs/themes.md records the same values.
         #expect(try hex("dracula", "syntax.comment") == "#97A2C3")
-        #expect(try hex("solarized-dark", "textPrimary") == "#93A1A1")
-        #expect(try hex("solarized-light", "textPrimary") == "#56696F")
+        #expect(try hex("solarized-dark", "textPrimary") == "#9EAAAA")
+        #expect(try hex("solarized-light", "textPrimary") == "#3E494D")
         // Text levels: palette muted colours, adjusted where the audit needs it.
         #expect(try hex("dracula", "textSecondary") == "#BEC5DA")
         #expect(try hex("dracula", "textTertiary") == "#6272A4")
-        #expect(try hex("solarized-dark", "textSecondary") == "#94A2A4")
+        #expect(try hex("solarized-dark", "textSecondary") == "#95A3A5")
         #expect(try hex("solarized-dark", "textTertiary") == "#586E75")
-        #expect(try hex("solarized-light", "textSecondary") == "#444F4F")
+        #expect(try hex("solarized-light", "textSecondary") == "#434D4D")
         #expect(try hex("solarized-light", "textTertiary") == "#93A1A1")
-        #expect(try hex("one-dark", "textSecondary") == "#B7BAC0")
+        #expect(try hex("one-dark", "textPrimary") == "#BCC2CC")
+        #expect(try hex("one-dark", "textSecondary") == "#B8BBC1")
         #expect(try hex("one-dark", "textTertiary") == "#5C6370")
         #expect(try hex("alloy-dark", "textSecondary") == hex("alloy-dark", "mutedInk"))
         #expect(try hex("alloy-light", "textSecondary") == hex("alloy-light", "mutedInk"))
@@ -72,11 +72,12 @@ import Testing
             if let credit = entry.file.credit { #expect(docs.contains(credit), "docs lack credit \(credit)") }
         }
         #expect(docs.contains("`syntax.comment`: #6272A4 → #97A2C3"))
-        #expect(docs.contains("`textPrimary`: #839496 → #93A1A1 (in-palette: base1)"))
-        #expect(docs.contains("`textPrimary`: #657B83 → #56696F"))
+        #expect(docs.contains("`textPrimary`: #839496 → #9EAAAA"))
+        #expect(docs.contains("`textPrimary`: #657B83 → #3E494D"))
         #expect(docs.contains("`textSecondary`: #6272A4 → #BEC5DA"))
-        #expect(docs.contains("`textSecondary`: #93A1A1 → #444F4F"))
-        #expect(docs.contains("`textSecondary`: #7F848E → #B7BAC0"))
+        #expect(docs.contains("`textSecondary`: #93A1A1 → #434D4D"))
+        #expect(docs.contains("`textSecondary`: #7F848E → #B8BBC1"))
+        #expect(docs.contains("`textPrimary`: #ABB2BF → #BCC2CC"))
     }
 
     /// Every `slot: old → new` line under a theme's heading in the docs names the value the theme file really uses.
@@ -108,6 +109,38 @@ import Testing
             checked += 1
         }
         #expect(checked > 40)
+    }
+
+    /// WCAG contrast ratio of two theme colours.
+    private static func contrast(_ a: ThemeRGBA, _ b: ThemeRGBA) -> Double {
+        func luminance(_ c: ThemeRGBA) -> Double {
+            func lin(_ v: Double) -> Double { v <= 0.03928 ? v / 12.92 : pow((v + 0.055) / 1.055, 2.4) }
+            return 0.2126 * lin(c.r) + 0.7152 * lin(c.g) + 0.0722 * lin(c.b)
+        }
+        let x = luminance(a), y = luminance(b)
+        return (max(x, y) + 0.05) / (min(x, y) + 0.05)
+    }
+
+    /// The text levels keep their order: primary reads stronger than secondary, secondary stronger than tertiary, on `surface`.
+    @Test(arguments: ["dracula", "alloy-dark", "alloy-light", "solarized-dark", "solarized-light", "one-dark"])
+    func textHierarchyIsOrdered(themeID: String) throws {
+        let theme = try resolve(themeID)
+        let surface = try #require(theme.colors["surface"])
+        let primary = Self.contrast(try #require(theme.colors["textPrimary"]), surface)
+        let secondary = Self.contrast(try #require(theme.colors["textSecondary"]), surface)
+        let tertiary = Self.contrast(try #require(theme.colors["textTertiary"]), surface)
+        #expect(primary > secondary, "\(themeID) textPrimary \(String(format: "%.2f", primary)) <= textSecondary \(String(format: "%.2f", secondary))")
+        #expect(secondary > tertiary, "\(themeID) textSecondary \(String(format: "%.2f", secondary)) <= textTertiary \(String(format: "%.2f", tertiary))")
+    }
+
+    /// The adjusted themes' primary is visibly stronger than their secondary (at least half a contrast point).
+    @Test(arguments: ["solarized-dark", "solarized-light", "one-dark"])
+    func primaryClearlyExceedsSecondary(themeID: String) throws {
+        let theme = try resolve(themeID)
+        let surface = try #require(theme.colors["surface"])
+        let primary = Self.contrast(try #require(theme.colors["textPrimary"]), surface)
+        let secondary = Self.contrast(try #require(theme.colors["textSecondary"]), surface)
+        #expect(primary - secondary >= 0.5, "margin \(String(format: "%.2f", primary - secondary))")
     }
 
     /// In a light theme the segmented picker's thumb is painted in `surface`, so the track (`surfaceSecondary`) must differ from
