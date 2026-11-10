@@ -163,9 +163,10 @@ extension Workspace {
             let scope = knowledgeScope, name = s.name
             track { [weak self] in
                 let found = await Task.detached { Self.keyAndStamp(read.filePath, root: root, scope: scope) }.value
-                guard let self, let (key, stamp) = found else { return }
-                self.recordRead(ReadEntry(session: sid, path: key, lines: entryLines.range, stamp: stamp,
-                                          date: date, generation: generation, authorName: name, project: scope.ownRoot))
+                guard let self, let (_, stamp, canonical) = found else { return }
+                self.recordRead(ReadEntry(session: sid, path: canonical, lines: entryLines.range, stamp: stamp,
+                                          date: date, generation: generation, authorName: name, project: scope.ownRoot),
+                                resolved: true)
             }
         default:
             break
@@ -174,7 +175,7 @@ extension Workspace {
 
     /// The scope key (relative in the own project, absolute in another known one) and the stamp of the file a Read
     /// named, or nil when it is outside every known project or unreadable. Does file system lookups.
-    nonisolated static func keyAndStamp(_ file: String, root: URL, scope: KnowledgeScope) -> (String, FileStamp)? {
+    nonisolated static func keyAndStamp(_ file: String, root: URL, scope: KnowledgeScope) -> (key: String, stamp: FileStamp, canonical: String)? {
         let joined = file.hasPrefix("/") ? file : root.path + "/" + file
         guard let real = NotePath.realPath(joined), let scoped = scope.key(forReal: real),
               let stamp = FileStamp.read(real) else { return nil }
@@ -182,7 +183,7 @@ extension Workspace {
         // `NotePath.resolve` uses; another project's file keeps its absolute real key.
         let key = scoped.hasPrefix("/") ? scoped
             : (ProjectLedger.relativePath(URL(fileURLWithPath: joined).standardizedFileURL.path, root: root) ?? scoped)
-        return (key, stamp)
+        return (key, stamp, scoped)
     }
 
     /// A subagent's Read result carries no `tool_use_result`, only the numbered text (`<line>\t<text>` per line).
@@ -237,8 +238,8 @@ extension Workspace {
         let snapshot = readIndex
         track { [weak self] in
             let found = await Task.detached { Self.keyAndStamp(file, root: root, scope: scope) }.value
-            guard let self, let (rel, stamp) = found else { return }
-            let seen = snapshot.current(path: rel, stamp: stamp).contains {
+            guard let self, let (rel, stamp, canonical) = found else { return }
+            let seen = snapshot.current(path: canonical, stamp: stamp).contains {
                 ($0.session != sid || $0.generation == generation) && ReadIndex.covers($0.lines, requested)
             }
             if seen || self.hasCurrentNote(rel, stamp) {

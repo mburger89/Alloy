@@ -44,15 +44,17 @@ extension Workspace {
         var names = Dictionary(sessions.map { ($0.id, $0.name) }, uniquingKeysWith: { a, _ in a })
         // Readers in other windows are not sessions here; the name they left with their read stands in, with its project.
         for c in prepared.candidates {
-            for e in readIndex.readers(path: c) where names[e.session] == nil {
+            for e in readIndex.readers(path: prepared.canonical[c] ?? c) where names[e.session] == nil {
                 names[e.session] = name(of: e.session, authorName: e.authorName, project: e.project, fallback: "another session")
             }
         }
         let ledger = self.ledger
+        let canonicalKeys = prepared.canonical
+        let canonical = { (key: String) in canonicalKeys[key] ?? key }
         var table = told[s.id] ?? [:]
         for p in inflightTold where p.session == s.id { table.merge(p.updates) { _, new in new } }
         let built = AlreadyRead.block(for: s.id, candidates: prepared.candidates, index: readIndex, notes: notes,
-                                      stamps: prepared.stamps, names: names,
+                                      stamps: prepared.stamps, names: names, canonical: canonical,
                                       changedBy: { path, read in
                                           ledger.files[path]?.edits.last { $0.date > read }?.author
                                       },
@@ -90,15 +92,16 @@ extension Workspace {
     /// stamps. Runs off the main actor. Nothing outside the project root is examined: a path is checked lexically
     /// against the root before any disk access, and a symlink out of the root is refused by `NotePath`.
     nonisolated static func prepareCandidates(message: String, recent: [String], root: URL)
-        -> (candidates: [String], stamps: [String: FileStamp?]) {
+        -> (candidates: [String], stamps: [String: FileStamp?], canonical: [String: String]) {
         prepareCandidates(message: message, recent: recent, root: root, scope: KnowledgeScope(ownRoot: root.path))
     }
 
     /// As above, across every project in `scope`; candidates are scope keys.
     nonisolated static func prepareCandidates(message: String, recent: [String], root: URL, scope: KnowledgeScope)
-        -> (candidates: [String], stamps: [String: FileStamp?]) {
+        -> (candidates: [String], stamps: [String: FileStamp?], canonical: [String: String]) {
         var candidates: [String] = []
         var stamps: [String: FileStamp?] = [:]
+        var canonical: [String: String] = [:]
         let rootForms = [root.standardizedFileURL.path, root.resolvingSymlinksInPath().path] + scope.spellings
         func add(_ raw: String) {
             let joined = raw.hasPrefix("/") ? raw : root.path + "/" + raw
@@ -110,6 +113,7 @@ extension Workspace {
             guard let stamp else { return }
             stamps[path.relative] = stamp
             candidates.append(path.relative)
+            canonical[path.relative] = scope.key(forReal: path.url.path) ?? path.relative
         }
         var named = 0
         var seenRaw = Set<String>()
@@ -119,7 +123,7 @@ extension Workspace {
             add(raw)
         }
         for path in recent { add(path) }
-        return (candidates, stamps)
+        return (candidates, stamps, canonical)
     }
 
     /// A fork starts with what its source had been told.

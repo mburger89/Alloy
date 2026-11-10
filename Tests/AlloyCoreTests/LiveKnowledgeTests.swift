@@ -293,7 +293,16 @@ struct LiveKnowledgeTests {
         _ = await Self.turn(wsApp, b, "What does ../api/Routes.swift do? Check the shared notes first.", recB)
         let lookups = Self.tools(b, notesPrefix).filter { $0.name == notesPrefix + "lookup" }
         let noteText = note?.text ?? "\u{0}"
-        let lookupHit = lookups.contains { $0.resultText.contains(noteText) && ($0.input["path"]?.stringValue == routes) }
+        // A path relative to the app root (`../api/Routes.swift`) names the same file: compare resolved paths.
+        let appRoot = wsApp.projectRoot
+        func resolved(_ path: String?) -> String? {
+            guard let path, !path.isEmpty else { return nil }
+            let joined = path.hasPrefix("/") ? path : appRoot.path + "/" + path
+            let standard = URL(fileURLWithPath: joined).standardizedFileURL.path
+            return URL(fileURLWithPath: standard).resolvingSymlinksInPath().path
+        }
+        let wanted = resolved(routes)
+        let lookupHit = lookups.contains { $0.resultText.contains(noteText) && resolved($0.input["path"]?.stringValue) == wanted }
         let firstWire = recB.sent.first { $0.contains("\"type\":\"user\"") } ?? ""
         let told = firstWire.contains("Routes.swift") && firstWire.contains("(in api)")
         Self.log("app lookups=\(lookups.map { "\($0.input):\($0.status):\($0.resultText.prefix(200))" })")

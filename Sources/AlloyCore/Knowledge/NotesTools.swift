@@ -344,7 +344,7 @@ extension Workspace {
 
     /// Read-index entries for `path` whose stamp is `stamp`; nil once Alloy is closing.
     func currentReads(_ path: String, stamp: FileStamp) -> [ReadEntry]? {
-        isShuttingDown ? nil : readIndex.current(path: path, stamp: stamp)
+        isShuttingDown ? nil : readIndex.current(path: canonicalReadKey(path), stamp: stamp)
     }
 
     /// The knowledge scope after picking up other windows' changes; nil once Alloy is closing.
@@ -394,7 +394,7 @@ extension Workspace {
         guard !isShuttingDown else { return nil }
         refreshKnowledge()
         reconcileNotes(path, stamp: stamp)
-        let readers = readIndex.readers(path: path)
+        let readers = readIndex.readers(path: canonicalReadKey(path))
         let notes = self.notes.notes(for: .file(path))
         var lines = ["Shared knowledge about \(AlreadyRead.oneLine(knowledgeScope.display(path))):"]
         if readers.isEmpty { lines.append("Read by: nobody yet.") } else {
@@ -405,7 +405,7 @@ extension Workspace {
                 lines.append("- \(name(of: e.session, authorName: e.authorName, project: e.project)) read \(what) at \(Self.stamp(e.date)) (\(state))")
             }
         }
-        let current = stamp.map { readIndex.current(path: path, stamp: $0) } ?? []
+        let current = stamp.map { readIndex.current(path: canonicalReadKey(path), stamp: $0) } ?? []
         if current.isEmpty {
             lines.append("notes_read can serve it: no (no session read it as it is now; use the Read tool).")
         } else if let stamp, stamp.size > ReadIndex.servableLimit {

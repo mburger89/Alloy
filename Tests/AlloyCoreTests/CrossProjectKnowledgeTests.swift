@@ -37,9 +37,9 @@ private final class Dirs: @unchecked Sendable {
     private let dirs = Dirs()
     deinit { dirs.cleanup() }
 
-    private func makeWS(root: URL, support: URL, _ h: Harness = Harness(), settings: AlloySettings = AlloySettings()) -> Workspace {
+    private func makeWS(root: URL, support: URL, _ h: Harness = Harness(), settings: AlloySettings = AlloySettings(), busyMS: Int = 1000) -> Workspace {
         Workspace(projectRoot: root, appSupport: support, settings: settings,
-                  locate: { _ in URL(fileURLWithPath: "/fake/claude") }, makeTransport: h.factory, now: Date.init)
+                  locate: { _ in URL(fileURLWithPath: "/fake/claude") }, makeTransport: h.factory, now: Date.init, poolBusyTimeoutMS: busyMS)
     }
 
     private func write(_ root: URL, _ name: String, _ text: String = "one\ntwo\nthree\n") throws -> String {
@@ -229,6 +229,128 @@ private final class Dirs: @unchecked Sendable {
         #expect(ctx.text.contains("link/x.swift") && ctx.text.contains("Alice"))
     }
 
+    @Test func aReadThroughALinkIsSeenByAWindowNamingTheRealPath() async throws {
+        let support = dirs.make(), rootA = dirs.make(), rootB = dirs.make()
+        let ha = Harness()
+        let a = makeWS(root: rootA, support: support, ha), b = makeWS(root: rootB, support: support)
+        let sa = await a.newSession(name: "Alice"), sb = await b.newSession(name: "Bob")
+        _ = sa
+        try FileManager.default.createDirectory(at: rootA.appendingPathComponent("real"), withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(at: rootA.appendingPathComponent("link"), withDestinationURL: rootA.appendingPathComponent("real"))
+        _ = try write(rootA, "real/File.swift")
+        await doRead(a, ha.transports[0], "t1", try real(rootA) + "/link/File.swift")
+        let ctx = try #require(await b.sharedContext(for: sb, message: "look at @\(try real(rootA))/real/File.swift"))
+        #expect(ctx.text.contains("Alice"))
+    }
+
+    @Test func aLinkLookupStillHitsAfterTheViewIsRebuilt() async throws {
+        let support = dirs.make(), root = dirs.make()
+        let h = Harness()
+        let ws = makeWS(root: root, support: support, h)
+        _ = await ws.newSession(name: "Alice")
+        let s2 = await ws.newSession(name: "Bob")
+        try FileManager.default.createDirectory(at: root.appendingPathComponent("real"), withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(at: root.appendingPathComponent("link"), withDestinationURL: root.appendingPathComponent("real"))
+        _ = try write(root, "real/x.swift")
+        await doRead(ws, h.transports[0], "t1", try real(root) + "/link/x.swift")
+        ws.pool?.flush()
+        ws.reloadKnowledgeAfterSettingsChange()
+        let served = try await call(ws, "notes_read", ["path": .string("link/x.swift")], as: s2.id)
+        #expect(!served.isError && served.text.contains("1\tone"), "\(served.text)")
+        let looked = try await call(ws, "notes_lookup", ["path": .string("link/x.swift")], as: s2.id)
+        #expect(looked.text.contains("Alice"), "\(looked.text)")
+        let viaReal = try await call(ws, "notes_lookup", ["path": .string("real/x.swift")], as: s2.id)
+        #expect(viaReal.text.contains("Alice"), "\(viaReal.text)")
+        let ctx = try #require(await ws.sharedContext(for: s2, message: "look at @link/x.swift"))
+        #expect(ctx.text.contains("Alice"))
+    }
+
+    @Test func linkAndRealReadsOfOneFileKeepBothEntries() async throws {
+        let support = dirs.make(), root = dirs.make()
+        let ws = makeWS(root: root, support: support)
+        let s = await ws.newSession(name: "Alice")
+        try FileManager.default.createDirectory(at: root.appendingPathComponent("real"), withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(at: root.appendingPathComponent("link"), withDestinationURL: root.appendingPathComponent("real"))
+        _ = try write(root, "real/x.swift")
+        let stamp = try #require(FileStamp.read(try real(root) + "/real/x.swift"))
+        ws.recordRead(ReadEntry(session: s.id, path: "link/x.swift", lines: 1...1, stamp: stamp, date: Date(), generation: 0))
+        ws.recordRead(ReadEntry(session: s.id, path: "real/x.swift", lines: 3...3, stamp: stamp, date: Date(), generation: 0))
+        await ws.settle()
+        let pool = try #require(ws.pool)
+        pool.flush()
+        let stored = pool.loadReads().filter { $0.session == s.id }
+        #expect(Set(stored.compactMap(\.lines)) == [1...1, 3...3], "\(stored.map(\.lines))")
+        #expect(Set(stored.map(\.path)).count == 1)
+        ws.reloadKnowledgeAfterSettingsChange()
+        #expect(ws.readIndex.readers(path: "real/x.swift").count == 2)
+    }
+
+    @Test func aNoteWhoseWriteFailsIsKeptWhenASettingChanges() async throws {
+        let support = dirs.make(), root = dirs.make()
+        let ws = makeWS(root: root, support: support, busyMS: 50)
+        let s = await ws.newSession(name: "Alice")
+        await ws.settle()
+        let file = try write(root, "a.txt")
+        // Another connection holds the write lock, so the note's insert is in flight, and then fails, while the
+        // setting flips.
+        let lock = try holdWriteLock(support.appendingPathComponent("Alloy/Shared/knowledge.sqlite"))
+        _ = try await call(ws, "notes_write", ["path": .string(file), "text": .string("kept")], as: s.id)
+        var changed = ws.settings; changed.shareAcrossProjects = false
+        try ws.updateSettings(changed)
+        let pool = try #require(ws.pool)
+        #expect(ws.notes.all.map(\.text) == ["kept"])
+        release(lock)
+        ws.persistNotes()
+        pool.flush()
+        #expect(pool.loadNotes().map(\.text) == ["kept"])
+    }
+
+    @Test func aDeleteThatWasRolledBackIsSentAgain() async throws {
+        let support = dirs.make(), root = dirs.make()
+        let ws = makeWS(root: root, support: support, busyMS: 50)
+        let s = await ws.newSession(name: "Alice")
+        let file = try write(root, "a.txt")
+        _ = try await call(ws, "notes_write", ["path": .string(file), "text": .string("old")], as: s.id)
+        await ws.settle()
+        let pool = try #require(ws.pool)
+        pool.flush()
+        #expect(pool.loadNotes().map(\.text) == ["old"])
+        // The database is held elsewhere, so the sync that carries the delete (and a new note) cannot begin.
+        let url = support.appendingPathComponent("Alloy/Shared/knowledge.sqlite")
+        let lock = try holdWriteLock(url)
+        let old = try #require(ws.notes.all.first)
+        ws.notes = NotesStore(notes: ws.notes.all.filter { $0.id != old.id })
+        ws.persistNotes()
+        pool.flush()
+        release(lock)
+        ws.persistNotes()
+        pool.flush()
+        #expect(pool.loadNotes().isEmpty)
+    }
+
+    @Test func aNoteDeletedAfterItsInsertFailedIsNotRevived() async throws {
+        let support = dirs.make(), root = dirs.make()
+        let url = try blockNoteInserts(support: support)
+        let ws = makeWS(root: root, support: support, busyMS: 50)
+        let s = await ws.newSession(name: "Alice")
+        let file = try write(root, "a.txt")
+        _ = try await call(ws, "notes_write", ["path": .string(file), "text": .string("gone")], as: s.id)
+        await ws.settle()
+        let pool = try #require(ws.pool)
+        pool.flush()
+        let note = try #require(ws.notes.all.first)
+        ws.notes = NotesStore(notes: ws.notes.all.filter { $0.id != note.id })
+        var db: OpaquePointer?
+        #expect(sqlite3_open(url.path, &db) == SQLITE_OK)
+        #expect(sqlite3_exec(db, "DROP TRIGGER blocked", nil, nil, nil) == SQLITE_OK)
+        sqlite3_close(db)
+        ws.persistNotes()
+        pool.flush()
+        ws.persistNotes()
+        pool.flush()
+        #expect(pool.loadNotes().isEmpty)
+    }
+
     @Test func migrationImportsOnce() async throws {
         let support = dirs.make(), rootA = dirs.make(), rootB = dirs.make()
         _ = try write(rootA, "Routes.swift")
@@ -290,7 +412,7 @@ private final class Dirs: @unchecked Sendable {
         let support = dirs.make(), root = dirs.make()
         try FileManager.default.createDirectory(at: support.appendingPathComponent("Alloy"), withIntermediateDirectories: true)
         try Data("not a folder".utf8).write(to: support.appendingPathComponent("Alloy/Shared"))
-        let ws = makeWS(root: root, support: support)
+        let ws = makeWS(root: root, support: support, busyMS: 50)
         let s = await ws.newSession(name: "Alice")
         #expect(ws.pool == nil)
         _ = try await call(ws, "notes_lookup", ["topic": .string("t")], as: s.id)
@@ -312,6 +434,164 @@ private final class Dirs: @unchecked Sendable {
     // MARK: Fix round 1
 
     /// Makes every insert into `notes` fail, as a locked or full pool would.
+    /// Holds the pool database's write lock from another connection (readers still work) until `release`.
+    private func holdWriteLock(_ url: URL) throws -> OpaquePointer? {
+        var db: OpaquePointer?
+        #expect(sqlite3_open(url.path, &db) == SQLITE_OK)
+        #expect(sqlite3_exec(db, "BEGIN IMMEDIATE", nil, nil, nil) == SQLITE_OK)
+        return db
+    }
+
+    private func release(_ db: OpaquePointer?) {
+        sqlite3_exec(db, "ROLLBACK", nil, nil, nil)
+        sqlite3_close(db)
+    }
+
+    @Test func aDeleteThatFailsTwiceStaysDeleted() async throws {
+        let support = dirs.make(), root = dirs.make()
+        let ws = makeWS(root: root, support: support, busyMS: 50)
+        let s = await ws.newSession(name: "Alice")
+        let file = try write(root, "a.txt")
+        _ = try await call(ws, "notes_write", ["path": .string(file), "text": .string("old")], as: s.id)
+        await ws.settle()
+        let pool = try #require(ws.pool)
+        pool.flush()
+        #expect(pool.loadNotes().map(\.text) == ["old"])
+        let lock = try holdWriteLock(support.appendingPathComponent("Alloy/Shared/knowledge.sqlite"))
+        let old = try #require(ws.notes.all.first)
+        ws.notes = NotesStore(notes: ws.notes.all.filter { $0.id != old.id })
+        ws.persistNotes()            // fails once
+        pool.flush()
+        ws.reloadKnowledgeAfterSettingsChange()   // sends it again: fails twice, and the row must not come back
+        #expect(ws.notes.all.isEmpty)
+        release(lock)
+        ws.persistNotes()
+        pool.flush()
+        #expect(ws.notes.all.isEmpty)
+        #expect(pool.loadNotes().isEmpty)
+    }
+
+    @Test func anInsertThatFailsTwiceSurvivesTheRebuild() async throws {
+        let support = dirs.make(), root = dirs.make()
+        let ws = makeWS(root: root, support: support, busyMS: 50)
+        let s = await ws.newSession(name: "Alice")
+        await ws.settle()
+        let file = try write(root, "a.txt")
+        let lock = try holdWriteLock(support.appendingPathComponent("Alloy/Shared/knowledge.sqlite"))
+        _ = try await call(ws, "notes_write", ["path": .string(file), "text": .string("kept")], as: s.id)
+        let pool = try #require(ws.pool)
+        ws.reloadKnowledgeAfterSettingsChange()   // the insert failed once; the retry fails too
+        #expect(ws.notes.all.map(\.text) == ["kept"])
+        release(lock)
+        ws.persistNotes()
+        pool.flush()
+        #expect(pool.loadNotes().map(\.text) == ["kept"])
+    }
+
+    @Test func aV2PoolReadStoredUnderALinkIsMigratedToTheRealPath() async throws {
+        let support = dirs.make(), root = dirs.make()
+        try FileManager.default.createDirectory(at: root.appendingPathComponent("real"), withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(at: root.appendingPathComponent("link"), withDestinationURL: root.appendingPathComponent("real"))
+        _ = try write(root, "real/x.swift")
+        let own = try real(root)
+        let stamp = try #require(FileStamp.read(own + "/real/x.swift"))
+        let other = UUID()
+        let stored = own + "/link/x.swift"
+        // A pool as version 2 left it: one session's read keyed by the link's path.
+        let url = support.appendingPathComponent("Alloy/Shared/knowledge.sqlite")
+        _ = try KnowledgePool(url: url, onError: { _ in })
+        let body = try JSONEncoder().encode([ReadEntry(session: other, path: stored, lines: nil, stamp: stamp, date: Date(), generation: 0, authorName: "Zed", project: own)])
+        var db: OpaquePointer?
+        #expect(sqlite3_open(url.path, &db) == SQLITE_OK)
+        #expect(sqlite3_exec(db, "PRAGMA user_version = 2", nil, nil, nil) == SQLITE_OK)
+        var ins: OpaquePointer?
+        #expect(sqlite3_prepare_v2(db, "INSERT INTO reads(session, path, project, body) VALUES(?, ?, ?, ?)", -1, &ins, nil) == SQLITE_OK)
+        let transient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
+        sqlite3_bind_text(ins, 1, other.uuidString, -1, transient); sqlite3_bind_text(ins, 2, stored, -1, transient)
+        sqlite3_bind_text(ins, 3, own, -1, transient)
+        _ = body.withUnsafeBytes { sqlite3_bind_blob(ins, 4, $0.baseAddress, Int32(body.count), transient) }
+        #expect(sqlite3_step(ins) == SQLITE_DONE)
+        sqlite3_finalize(ins); sqlite3_close(db)
+
+        let ws = makeWS(root: root, support: support)
+        let s = await ws.newSession(name: "Bob")
+        let pool = try #require(ws.pool)
+        #expect(pool.loadReads().map(\.path) == [own + "/real/x.swift"])
+        let looked = try await call(ws, "notes_lookup", ["path": .string("real/x.swift")], as: s.id)
+        #expect(looked.text.contains("Zed"), "\(looked.text)")
+    }
+
+    private func isolatedSettings() -> AlloySettings { var s = AlloySettings(); s.shareAcrossProjects = false; return s }
+
+    /// Makes the pool's connection see a change by another connection (a window of another project registering).
+    private func bumpVersion(_ support: URL) throws {
+        let other = try KnowledgePool(url: support.appendingPathComponent("Alloy/Shared/knowledge.sqlite"), onError: { _ in })
+        other.register(KnownProject(root: "/elsewhere-\(UUID().uuidString)", name: "elsewhere"))
+        other.flush()
+    }
+
+    @Test func anInsertThatFailsTwiceSurvivesARefreshInAnIsolatedWindow() async throws {
+        let support = dirs.make(), root = dirs.make()
+        let ws = makeWS(root: root, support: support, settings: isolatedSettings(), busyMS: 50)
+        let s = await ws.newSession(name: "Alice")
+        await ws.settle()
+        let file = try write(root, "a.txt")
+        let url = support.appendingPathComponent("Alloy/Shared/knowledge.sqlite")
+        var lock = try holdWriteLock(url)
+        _ = try await call(ws, "notes_write", ["path": .string(file), "text": .string("kept")], as: s.id)
+        let pool = try #require(ws.pool)
+        pool.flush()                       // the insert failed once
+        release(lock)
+        try bumpVersion(support)           // another window wrote: the next refresh rebuilds the view
+        lock = try holdWriteLock(url)
+        ws.refreshKnowledge()              // the retry fails too
+        #expect(ws.notes.all.map(\.text) == ["kept"])
+        release(lock)
+        ws.persistNotes()
+        pool.flush()
+        #expect(pool.loadNotes().map(\.text) == ["kept"])
+    }
+
+    @Test func aDeleteThatFailsTwiceStaysDeletedThroughARefreshInAnIsolatedWindow() async throws {
+        let support = dirs.make(), root = dirs.make()
+        let ws = makeWS(root: root, support: support, settings: isolatedSettings(), busyMS: 50)
+        let s = await ws.newSession(name: "Alice")
+        let file = try write(root, "a.txt")
+        _ = try await call(ws, "notes_write", ["path": .string(file), "text": .string("old")], as: s.id)
+        await ws.settle()
+        let pool = try #require(ws.pool)
+        pool.flush()
+        let url = support.appendingPathComponent("Alloy/Shared/knowledge.sqlite")
+        var lock = try holdWriteLock(url)
+        let old = try #require(ws.notes.all.first)
+        ws.notes = NotesStore(notes: ws.notes.all.filter { $0.id != old.id })
+        ws.persistNotes()
+        pool.flush()                       // the delete failed once
+        release(lock)
+        try bumpVersion(support)
+        lock = try holdWriteLock(url)
+        ws.refreshKnowledge()              // sent again, fails again
+        #expect(ws.notes.all.isEmpty)
+        release(lock)
+        ws.persistNotes()
+        pool.flush()
+        #expect(pool.loadNotes().isEmpty)
+    }
+
+    @Test func linkAndRealNamesOfOneFileAreToldOnce() async throws {
+        let support = dirs.make(), root = dirs.make()
+        let h = Harness()
+        let ws = makeWS(root: root, support: support, h)
+        _ = await ws.newSession(name: "Alice")
+        let s2 = await ws.newSession(name: "Bob")
+        try FileManager.default.createDirectory(at: root.appendingPathComponent("real"), withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(at: root.appendingPathComponent("link"), withDestinationURL: root.appendingPathComponent("real"))
+        _ = try write(root, "real/x.swift")
+        await doRead(ws, h.transports[0], "t1", try real(root) + "/real/x.swift")
+        let ctx = try #require(await ws.sharedContext(for: s2, message: "see @link/x.swift and @real/x.swift"))
+        #expect(ctx.files.count == 1, "\(ctx.text)")
+    }
+
     private func blockNoteInserts(support: URL) throws -> URL {
         let url = support.appendingPathComponent("Alloy/Shared/knowledge.sqlite")
         _ = try KnowledgePool(url: url, onError: { _ in })

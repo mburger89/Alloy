@@ -129,6 +129,7 @@ import Foundation
 
 enum SharedContextBox {
     static func prepare(_ message: String, _ own: String, _ scope: KnowledgeScope) -> (candidates: [String], stamps: [String: FileStamp?]) {
-        Workspace.prepareCandidates(message: message, recent: [], root: URL(fileURLWithPath: own), scope: scope)
+        let r = Workspace.prepareCandidates(message: message, recent: [], root: URL(fileURLWithPath: own), scope: scope)
+        return (r.candidates, r.stamps)
     }
 }

@@ -19,7 +19,7 @@ extension Workspace {
     /// reported once; knowledge then stays in memory for the run.
     func loadKnowledge() {
         do {
-            let opened = try KnowledgePool(url: poolURL) { [weak self] message in
+            let opened = try KnowledgePool(url: poolURL, busyTimeoutMS: poolBusyTimeoutMS) { [weak self] message in
                 Task { @MainActor [weak self] in self?.reportPoolFailure(message) }
             }
             pool = opened
@@ -51,7 +51,10 @@ extension Workspace {
     private func loadLegacyIntoMemory() {
         if let store = loadFile(notesURL, { try JSONDecoder().decode(NotesStore.self, from: $0) }) { notes = store }
         if let file = loadFile(readsURL, { try ReadsFile.decode($0) }) {
-            readIndex = file.index
+            let scope = knowledgeScope
+            readIndex = ReadIndex(entries: file.index.allEntries.map { e in
+                var e = e; e.path = Self.canonicalReadKey(e.path, scope: scope); return e
+            })
             for (k, v) in file.generations {
                 if let id = UUID(uuidString: k), compactionGeneration[id] == nil { compactionGeneration[id] = v }
             }
@@ -67,6 +70,8 @@ extension Workspace {
         let failuresBefore = pool.failureCount
         let names = Dictionary(records.map { ($0.id, $0.name) }, uniquingKeysWith: { a, _ in a })
         func absolute(_ rel: String) -> String { rel.hasPrefix("/") ? rel : own + "/" + rel }
+        // A read of a file reached through a link is stored under the file it resolves to.
+        func resolved(_ rel: String) -> String { NotePath.realPath(absolute(rel)) ?? absolute(rel) }
         var renames: [URL] = []
         var importedNotes: [Note] = [], importedGroups: [ReadGroupWrite] = []
         var legacyGenerations: [UUID: Int] = [:]
@@ -85,7 +90,7 @@ extension Workspace {
             var groups: [ReadGroup: [ReadEntry]] = [:]
             for e in file.index.allEntries {
                 var e = e
-                e.path = absolute(e.path)
+                e.path = resolved(e.path)
                 e.project = own
                 e.authorName = e.authorName ?? names[e.session]
                 groups[ReadGroup(session: e.session, path: e.path), default: []].append(e)
@@ -97,6 +102,7 @@ extension Workspace {
         pool.apply(upserts: importedNotes, reads: importedGroups)
         pool.flush()
         _ = pool.takeFailedInserts()
+        _ = pool.takeFailedDeletes()
         guard pool.failureCount == failuresBefore else { return }
         for (id, v) in legacyGenerations where compactionGeneration[id] == nil { compactionGeneration[id] = v }
         if !legacyGenerations.isEmpty { persistGenerations() }
@@ -119,6 +125,7 @@ extension Workspace {
         let version = pool.dataVersion()
         guard version != poolVersion else { return }
         poolVersion = version
+        pool.flush()
         flushSync(notes: true, reads: .full)
         reloadView(from: pool)
     }
@@ -127,6 +134,9 @@ extension Workspace {
     func reloadKnowledgeAfterSettingsChange() {
         guard loaded, let pool else { return }
         pool.setShared(knowledgeScope.ownRoot, !isolated)
+        // A write still in flight may fail: wait for it, so flushSync hears of the failure and sends it again
+        // before the view is rebuilt from the pool.
+        pool.flush()
         flushSync(notes: true, reads: .full)
         poolVersion = pool.dataVersion()
         reloadView(from: pool)
@@ -135,6 +145,8 @@ extension Workspace {
     /// Rebuilds `notes`, `readIndex` and the scope from the pool: own-project paths become relative keys, other known
     /// projects' absolute ones, anything else is dropped. Isolated, only rows this project wrote are kept.
     private func reloadView(from pool: KnowledgePool) {
+        // Waits for the writes a sync just queued, so the failures peeked below include theirs.
+        pool.flush()
         let own = knowledgeScope.ownRoot
         let alone = isolated
         let known = alone ? [] : pool.knownProjects()
@@ -146,8 +158,12 @@ extension Workspace {
             return project == own || sharedRoots.contains(project)
         }
         knowledgeScope = scope
+        // Writes that failed again since the last sync are still owed: a delete keeps its note out of the view, an
+        // insert keeps its note in it (the pool does not have it), until a later sync gets them through.
+        let owedDeletes = pool.peekFailedDeletes(), owedInserts = pool.peekFailedInserts()
+        let local = Dictionary(self.notes.all.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
         var viewNotes: [Note] = [], noteBase: [UUID: Note] = [:]
-        for row in pool.loadNotes() where visible(row.project) {
+        for row in pool.loadNotes() where visible(row.project) && !owedDeletes.contains(row.id) {
             var n = row
             if case .file(let p) = row.subject {
                 guard let key = scope.key(forReal: p) else { continue }
@@ -155,6 +171,10 @@ extension Workspace {
             }
             viewNotes.append(n)
             noteBase[row.id] = row
+        }
+        let inView = Set(viewNotes.map(\.id))
+        for id in owedInserts where !inView.contains(id) && !owedDeletes.contains(id) {
+            if let n = local[id] { viewNotes.append(n) }
         }
         var viewReads: [ReadEntry] = [], readBase: [ReadGroup: [ReadEntry]] = [:]
         for row in pool.loadReads() where visible(row.project) {
@@ -202,6 +222,8 @@ extension Workspace {
                 if syncedNotes[p.id] == nil { upserts.append(p) } else { updates.append(p) }
             }
             deletes = syncedNotes.keys.filter { current[$0] == nil }
+            // A delete the pool rolled back is sent again, unless the note is back (then it is simply kept).
+            deletes += pool.takeFailedDeletes().filter { !deletes.contains($0) }
             syncedNotes = current
         }
         if reads != .none { groups = collectReadChanges(full: reads == .full) }
@@ -214,8 +236,12 @@ extension Workspace {
     }
 
     /// Records a read and queues its group for writing.
-    func recordRead(_ entry: ReadEntry) {
+    func recordRead(_ entry: ReadEntry, resolved: Bool = false) {
         refreshKnowledge()
+        // Indexed under the real-path key, so `link/x` and `real/x` are one file whatever a session typed. A caller
+        // that already resolved it (off the main actor) says so.
+        var entry = entry
+        if !resolved { entry.path = canonicalReadKey(entry.path) }
         readIndex.record(entry)
         markReadDirty(session: entry.session, key: entry.path)
         persistReads()
@@ -227,9 +253,20 @@ extension Workspace {
         persistGenerations()
     }
 
+    /// The key a read of `key` is indexed under: symlinks resolved, then own-relative or absolute as the scope keys it.
+    nonisolated static func canonicalReadKey(_ key: String, scope: KnowledgeScope) -> String {
+        guard let real = NotePath.realPath(scope.absolute(key)), let canonical = scope.key(forReal: real) else { return key }
+        return canonical
+    }
+
+    func canonicalReadKey(_ key: String) -> String { Self.canonicalReadKey(key, scope: knowledgeScope) }
+
+    /// The pool's path for a read key. Read keys are canonical (real-path) already, so this is only a join.
+    private func poolPath(forKey key: String) -> String { knowledgeScope.absolute(key) }
+
     private func poolForm(_ e: ReadEntry) -> ReadEntry {
         var p = e
-        p.path = knowledgeScope.absolute(e.path)
+        p.path = poolPath(forKey: e.path)
         if let local = session(e.session) { p.authorName = local.name; p.project = knowledgeScope.ownRoot }
         if p.project == nil { p.project = knowledgeScope.ownRoot }
         return p
@@ -258,12 +295,14 @@ extension Workspace {
         for group in dirty {
             let key = knowledgeScope.key(forReal: group.path) ?? group.path
             let entries = readIndex.readers(path: key).filter { $0.session == group.session }.map(poolForm)
+            // The group is stored under the resolved path (a link's reads join those of the real file).
+            let stored = group
             if entries.isEmpty {
-                if syncedReads[group] != nil { writes.append(ReadGroupWrite(session: group.session, path: group.path, entries: [])) }
-                syncedReads[group] = nil
-            } else if syncedReads[group] != entries {
-                writes.append(ReadGroupWrite(session: group.session, path: group.path, entries: entries))
-                syncedReads[group] = entries
+                if syncedReads[stored] != nil { writes.append(ReadGroupWrite(session: stored.session, path: stored.path, entries: [])) }
+                syncedReads[stored] = nil
+            } else if syncedReads[stored] != entries {
+                writes.append(ReadGroupWrite(session: stored.session, path: stored.path, entries: entries))
+                syncedReads[stored] = entries
             }
         }
         return writes

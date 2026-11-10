@@ -72,6 +72,7 @@ public enum AlreadyRead {
     /// sent come back as `told`.
     public static func block(for session: UUID, candidates: [String], index: ReadIndex, notes: NotesStore,
                              stamps: [String: FileStamp?], names: [UUID: String],
+                             canonical: (String) -> String = { $0 },
                              changedBy: (String, Date) -> Author? = { _, _ in nil },
                              display: (String) -> String = { $0 },
                              told: [String: ToldEntry], generation: Int = 0, timeZone: TimeZone = .current)
@@ -84,10 +85,10 @@ public enum AlreadyRead {
         var files: [SharedFile] = []
         var updates: [(String, ToldEntry)] = []
         var length = header.count
-        for path in candidates where seen.insert(path).inserted {
+        for path in candidates where seen.insert(canonical(path)).inserted {
             if files.count >= maxFiles { break }
             guard let stamp = stamps[path] ?? nil else { continue }
-            let all = index.readers(path: path)
+            let all = index.readers(path: canonical(path))
             // This session already holds the file as it is now (it read it, or it is a fork's copy of that read):
             // the text is in its context, so a line about another session's read would only repeat it.
             if all.contains(where: { $0.session == session && $0.stamp == stamp && $0.generation == generation }) { continue }

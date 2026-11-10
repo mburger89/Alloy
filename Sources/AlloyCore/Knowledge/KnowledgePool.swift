@@ -19,6 +19,7 @@ public final class KnowledgePool: @unchecked Sendable {
     private let failureLock = NSLock()
     private var failures = 0
     private var failedInserts: Set<UUID> = []
+    private var failedDeletes: Set<UUID> = []
     /// Reports a failure to the owner and counts it.
     private func onError(_ message: String) {
         failureLock.withLock { failures += 1 }
@@ -30,12 +31,13 @@ public final class KnowledgePool: @unchecked Sendable {
     private let db: OpaquePointer
     private let transient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
 
-    public init(url: URL, onError: @escaping @Sendable (String) -> Void) throws {
+    /// `busyTimeoutMS` is how long a statement waits for another connection's lock; the app keeps the default.
+    public init(url: URL, busyTimeoutMS: Int = 1000, onError: @escaping @Sendable (String) -> Void) throws {
         self.reportError = onError
         let fm = FileManager.default
         try fm.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         do {
-            db = try Self.open(url)
+            db = try Self.open(url, busyTimeoutMS: busyTimeoutMS)
         } catch let error as DBError where error.code == SQLITE_NOTADB || error.code == SQLITE_CORRUPT {
             // Not a usable database: move it aside and start over. Any other failure just throws.
             let stamp = Int(Date().timeIntervalSince1970)
@@ -45,7 +47,7 @@ public final class KnowledgePool: @unchecked Sendable {
                 if fm.fileExists(atPath: from.path) { try? fm.moveItem(at: from, to: to) }
             }
             onError("knowledge pool was corrupt (\(error)); moved aside as \(url.lastPathComponent).corrupt-\(stamp)")
-            db = try Self.open(url)
+            db = try Self.open(url, busyTimeoutMS: busyTimeoutMS)
         }
     }
 
@@ -56,7 +58,7 @@ public final class KnowledgePool: @unchecked Sendable {
         var code: Int32 = SQLITE_ERROR
     }
 
-    private static func open(_ url: URL) throws -> OpaquePointer {
+    private static func open(_ url: URL, busyTimeoutMS: Int) throws -> OpaquePointer {
         var handle: OpaquePointer?
         let rc = sqlite3_open_v2(url.path, &handle, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_FULLMUTEX, nil)
         guard rc == SQLITE_OK, let handle else {
@@ -65,7 +67,7 @@ public final class KnowledgePool: @unchecked Sendable {
             throw DBError(description: "open failed: \(msg)", code: rc)
         }
         do {
-            try exec(handle, "PRAGMA busy_timeout=1000")
+            try exec(handle, "PRAGMA busy_timeout=\(busyTimeoutMS)")
             try exec(handle, "PRAGMA journal_mode=WAL")
             try exec(handle, """
                 CREATE TABLE IF NOT EXISTS notes(id TEXT PRIMARY KEY, key TEXT NOT NULL, project TEXT, body BLOB NOT NULL);
@@ -100,11 +102,66 @@ public final class KnowledgePool: @unchecked Sendable {
                     throw error
                 }
             }
+            if version < 3 {
+                try exec(handle, "BEGIN IMMEDIATE")
+                do {
+                    try migrateReadPaths(handle)
+                    try exec(handle, "PRAGMA user_version = 3")
+                    try exec(handle, "COMMIT")
+                } catch {
+                    _ = try? exec(handle, "ROLLBACK")
+                    throw error
+                }
+            }
         } catch {
             sqlite3_close(handle)
             throw error
         }
         return handle
+    }
+
+    /// Version 3: read rows are keyed by the real path of the file. A row stored under a link's path moves to the
+    /// real path's group (one session, one file), merging with the group already there.
+    private static func migrateReadPaths(_ handle: OpaquePointer) throws {
+        struct Row { var session: String, path: String, project: String?, body: Data }
+        var all: [Row] = []
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(handle, "SELECT session, path, project, body FROM reads", -1, &stmt, nil) == SQLITE_OK else {
+            throw DBError(description: String(cString: sqlite3_errmsg(handle)))
+        }
+        while sqlite3_step(stmt) == SQLITE_ROW {
+            func text(_ i: Int32) -> String? { sqlite3_column_text(stmt, i).map { String(cString: $0) } }
+            let n = Int(sqlite3_column_bytes(stmt, 3))
+            let body = n > 0 ? Data(bytes: sqlite3_column_blob(stmt, 3), count: n) : Data()
+            all.append(Row(session: text(0) ?? "", path: text(1) ?? "", project: text(2), body: body))
+        }
+        sqlite3_finalize(stmt)
+        var byKey: [String: Row] = Dictionary(all.map { ($0.session + "\0" + $0.path, $0) }, uniquingKeysWith: { a, _ in a })
+        let decoder = JSONDecoder(), encoder = JSONEncoder()
+        for row in all {
+            guard let real = NotePath.realPath(row.path), real != row.path,
+                  var entries = try? decoder.decode([ReadEntry].self, from: row.body) else { continue }
+            for i in entries.indices { entries[i].path = real }
+            let target = row.session + "\0" + real
+            if let existing = byKey[target], let old = try? decoder.decode([ReadEntry].self, from: existing.body) {
+                entries = old + entries.filter { e in !old.contains(e) }
+            }
+            let body = try encoder.encode(entries)
+            byKey[row.session + "\0" + row.path] = nil
+            byKey[target] = Row(session: row.session, path: real, project: row.project, body: body)
+            try exec(handle, "DELETE FROM reads WHERE session = '\(row.session)' AND path = '\(row.path.replacingOccurrences(of: "'", with: "''"))'")
+            var ins: OpaquePointer?
+            guard sqlite3_prepare_v2(handle, "INSERT OR REPLACE INTO reads(session, path, project, body) VALUES(?, ?, ?, ?)", -1, &ins, nil) == SQLITE_OK else {
+                throw DBError(description: String(cString: sqlite3_errmsg(handle)))
+            }
+            sqlite3_bind_text(ins, 1, row.session, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+            sqlite3_bind_text(ins, 2, real, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+            if let p = row.project { sqlite3_bind_text(ins, 3, p, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self)) } else { sqlite3_bind_null(ins, 3) }
+            _ = body.withUnsafeBytes { sqlite3_bind_blob(ins, 4, $0.baseAddress, Int32(body.count), unsafeBitCast(-1, to: sqlite3_destructor_type.self)) }
+            let rc = sqlite3_step(ins)
+            sqlite3_finalize(ins)
+            guard rc == SQLITE_DONE else { throw DBError(description: String(cString: sqlite3_errmsg(handle))) }
+        }
     }
 
     private static func exec(_ handle: OpaquePointer, _ sql: String) throws {
@@ -283,6 +340,18 @@ public final class KnowledgePool: @unchecked Sendable {
         failureLock.withLock { defer { failedInserts = [] }; return failedInserts }
     }
 
+    /// As `takeFailedInserts()`, without clearing: for a view rebuild that must not lose them.
+    public func peekFailedInserts() -> Set<UUID> { failureLock.withLock { failedInserts } }
+
+    /// As `takeFailedDeletes()`, without clearing.
+    public func peekFailedDeletes() -> Set<UUID> { failureLock.withLock { failedDeletes } }
+
+    /// Notes whose deletion did not commit (the whole transaction was rolled back) since the last call; a delete is
+    /// safe to send again.
+    public func takeFailedDeletes() -> Set<UUID> {
+        failureLock.withLock { defer { failedDeletes = [] }; return failedDeletes }
+    }
+
     // MARK: Reads
 
     /// Every group's entries; file paths are absolute.
@@ -361,7 +430,7 @@ public final class KnowledgePool: @unchecked Sendable {
             }
             do { try run("BEGIN IMMEDIATE") } catch {
                 onError("knowledge pool apply failed: \(error)")
-                noteFailedInserts(Set(insertBatch.map(\.0.id)))
+                noteFailed(inserts: Set(insertBatch.map(\.0.id)), deletes: Set(deletes))
                 return
             }
             for (n, key, data) in insertBatch {
@@ -396,14 +465,16 @@ public final class KnowledgePool: @unchecked Sendable {
                 try? run("ROLLBACK")
                 onError("knowledge pool apply failed: \(error)")
                 failed = Set(insertBatch.map(\.0.id))
+                noteFailed(inserts: failed, deletes: Set(deletes))
+                return
             }
-            noteFailedInserts(failed)
+            noteFailed(inserts: failed, deletes: [])
         }
     }
 
-    private func noteFailedInserts(_ ids: Set<UUID>) {
-        guard !ids.isEmpty else { return }
-        failureLock.withLock { failedInserts.formUnion(ids) }
+    private func noteFailed(inserts: Set<UUID>, deletes: Set<UUID>) {
+        guard !inserts.isEmpty || !deletes.isEmpty else { return }
+        failureLock.withLock { failedInserts.formUnion(inserts); failedDeletes.formUnion(deletes) }
     }
 }
 

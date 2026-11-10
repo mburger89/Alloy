@@ -49,6 +49,8 @@ struct SessionRecord: Codable {
 @MainActor @Observable
 public final class Workspace {
     public let projectRoot: URL
+    /// How long the shared knowledge pool waits for another connection's write lock (tests shorten it).
+    let poolBusyTimeoutMS: Int
     /// The project's files for `@file` and quick open; refreshed on demand.
     public let fileIndex: FileIndex
     public private(set) var sessions: [Session] = []
@@ -365,7 +367,9 @@ public final class Workspace {
                 writeFile: @escaping @Sendable (Data, URL, () -> Bool) throws -> Bool = { try Workspace.writeKeepingMode($0, to: $1, abortIf: $2) },
                 home: URL = FileManager.default.homeDirectoryForCurrentUser,
                 autosaveClock: any AutosaveClock = SystemAutosaveClock(),
-                changes: @escaping (URL) -> any FileChangeSource = { FSEventsSource(root: $0) }) {
+                changes: @escaping (URL) -> any FileChangeSource = { FSEventsSource(root: $0) },
+                poolBusyTimeoutMS: Int = 1000) {
+        self.poolBusyTimeoutMS = poolBusyTimeoutMS
         self.autosaveClock = autosaveClock
         self.changeFactory = changes
         self.home = home
