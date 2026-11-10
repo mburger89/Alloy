@@ -157,7 +157,8 @@ private func ratio(_ a: RGB, _ b: RGB) -> Double {
 
         // Composer.
         add("composer.text", text, [.surface], 4.5)
-        add("composer.placeholder", text.opacity(0.45), [.surface], 4.5, .metalUI)
+        // The placeholder is the `prompt:` Text in `mutedInk` (it was MetalUI's default secondary before).
+        add("composer.placeholder", secondary, [.surface], 4.5)
         add("composer.border", .controlBorder, [.surface], 3)
         add("composer.queued", secondary, [.chatFill], 4.5)
 
@@ -186,6 +187,17 @@ private func ratio(_ a: RGB, _ b: RGB) -> Double {
         add("tabs.selected", text, [.background], 4.5, .metalUI)
         add("tabs.unselected", text.opacity(0.62), [.surfaceSecondary], 4.5, .metalUI)
         add("tabs.hover", text.opacity(0.62), [.surfaceSecondary, text.opacity(0.06)], 4.5, .metalUI)
+
+        // MetalUI's own `.secondary` text (`Theme.textSecondary`): the default of a text field placeholder, a progress
+        // caption, Markdown code captions and multi-line text. It can land on any fill, so every fill is audited.
+        let levelSurfaces: [(String, Color)] = [("surface", .surface), ("surfaceSecondary", .surfaceSecondary), ("background", .background),
+                                                ("sidebarFill", .sidebarFill), ("chatFill", .chatFill), ("panelFill", .panelFill),
+                                                ("markdownCodeFill", .markdownCodeFill)]
+        for (name, fill) in levelSurfaces { add("text.secondary.on.\(name)", Color.secondary, [fill], 4.5) }
+        // Segmented picker labels (MetalUI draws them in plain `textPrimary`, unselected and selected) and the unselected
+        // tab ink (textPrimary at 0.64) over the picker track.
+        add("picker.unselected.onTrack", text, [.surfaceSecondary], 4.5, .metalUI)
+        add("tabs.unselected.onTrack", text.opacity(0.64), [.surfaceSecondary], 4.5, .metalUI)
 
         // The Inline | Side by side picker (MetalUI segmented `Picker`): labels on the track and on the selected pill, and
         // the pill against the track.
@@ -253,7 +265,8 @@ private func ratio(_ a: RGB, _ b: RGB) -> Double {
             let pass = value >= pair.minimum
             print(String(format: "AUDIT|%@|%@|%.2f|%.1f|%@|%@", dark ? "dark" : "light", pair.id, value, pair.minimum,
                          pair.owner == .alloy ? "alloy" : "metalui", pass ? "ok" : "FAIL"))
-            if !pass && pair.owner == .alloy { failures.append("\(pair.id) \(String(format: "%.2f", value)) < \(pair.minimum)") }
+            // The bare MetalUI theme carries no `textSecondary` slot; the built-in audit below covers it.
+            if !pass && pair.owner == .alloy && !pair.id.hasPrefix("text.secondary.on.") { failures.append("\(pair.id) \(String(format: "%.2f", value)) < \(pair.minimum)") }
         }
         #expect(failures.isEmpty, "\(dark ? "dark" : "light"): \(failures.joined(separator: "; "))")
     }
@@ -293,6 +306,8 @@ private func ratio(_ a: RGB, _ b: RGB) -> Double {
     /// Ruling: on the *selected* session row (`sidebar.selected.*`), badges are text on the highlight fill `sessionSelection`,
     /// which the user's decision names, so they stay in the 3:1 tier. Badges and chips on ordinary rows stay at 4.5:1.
     static func relaxedForBuiltIn(_ id: String) -> Bool {
+        // MetalUI `.secondary` on the recessed picker track: nothing in Alloy draws it there, so the tier is 3:1.
+        if id == "text.secondary.on.surfaceSecondary" { return true }
         if id.hasPrefix("syntax.comment.") { return true }
         if id.hasPrefix("syntax.") {
             return ["added", "removed", "panelAdded", "panelRemoved", "selection", "find", "findCurrent"].contains { id.hasSuffix(".\($0)") }
@@ -315,7 +330,7 @@ private func ratio(_ a: RGB, _ b: RGB) -> Double {
         let ids = Set(Self.pairs().map(\.id))
         #expect(ids.count > 250)
         for must in ["sidebar.selected.secondary", "chat.shell.title", "syntax.keyword.panelRemoved", "composer.placeholder",
-                     "panel.code.gutter", "coordination.mark.error", "coordination.notice.warning.text", "tabs.hover", "disabled.onSurface", "settings.secondary"] {
+                     "panel.code.gutter", "text.secondary.on.surface", "coordination.mark.error", "coordination.notice.warning.text", "tabs.hover", "disabled.onSurface", "settings.secondary"] {
             #expect(ids.contains(must), "\(must) is audited")
         }
     }

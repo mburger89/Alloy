@@ -192,6 +192,10 @@ extension Color {
     /// The dot for edits made outside Alloy.
     static let outsideAuthor = Color(OutsideAuthorInk.self)
     static let mutedInk = Color(MutedInk.self)
+    /// MetalUI's own secondary text level (`Theme.textSecondary`), for the `textSecondary` theme slot only.
+    static let metalUISecondary = Color.secondary
+    /// MetalUI's tertiary text level as its default derivation (`textPrimary` at 0.306), for the `textTertiary` slot only.
+    static let metalUITertiary = Color.primary.opacity(0.306)
     static let sessionSelection = Color(SessionSelectionFill.self)
     static let controlBorder = Color(ControlBorder.self)
     static let codeSelectionFill = Color(CodeSelectionFill.self)

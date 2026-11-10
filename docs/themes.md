@@ -68,6 +68,8 @@ Every slot name a theme file can set, with its purpose. MetalUI tokens come firs
 | `accent` | The accent: selection, focus, toggles and the sidebar plus button. |
 | `separator` | Hairline separators between panes and rows. |
 | `textPrimary` | Primary text everywhere; secondary levels are derived from it. |
+| `textSecondary` | Secondary text drawn by MetalUI controls: placeholders, captions. Optional; derived from textPrimary when absent. |
+| `textTertiary` | Tertiary text drawn by MetalUI controls. Optional; derived from textPrimary when absent. |
 | `scrollIndicator` | The scroll indicator thumb (usually translucent). |
 | `scrim` | The dimming behind modal presentations (usually translucent). |
 | `thinkingTint` | Background of thinking blocks in the chat. |
@@ -147,9 +149,14 @@ panel and sidebar shades, author markers) were chosen to pass and are not listed
 fill at 18% where the palette allows it, and lower (Solarized Dark 10%, Solarized Light 10%, One Dark 10%) where a stronger
 tint would push a published ink or text colour under its minimum. Solarized follows its own design: base03 (dark) or base3 (light) are the content backgrounds of every surface, and base02 or base2 appear only in highlight fills (selection). Solarized Dark's base0 text is 4.75:1 on base03 but only about 3.95 to 4.27:1 on the block tints behind chat titles, which is why the in-palette base1 is used for its `textPrimary`. Alloy Dark and Alloy Light needed no changes.
 
+### Text levels
+
+`textSecondary` and `textTertiary` are MetalUI's own secondary and tertiary text (placeholders, captions, Markdown code captions). Both are optional: a theme that leaves them out gets MetalUI's derivation from `textPrimary`. Every built-in sets both. Tertiary text is drawn nowhere that Alloy audits, so the tertiary values are the palettes' own muted colours and are not adjusted: Dracula comment #6272A4, Solarized Dark base01 #586E75, Solarized Light base1 #93A1A1, One Dark comment #5C6370; Alloy Dark and Alloy Light use #7B8294 and #7D838E. Secondary is audited at 4.5:1 on the background, surface, sidebar, chat, panel and Markdown code fills, and at 3:1 on the segmented-picker track (`surfaceSecondary`), where Alloy draws no secondary text. Alloy Dark and Alloy Light use their `mutedInk` (#C2C8D3, #4E545F) at 4.5:1 throughout, Solarized Dark uses base0 #839496 as published, and the three adjustments are listed under Dracula, Solarized Light and One Dark.
+
 ### Dracula
 
 - `questionInk`: #BD93F9 → #E2CFFC
+- `textSecondary`: #6272A4 → #97A2C3
 - `errorInk`: #FF5555 → #FF8C8C
 - `syntax.comment`: #6272A4 → #97A2C3
 - `sessionColors[6]`: #FF5555 → #FF5D5D
@@ -186,6 +193,7 @@ tint would push a published ink or text colour under its minimum. Solarized foll
 - `warningInk`: #B58900 → #826100
 - `surfaceSecondary`: #D3D3C5 → #C0C4BB (halfway between base2 and in-palette base1; the picker track and unselected tabs now read darker than the page and the selected thumb, both base3, by 1.64:1)
 - `textPrimary`: #657B83 → #56696F
+- `textSecondary`: #93A1A1 → #5F6E6E (base1 darkened until it reads on the page; the picker track is the tightest fill at 3.0:1)
 - `linkInk`: #268BD2 → #1D6AA0
 - `syntax.keyword`: #859900 → #627000
 - `syntax.string`: #2AA198 → #1F756F
@@ -211,6 +219,7 @@ tint would push a published ink or text colour under its minimum. Solarized foll
 
 - `questionInk`: #C678DD → #DDAEEA
 - `errorInk`: #E06C75 → #E5848B
+- `textSecondary`: #7F848E → #9DA1A9
 - `syntax.keyword`: #C678DD → #CC85E0
 - `syntax.comment`: #5C6370 → #9198A5
 - `syntax.property`: #E06C75 → #E5848B

@@ -22,6 +22,8 @@ public enum ThemeSlots {
         ThemeSlot(name: "accent", purpose: "The accent: selection, focus, toggles and the sidebar plus button.", color: Color(ColorToken.accent), apply: { theme, rgba in theme.accent = rgba.hsla }),
         ThemeSlot(name: "separator", purpose: "Hairline separators between panes and rows.", color: Color(ColorToken.separator), apply: { theme, rgba in theme.separator = rgba.hsla }),
         ThemeSlot(name: "textPrimary", purpose: "Primary text everywhere; secondary levels are derived from it.", color: Color(ColorToken.textPrimary), apply: { theme, rgba in theme.textPrimary = rgba.hsla }),
+        ThemeSlot(name: "textSecondary", purpose: "Secondary text drawn by MetalUI controls: placeholders, captions. Optional; derived from textPrimary when absent.", color: Color.metalUISecondary, apply: { theme, rgba in theme.textSecondary = rgba.hsla }),
+        ThemeSlot(name: "textTertiary", purpose: "Tertiary text drawn by MetalUI controls. Optional; derived from textPrimary when absent.", color: Color.metalUITertiary, apply: { theme, rgba in theme.textTertiary = rgba.hsla }),
         ThemeSlot(name: "scrollIndicator", purpose: "The scroll indicator thumb (usually translucent).", color: Color(ColorToken.scrollIndicator), apply: { theme, rgba in theme.scrollIndicator = rgba.hsla }),
         ThemeSlot(name: "scrim", purpose: "The dimming behind modal presentations (usually translucent).", color: Color(ColorToken.scrim), apply: { theme, rgba in theme.scrim = rgba.hsla }),
     ]

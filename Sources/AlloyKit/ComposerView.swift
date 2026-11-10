@@ -85,7 +85,7 @@ struct ComposerView: Component {
                 }
             }
             HStack(alignment: .bottom, spacing: Pixels(8)) {
-                TextField("Message Claude", text: draft, selectedOffsets: caret, axis: .vertical)
+                TextField("Message Claude", text: draft, selectedOffsets: caret, prompt: Text("Message Claude").foregroundColor(.mutedInk), axis: .vertical)
                     .lineLimit(1...8)
                     .accessibilityIdentifier("composer")
                     .focused($fieldFocused)

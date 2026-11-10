@@ -49,7 +49,9 @@ import Testing
         let themed = try themedResolve(colors, theme: applied, dark: dark)
         let names = ThemeSlots.all.map(\.name) + (1...8).map { "session\($0)" }
         #expect(plain.count == themed.count)
-        for (index, name) in names.enumerated() where !close(plain[index], themed[index]) {
+        // textSecondary and textTertiary are the only slots that deliberately differ from the plain window: the plain
+        // window derives them from textPrimary at an opacity, the built-in sets them exactly.
+        for (index, name) in names.enumerated() where !["textSecondary", "textTertiary"].contains(name) && !close(plain[index], themed[index]) {
             Issue.record("\(dark ? "dark" : "light") \(name): \(plain[index]) vs \(themed[index])")
         }
     }
@@ -65,6 +67,23 @@ import Testing
         window.tick()
         window.tick()
         return box.colors
+    }
+
+    @Test func textLevelSlotsAreOptionalAndReachTheTheme() throws {
+        var base = try resolve("alloy-dark")
+        let plain = ThemeApplier.theme(for: base)
+        #expect(plain.textSecondary != nil && plain.textTertiary != nil)
+        base.colors["textSecondary"] = nil
+        base.colors["textTertiary"] = nil
+        let derived = ThemeApplier.theme(for: base)
+        #expect(derived.textSecondary == nil && derived.textTertiary == nil, "absent slots keep MetalUI's derivation")
+        base.colors["textSecondary"] = ThemeRGBA(hex: "#112233")
+        base.colors["textTertiary"] = ThemeRGBA(hex: "#445566")
+        let set = ThemeApplier.theme(for: base)
+        #expect(set.textSecondary == ThemeRGBA(hex: "#112233")!.hsla)
+        #expect(set.textTertiary == ThemeRGBA(hex: "#445566")!.hsla)
+        let resolved = try themedResolve([Color.secondary], theme: set, dark: true)
+        #expect(abs(resolved[0].red - 0x11 / 255.0) < 0.01 && abs(resolved[0].blue - 0x33 / 255.0) < 0.01)
     }
 
     @Test func applierSetsKeysTokensAndSyntax() throws {

@@ -14,6 +14,8 @@ extension BuiltInThemes {
     "accent": "#2563EB",
     "separator": "#C8CDD6",
     "textPrimary": "#14181F",
+    "textSecondary": "#4E545F",
+    "textTertiary": "#7D838E",
     "scrollIndicator": "#00000059",
     "scrim": "#0B102052",
     "thinkingTint": "#EEE7FB",

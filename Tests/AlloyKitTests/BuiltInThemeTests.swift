@@ -48,6 +48,17 @@ import Testing
         #expect(try hex("dracula", "syntax.comment") == "#97A2C3")
         #expect(try hex("solarized-dark", "textPrimary") == "#93A1A1")
         #expect(try hex("solarized-light", "textPrimary") == "#56696F")
+        // Text levels: palette muted colours, adjusted where the audit needs it.
+        #expect(try hex("dracula", "textSecondary") == "#97A2C3")
+        #expect(try hex("dracula", "textTertiary") == "#6272A4")
+        #expect(try hex("solarized-dark", "textSecondary") == "#839496")
+        #expect(try hex("solarized-dark", "textTertiary") == "#586E75")
+        #expect(try hex("solarized-light", "textSecondary") == "#5F6E6E")
+        #expect(try hex("solarized-light", "textTertiary") == "#93A1A1")
+        #expect(try hex("one-dark", "textSecondary") == "#9DA1A9")
+        #expect(try hex("one-dark", "textTertiary") == "#5C6370")
+        #expect(try hex("alloy-dark", "textSecondary") == hex("alloy-dark", "mutedInk"))
+        #expect(try hex("alloy-light", "textSecondary") == hex("alloy-light", "mutedInk"))
     }
 
     @Test func docsListEverySlotAndCredit() throws {
@@ -63,6 +74,9 @@ import Testing
         #expect(docs.contains("`syntax.comment`: #6272A4 → #97A2C3"))
         #expect(docs.contains("`textPrimary`: #839496 → #93A1A1 (in-palette: base1)"))
         #expect(docs.contains("`textPrimary`: #657B83 → #56696F"))
+        #expect(docs.contains("`textSecondary`: #6272A4 → #97A2C3"))
+        #expect(docs.contains("`textSecondary`: #93A1A1 → #5F6E6E"))
+        #expect(docs.contains("`textSecondary`: #7F848E → #9DA1A9"))
     }
 
     /// Every `slot: old → new` line under a theme's heading in the docs names the value the theme file really uses.
