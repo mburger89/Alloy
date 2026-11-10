@@ -1,5 +1,6 @@
 import AlloyCore
 import AlloyKit
+import AppKit
 import Foundation
 import MetalUI
 
@@ -27,10 +28,14 @@ func choose(_ arguments: [String]) -> (choice: ProjectChoice, reason: String?) {
 @MainActor
 func makeWorkspace(root: URL, file: String?) -> Workspace? {
     guard case .open(let checked, _) = choose([root.path]).choice else { return nil }
-    settings.lastProjectPath = checked.path
-    try? settings.save(appSupport: appSupport)
-    let workspace = Workspace(projectRoot: checked, appSupport: appSupport, settings: settings,
+    // The controller's settings are the current ones (a theme chosen on the launcher included), not the stale copy
+    // loaded at startup.
+    let current = themeController.settingsForNewWorkspace(lastProjectPath: checked.path)
+    try? current.save(appSupport: appSupport)
+    settings = current
+    let workspace = Workspace(projectRoot: checked, appSupport: appSupport, settings: current,
                               loginPATH: { ClaudeLocator.loginShell().path })
+    themeController.bind(workspace)
     workspace.startWatching()
     workspace.openFilePath = file
     return workspace
@@ -38,6 +43,11 @@ func makeWorkspace(root: URL, file: String?) -> Workspace? {
 
 // AppKit and Metal, text through CoreText. Closing the window quits.
 let app = try App()
+// The theme is installed on the app before any window opens (the launcher included), so there is no flash of the
+// default look. The controller lives for the whole process: it watches the themes folder.
+let themeController = ThemeController(appSupport: appSupport, settings: settings, host: app,
+                                      watcher: FSEventsSource(root: ThemeLibrary.userDirectory(appSupport: appSupport)))
+themeController.folderOpener = { NSWorkspace.shared.open($0) }
 let arguments = Array(CommandLine.arguments.dropFirst())
 let initial = choose(arguments)
 let model: LauncherModel
@@ -47,7 +57,7 @@ if case .open(let root, let file) = initial.choice, let workspace = makeWorkspac
     model = LauncherModel()
 }
 let window = try app.openWindow(title: "Alloy", size: alloyWindowSize, minSize: Size(width: Pixels(900), height: Pixels(500))) {
-    launcherRoot(model: model)
+    launcherRoot(model: model, themes: themeController)
 }
 
 // Closing the window or quitting stops every claude process first.

@@ -54,10 +54,10 @@ public func installWindowShutdown(on window: Window, model: LauncherModel) {
 }
 
 @MainActor
-public func launcherRoot(model: LauncherModel) -> some Element {
+public func launcherRoot(model: LauncherModel, themes: ThemeController? = nil) -> some Element {
     VStack(spacing: 0) {
         if let workspace = model.workspace {
-            AlloyScreen(workspace: workspace)
+            AlloyScreen(workspace: workspace, themes: themes)
         } else {
             ChooseProjectView(model: model)
         }

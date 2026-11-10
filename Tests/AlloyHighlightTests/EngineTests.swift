@@ -126,20 +126,19 @@ private func same(_ a: [(Range<Int>, SyntaxToken)], _ b: [(Range<Int>, SyntaxTok
     }
 
     @Test func unknownLanguagePlain() {
-        #expect(FenceHighlighter.light.highlight(code: "let x = 1", language: "objc", isClosed: true).isEmpty)
-        #expect(FenceHighlighter.light.highlight(code: "let x = 1", language: nil, isClosed: true).isEmpty)
+        #expect(FenceHighlighter.shared.highlight(code: "let x = 1", language: "objc", isClosed: true).isEmpty)
+        #expect(FenceHighlighter.shared.highlight(code: "let x = 1", language: nil, isClosed: true).isEmpty)
     }
 
     @Test func fenceHighlighterSwift() {
-        let light = FenceHighlighter.light.highlight(code: "let x = 1", language: "swift", isClosed: true)
+        let light = FenceHighlighter.shared.highlight(code: "let x = 1", language: "swift", isClosed: true)
         #expect(light.contains { $0.range == 0..<3 })
         #expect(light.contains { $0.range == 8..<9 })
-        let dark = FenceHighlighter.dark.highlight(code: "let x = 1", language: "swift", isClosed: true)
-        #expect(dark.first?.style != light.first?.style)
+        #expect(light.first?.style.foreground != nil)
     }
 
     @Test func fenceCaps() {
-        let fence = FenceHighlighter.light
+        let fence = FenceHighlighter.shared
         // 2000 lines with a trailing newline is 2000 lines; one more is over.
         #expect(!fence.highlight(code: String(repeating: "let x = 1\n", count: 2_000), language: "swift", isClosed: true).isEmpty)
         #expect(fence.highlight(code: String(repeating: "let x = 1\n", count: 2_001), language: "swift", isClosed: true).isEmpty)

@@ -1,3 +1,4 @@
+import AlloyCore
 import AlloyHighlight
 @testable import AlloyKit
 import Foundation
@@ -81,7 +82,7 @@ private func ratio(_ a: RGB, _ b: RGB) -> Double {
             out.append(Pair(id: id, foreground: fg, layers: layers, minimum: min, owner: owner))
         }
         let text = Color.textPrimary, secondary = Color.mutedInk
-        let sessions = (0..<8).map { Color.sessionColor($0) }
+        let sessions = (0..<12).map { Color.sessionColor($0) }
         let authors: [(String, Color)] = [("user", .userAuthor), ("outside", .outsideAuthor)]
             + sessions.enumerated().map { ("session\($0.offset)", $0.element) }
 
@@ -219,12 +220,17 @@ private func ratio(_ a: RGB, _ b: RGB) -> Double {
         return out
     }
 
-    private static func resolve(_ pairs: [Pair], dark: Bool) throws -> [(Pair, Double)] {
+    private static func resolve(_ pairs: [Pair], dark: Bool, theme: Theme? = nil) throws -> [(Pair, Double)] {
         var all: [Color] = []
         for p in pairs { all.append(p.foreground); all.append(contentsOf: p.layers) }
         let box = ResolvedBox()
         let window = try TestWindow(size: Size(width: Pixels(100), height: Pixels(100)), colorScheme: dark ? .dark : .light) {
             ColorProbe(colors: all, box: box)
+        }
+        if let theme {
+            if dark { window.window.darkTheme = theme } else { window.window.lightTheme = theme }
+            window.window.setNeedsRedraw()
+            window.tick()
         }
         window.tick()
         #expect(box.colors.count == all.count)
@@ -250,6 +256,50 @@ private func ratio(_ a: RGB, _ b: RGB) -> Double {
             if !pass && pair.owner == .alloy { failures.append("\(pair.id) \(String(format: "%.2f", value)) < \(pair.minimum)") }
         }
         #expect(failures.isEmpty, "\(dark ? "dark" : "light"): \(failures.joined(separator: "; "))")
+    }
+
+    /// Every built-in theme, rendered in a window whose scheme slot holds that theme, passes the same pairs and minimums.
+    @Test(arguments: ["dracula", "alloy-dark", "alloy-light", "solarized-dark", "solarized-light", "one-dark"])
+    func everyBuiltInMeetsWCAGAA(themeID: String) throws {
+        let library = ThemeLibrary(builtIns: BuiltInThemes.all)
+        let resolved = try #require(library.resolve(themeID))
+        let dark = resolved.appearance == .dark
+        let applied = ThemeApplier.theme(for: resolved)
+        // Sentinel: the window really renders this theme (its chatFill is the theme's).
+        let box = ResolvedBox()
+        let probe = try TestWindow(size: Size(width: Pixels(100), height: Pixels(100)), colorScheme: dark ? .dark : .light) {
+            ColorProbe(colors: [.chatFill], box: box)
+        }
+        if dark { probe.window.darkTheme = applied } else { probe.window.lightTheme = applied }
+        probe.window.setNeedsRedraw()
+        probe.tick()
+        probe.tick()
+        let expected = try #require(resolved.colors["chatFill"])
+        let seen = try #require(box.colors.first)
+        #expect(abs(Double(seen.red) - expected.r) < 0.01 && abs(Double(seen.green) - expected.g) < 0.01
+                && abs(Double(seen.blue) - expected.b) < 0.01, "\(themeID) chatFill is applied")
+        let results = try Self.resolve(Self.pairs(), dark: dark, theme: applied)
+        var failures: [String] = []
+        for (pair, value) in results where pair.owner == .alloy {
+            let relaxed = !themeID.hasPrefix("alloy-") && Self.relaxedForBuiltIn(pair.id)
+            let minimum = relaxed ? min(pair.minimum, 3) : pair.minimum
+            if value < minimum { failures.append("\(pair.id) \(String(format: "%.2f", value)) < \(minimum)") }
+        }
+        #expect(failures.isEmpty, "\(themeID): \(failures.joined(separator: "; "))")
+    }
+
+    /// The built-in themes' tiered rule. Comments, and text or syntax drawn on a highlight fill (selection, find matches, diff
+    /// rows), need 3:1; everything else keeps its 4.5:1 (or 3:1 for glyphs) from `pairs()`.
+    /// Ruling: on the *selected* session row (`sidebar.selected.*`), badges are text on the highlight fill `sessionSelection`,
+    /// which the user's decision names, so they stay in the 3:1 tier. Badges and chips on ordinary rows stay at 4.5:1.
+    static func relaxedForBuiltIn(_ id: String) -> Bool {
+        if id.hasPrefix("syntax.comment.") { return true }
+        if id.hasPrefix("syntax.") {
+            return ["added", "removed", "panelAdded", "panelRemoved", "selection", "find", "findCurrent"].contains { id.hasSuffix(".\($0)") }
+        }
+        if id.hasPrefix("sidebar.selected.") || id.hasPrefix("panel.code.authorRun.") || id == "sidebar.files.active" { return true }
+        return ["code.gutter.added", "code.gutter.removed", "code.text.added", "code.text.removed", "panel.code.added",
+                "panel.code.removed", "panel.code.selection", "panel.code.find", "panel.code.findCurrent"].contains(id)
     }
 
     @Test func theMathIsWCAG() {

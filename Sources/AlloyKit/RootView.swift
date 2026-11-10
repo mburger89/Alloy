@@ -10,9 +10,9 @@ public let alloyFilePanelIdealWidth = Pixels(360)
 
 /// The window's one root element, rebuilt every frame: sidebar | chat | file panel.
 @MainActor
-public func rootView(workspace: Workspace) -> some Element {
+public func rootView(workspace: Workspace, themes: ThemeController? = nil) -> some Element {
     VStack(spacing: 0) {
-        AlloyScreen(workspace: workspace)
+        AlloyScreen(workspace: workspace, themes: themes)
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity)
     .background(.chatFill)
@@ -20,6 +20,8 @@ public func rootView(workspace: Workspace) -> some Element {
 
 struct AlloyScreen: Component {
     let workspace: Workspace
+    /// The theme controller Settings picks themes through (nil in tests that don't exercise themes).
+    var themes: ThemeController?
     /// Per-session UI state, kept here so it outlives the chat column's per-session identity.
     @State var store = SessionUIStore()
     /// The code panel's per-document state and highlight engine.
@@ -55,7 +57,7 @@ struct AlloyScreen: Component {
                     CoordinationNotice(workspace: workspace)
                     ZStack {
                         ChatView(workspace: workspace, store: store)
-                        if showSettings { SettingsView(workspace: workspace, close: { settingsShown.wrappedValue = false }) }
+                        if showSettings { SettingsView(workspace: workspace, themes: themes, close: { settingsShown.wrappedValue = false }) }
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }

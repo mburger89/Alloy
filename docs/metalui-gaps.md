@@ -164,3 +164,12 @@ Gaps G1-G7 come from spec section 5. Each was sent to the MetalUI session. Stopg
 
 ## G26: choose a menu item by accessibility identifier in tests (forwarded)
 `TestWindow.chooseMenuItem(_:)` takes only a title. With G24, tests find items by id but must still choose by title. Also asked (low priority): `.help(String?)`, where nil means no tooltip.
+
+## G27: independent secondary and tertiary text levels (forwarded)
+MetalUI derives its secondary and tertiary text from one source, so a theme cannot set them separately. Forwarded; in progress upstream as PR #259.
+
+## G28: the segmented Picker thumb needs an edge (forwarded)
+The thumb is painted in `surface`, so on a theme whose page equals `surface` (Solarized Light) the selected segment vanishes and the control reads inverted. Asked for a hairline stroke or shadow, as on AppKit.
+
+## Note: MetalUI-internal colours with no token
+These are hard-coded white inside MetalUI and cannot follow a theme: the `Toggle` `.switch` knob, the `Toggle` `.button` on-label, and `borderedProminent` button labels. Alloy uses none of them today, but they would break on a theme with a light accent.

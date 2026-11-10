@@ -1,6 +1,6 @@
 # Alloy: themes (design)
 
-Status: written; awaiting the user's review of the settled calls. Extends the Alloy design (`2026-11-07-alloy-design.md`) and depends on Plan 5a's Settings view and Alloy MCP server (`2026-11-09-alloy-shared-knowledge-design.md`).
+Status: approved by the user (2026-11-09), including the calls in §6.3a. Built before Plan 6. Extends the Alloy design (`2026-11-07-alloy-design.md`) and depends on Plan 5a's Settings view and Alloy MCP server (`2026-11-09-alloy-shared-knowledge-design.md`).
 
 ## 1. Why
 
@@ -104,7 +104,7 @@ Each slot has a one-line purpose, used by the theme tools and the docs. Unknown 
   These tools only touch Alloy's own theme state and themes folder, so like the notes tools they are allowed without asking. They follow Plan 5a's "Ask before sessions use shared notes" setting, extended to "Ask before sessions use Alloy's tools".
 - **Preview bar:** "Previewing <name> — Keep · Discard". Keep saves the theme, if it isn't saved yet, and selects it. Discard restores the user's theme. Closing the session also discards an unsaved preview.
 
-### 6.3a Calls settled after the builder check (my calls; check these)
+### 6.3a Calls settled after the builder check (approved by the user, 2026-11-09)
 
 **Saving a theme that fails the contrast check.**
 - `theme_save` always writes the file and returns the contrast findings, so Claude fixes them before it calls save.

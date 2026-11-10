@@ -124,6 +124,36 @@ struct CurrentFindMatchFill: ThemeColorKey {
     static let defaultValue = Color(light: Color(hex: 0xFFDD9E), dark: Color(hex: 0x4D3E12))
 }
 
+/// Session hues. Dark values from the mockup; light variants darkened to at least 3:1 on the light sidebar fill.
+struct SessionColor1: ThemeColorKey {
+    static let defaultValue = Color(light: Color(hex: 0x1F72D6), dark: Color(hex: 0x5AA9FF))
+}
+struct SessionColor2: ThemeColorKey {
+    static let defaultValue = Color(light: Color(hex: 0xB85F00), dark: Color(hex: 0xF2A65A))
+}
+struct SessionColor3: ThemeColorKey {
+    static let defaultValue = Color(light: Color(hex: 0x2E7D32), dark: Color(hex: 0x8BD17C))
+}
+struct SessionColor4: ThemeColorKey {
+    static let defaultValue = Color(light: Color(hex: 0x7A4FD6), dark: Color(hex: 0xC3A8FF))
+}
+struct SessionColor5: ThemeColorKey {
+    static let defaultValue = Color(light: Color(hex: 0xC2307E), dark: Color(hex: 0xF08FC0))
+}
+struct SessionColor6: ThemeColorKey {
+    static let defaultValue = Color(light: Color(hex: 0x00796F), dark: Color(hex: 0x5FD4C8))
+}
+struct SessionColor7: ThemeColorKey {
+    static let defaultValue = Color(light: Color(hex: 0x8A7400), dark: Color(hex: 0xE6D35A))
+}
+struct SessionColor8: ThemeColorKey {
+    static let defaultValue = Color(light: Color(hex: 0xC62F3B), dark: Color(hex: 0xF07178))
+}
+struct SessionColor9: ThemeColorKey { static let defaultValue = SessionColor1.defaultValue }
+struct SessionColor10: ThemeColorKey { static let defaultValue = SessionColor2.defaultValue }
+struct SessionColor11: ThemeColorKey { static let defaultValue = SessionColor3.defaultValue }
+struct SessionColor12: ThemeColorKey { static let defaultValue = SessionColor4.defaultValue }
+
 /// Opacity of the background that marks the text one author wrote on a line more than one author wrote on.
 let authorRunAlpha = 0.28
 
@@ -168,22 +198,17 @@ extension Color {
     static let findMatchFill = Color(FindMatchFill.self)
     static let currentFindMatchFill = Color(CurrentFindMatchFill.self)
 
-    /// Dark values from the mockup; light variants darkened to at least 3:1 on the light sidebar fill.
-    private static let sessionPalette: [Color] = [
-        Color(light: Color(hex: 0x1F72D6), dark: Color(hex: 0x5AA9FF)),
-        Color(light: Color(hex: 0xB85F00), dark: Color(hex: 0xF2A65A)),
-        Color(light: Color(hex: 0x2E7D32), dark: Color(hex: 0x8BD17C)),
-        Color(light: Color(hex: 0x7A4FD6), dark: Color(hex: 0xC3A8FF)),
-        Color(light: Color(hex: 0xC2307E), dark: Color(hex: 0xF08FC0)),
-        Color(light: Color(hex: 0x00796F), dark: Color(hex: 0x5FD4C8)),
-        Color(light: Color(hex: 0x8A7400), dark: Color(hex: 0xE6D35A)),
-        Color(light: Color(hex: 0xC62F3B), dark: Color(hex: 0xF07178)),
-    ]
-
-    /// One of eight distinct session hues; `index` is taken mod 8 (negative indices wrap too).
+    /// One of twelve session hues (`SessionColor1…12`); `index` is taken mod 12 (negative indices wrap too). Keys 9-12
+    /// repeat 1-4 until a theme sets them.
     static func sessionColor(_ index: Int) -> Color {
-        sessionPalette[((index % 8) + 8) % 8]
+        sessionColors[((index % 12) + 12) % 12]
     }
+
+    private static let sessionColors: [Color] = [
+        Color(SessionColor1.self), Color(SessionColor2.self), Color(SessionColor3.self), Color(SessionColor4.self),
+        Color(SessionColor5.self), Color(SessionColor6.self), Color(SessionColor7.self), Color(SessionColor8.self),
+        Color(SessionColor9.self), Color(SessionColor10.self), Color(SessionColor11.self), Color(SessionColor12.self),
+    ]
 }
 
 extension CodeTheme {

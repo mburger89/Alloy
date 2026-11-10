@@ -81,6 +81,21 @@ Coordination between sessions
   dismissed unless it escalates.
 - Settings: "Ask before sessions use Alloy's tools" covers all seven Alloy tools.
 
+## Themes
+
+Alloy ships six built-in themes: Dracula (the default), Alloy Dark, Alloy Light, Solarized Dark, Solarized Light and
+One Dark. Pick one in Settings (the gear in the sidebar): "One theme" uses a single theme always, "Match system"
+uses a light and a dark theme that follow the system appearance. A pick repaints at once and never touches your
+sessions.
+
+Your own themes are `*.json` files in the user themes folder, which Alloy watches, so an edit applies live:
+
+- `~/Library/Application Support/Alloy/Themes`
+- or `$ALLOY_DATA_DIR/Alloy/Themes` when `ALLOY_DATA_DIR` is set
+
+"Open themes folder" in Settings opens it. The file format and every colour slot are in [docs/themes.md](docs/themes.md).
+Making themes with Claude (`/theme`) is coming later.
+
 ## Requirements
 
 - macOS 14 or later.

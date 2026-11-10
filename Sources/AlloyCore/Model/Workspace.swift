@@ -290,9 +290,9 @@ public final class Workspace {
     @ObservationIgnored private var diffCache: [String: (version: Int, lines: [DiffLine])] = [:]
     @ObservationIgnored private var recordIndex: [UUID: EditRecord] = [:]
 
-    @ObservationIgnored private let appSupport: URL
+    @ObservationIgnored package let appSupport: URL
     public private(set) var settings: AlloySettings
-    @ObservationIgnored private var settingsGeneration = 0
+    @ObservationIgnored package private(set) var settingsGeneration = 0
     /// The `claude` path auto-detection finds, once `detectClaude()` has run.
     public private(set) var detectedClaudePath: String?
     @ObservationIgnored private let locate: @Sendable (String?) throws -> URL
@@ -310,6 +310,8 @@ public final class Workspace {
     @ObservationIgnored private var queued: [UUID: [(message: OutgoingMessage, uuid: UUID, context: String?, pending: PendingTold?)]] = [:]
     /// Sessions that must relaunch at their next idle point because a launch setting changed.
     @ObservationIgnored private var pendingRelaunch: Set<UUID> = []
+    /// Whether any session is waiting to be relaunched at its next idle point.
+    package var hasPendingRelaunch: Bool { !pendingRelaunch.isEmpty }
     /// Sessions whose process is being replaced; sends meanwhile join the queue.
     @ObservationIgnored private var relaunching: Set<UUID> = []
     /// Sessions that were handed a user message whose turn has not begun or ended: the session still reads idle
@@ -446,7 +448,7 @@ public final class Workspace {
     @discardableResult
     public func newSession(name: String) async -> Session {
         ensureLoaded()
-        let s = Session(id: UUID(), name: allowedName(name, for: nil), colorIndex: records.count % 8, projectRoot: projectRoot)
+        let s = Session(id: UUID(), name: allowedName(name, for: nil), colorIndex: records.count % 12, projectRoot: projectRoot)
         if Self.isReserved(name) { s.transcript.appendNotice(kind: .commandOutput, text: Self.reservedNotice(for: s.name)) }
         if isShuttingDown {
             // Not registered and never launched; the caller gets a stopped session.
@@ -574,7 +576,7 @@ public final class Workspace {
         }
         let trimmed = name?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         let fork = Session(id: UUID(), name: trimmed.isEmpty ? "\(source.name) (fork)" : allowedName(trimmed, for: nil),
-                           colorIndex: records.count % 8, projectRoot: projectRoot,
+                           colorIndex: records.count % 12, projectRoot: projectRoot,
                            hasConversation: true, model: source.model, permissionMode: source.permissionMode,
                            forkSource: source.forkSource ?? source.cliSessionID, forkPoint: point)
         if Self.isReserved(trimmed) { fork.transcript.appendNotice(kind: .commandOutput, text: Self.reservedNotice(for: fork.name)) }

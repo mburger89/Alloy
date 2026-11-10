@@ -62,20 +62,18 @@ let alloyMarkdownTheme: MarkdownTheme = {
 
 /// A reply's Markdown as blocks, inside one row of the transcript's lazy stack. Code blocks carry MetalUI's built-in
 /// Copy button (`MarkdownTheme.showsCodeCopyButton`, an icon labelled "Copy code", identified `copy-code-<blockID>-<top-level block id>-<n>`). Fences are
-/// coloured by `FenceHighlighter`, one shared instance per colour scheme (MetalUI compares a highlighter by identity).
+/// coloured by `FenceHighlighter`, one shared instance whose colours are theme keys (MetalUI compares a highlighter by identity).
 struct MarkdownText: Component {
     let blockID: String
     let text: String
     let cache: MarkdownCache
-    @Environment(\.colorScheme) var scheme
 
     var content: some ElementGroup {
         let document = cache.document(for: blockID, text: text)
         let blockID = blockID
-        let scheme = scheme
         VStack(alignment: .leading, spacing: alloyMarkdownTheme.blockSpacing) {
             ForEach(document.blocks, id: \.id) { block in
-                MarkdownTopBlock(blockID: blockID, block: block, scheme: scheme).equatable()
+                MarkdownTopBlock(blockID: blockID, block: block).equatable()
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -86,12 +84,10 @@ struct MarkdownText: Component {
 struct MarkdownTopBlock: Component, @MainActor Equatable {
     let blockID: String
     let block: MarkdownBlock
-    /// The scheme the fences are coloured for; part of the identity so a scheme change rebuilds the block.
-    let scheme: ColorScheme
 
     var content: some ElementGroup {
         MarkdownBlockView(block).markdownTheme(Self.theme(blockID: blockID, blockNumber: block.id))
-            .codeHighlighter(FenceHighlighter.shared(for: scheme)).equatable()
+            .codeHighlighter(FenceHighlighter.shared).equatable()
     }
 
     /// MetalUI numbers Copy buttons from 0 within each `MarkdownBlockView`, so the prefix carries the reply's block id
@@ -104,5 +100,5 @@ struct MarkdownTopBlock: Component, @MainActor Equatable {
         return theme
     }
 
-    static func == (l: MarkdownTopBlock, r: MarkdownTopBlock) -> Bool { l.blockID == r.blockID && l.block == r.block && l.scheme == r.scheme }
+    static func == (l: MarkdownTopBlock, r: MarkdownTopBlock) -> Bool { l.blockID == r.blockID && l.block == r.block }
 }

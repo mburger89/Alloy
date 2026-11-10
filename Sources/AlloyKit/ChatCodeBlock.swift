@@ -38,10 +38,10 @@ enum CodeHighlight {
     /// `lines` as attributed text: each plan section's lines are parsed together in its language and coloured with the
     /// fence palette. Lines outside every section, and everything over `FenceHighlighter`'s caps, stay plain. Returns
     /// `nil` as soon as the running task is cancelled.
-    static func attributed(lines: [String], plan: [OutputSection], scheme: ColorScheme, tag: String?) -> [AttributedString]? {
+    static func attributed(lines: [String], plan: [OutputSection], tag: String?) -> [AttributedString]? {
         if let tag { log.lock.withLock { log.entries[tag, default: []].append(lines.count) } }
         var out = lines.map { AttributedString($0) }
-        let highlighter = FenceHighlighter.shared(for: scheme)
+        let highlighter = FenceHighlighter.shared
         for section in plan {
             guard let language = section.language else { continue }
             if Task.isCancelled { return nil }
@@ -63,9 +63,9 @@ enum CodeHighlight {
         return Task.isCancelled ? nil : out
     }
 
-    /// ``attributed(lines:plan:scheme:tag:)`` on a background task that is cancelled with the caller.
-    static func compute(lines: [String], plan: [OutputSection], scheme: ColorScheme, tag: String) async -> [AttributedString]? {
-        let work = Task.detached(priority: .userInitiated) { attributed(lines: lines, plan: plan, scheme: scheme, tag: tag) }
+    /// ``attributed(lines:plan:tag:)`` on a background task that is cancelled with the caller.
+    static func compute(lines: [String], plan: [OutputSection], tag: String) async -> [AttributedString]? {
+        let work = Task.detached(priority: .userInitiated) { attributed(lines: lines, plan: plan, tag: tag) }
         return await withTaskCancellationHandler { await work.value } onCancel: { work.cancel() }
     }
 
@@ -106,9 +106,8 @@ final class CodeBlockItem {
     let plan: [OutputSection]
     let gutterDigits: Int
     let hasMarks: Bool
-    /// Colours of `lines[0..<colours.count]` for `scheme`. They stay until newer ones replace them.
+    /// Colours of `lines[0..<colours.count]`, as theme-key colours that resolve at paint. They stay until newer ones replace them.
     var colours: [AttributedString] = [] { didSet { generation += 1 } }
-    var scheme: ColorScheme? { didSet { generation += 1 } }
     /// Bumped on every change of what the rows show, so a cached row set is never reused for different colours.
     private var generation = 0
     private var rowCache: (shown: Int, generation: Int, rows: [CodeRowModel])?
@@ -199,10 +198,9 @@ struct ChatCodeBlock: Component {
     var ink: Color?
     var overflow: CodeOverflow = .count
     @State var tick = 0
-    @Environment(\.colorScheme) var scheme
     @Environment(\.clipboard) var clipboard
 
-    struct WorkKey: Equatable { var fingerprint: Int; var dark: Bool; var shown: Int }
+    struct WorkKey: Equatable { var fingerprint: Int; var shown: Int }
 
     var content: some ElementGroup {
         let total = item.total
@@ -211,8 +209,8 @@ struct ChatCodeBlock: Component {
         let shown = canCollapse && !isOpen ? Self.collapsedLines : min(total, Self.maxRows)
         let rows = item.rows(shown: shown, ink: ink)
         let rest = total - shown
-        let blockID = blockID, part = part, item = item, scheme = scheme
-        let key = WorkKey(fingerprint: item.fingerprint, dark: scheme == .dark, shown: shown)
+        let blockID = blockID, part = part, item = item
+        let key = WorkKey(fingerprint: item.fingerprint, shown: shown)
         let refresh = $tick
         let expanded = expanded, clipboard = clipboard
         VStack(alignment: .leading, spacing: 0) {
@@ -244,16 +242,15 @@ struct ChatCodeBlock: Component {
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("code-\(blockID)-\(part)")
         .task(id: key) {
-            if item.plan.isEmpty || (item.scheme == scheme && item.colours.count >= shown) { return }
+            if item.plan.isEmpty || item.colours.count >= shown { return }
             let texts = item.lines.prefix(shown).map(\.text)
             let plan = item.plan.compactMap { s -> OutputSection? in
                 let r = s.lines.clamped(to: 0..<shown)
                 return r.isEmpty ? nil : OutputSection(lines: r, language: s.language)
             }
-            let computed = await CodeHighlight.compute(lines: Array(texts), plan: plan, scheme: scheme, tag: "\(blockID)-\(part)")
+            let computed = await CodeHighlight.compute(lines: Array(texts), plan: plan, tag: "\(blockID)-\(part)")
             guard !Task.isCancelled, let computed else { return }
             item.colours = computed
-            item.scheme = scheme
             refresh.wrappedValue += 1
         }
     }

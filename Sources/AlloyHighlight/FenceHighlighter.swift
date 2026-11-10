@@ -2,26 +2,22 @@ import MetalUI
 import SwiftTreeSitter
 
 /// Colours the code of chat Markdown fences. It parses each fence with a throwaway parser, synchronously;
-/// MetalUI calls it once per change of a fence and holds it by identity, so keep one instance per scheme.
+/// MetalUI calls it once per change of a fence and holds it by identity, so keep one shared instance.
 public final class FenceHighlighter: MarkdownCodeHighlighter, @unchecked Sendable {
     /// Fences over this many lines stay plain.
     public static let maxLines = 2_000
     /// Fences over this many UTF-8 bytes stay plain.
     public static let maxBytes = 64 * 1024
 
-    /// One shared instance per scheme, so the view's identity comparison holds across renders.
-    public static let light = FenceHighlighter(scheme: .light)
-    public static let dark = FenceHighlighter(scheme: .dark)
-
-    public static func shared(for scheme: ColorScheme) -> FenceHighlighter {
-        scheme == .dark ? dark : light
-    }
+    /// The one shared instance. Its styles are the palette's key colours, which MetalUI resolves at paint time in the
+    /// window's theme, so one instance serves every scheme and theme (MetalUI compares a highlighter by identity).
+    public static let shared = FenceHighlighter()
 
     private let styles: [SyntaxToken: CodeStyle]
 
-    public init(scheme: ColorScheme, palette: SyntaxPalette = SyntaxPalette()) {
+    public init(palette: SyntaxPalette = SyntaxPalette()) {
         var styles: [SyntaxToken: CodeStyle] = [:]
-        for token in SyntaxToken.allCases { styles[token] = palette.style(token, scheme: scheme) }
+        for token in SyntaxToken.allCases { styles[token] = palette.dynamicStyle(token) }
         self.styles = styles
     }
 

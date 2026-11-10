@@ -285,7 +285,7 @@ import Testing
     @Test func supersededHighlightStopsAndReturnsNothing() async {
         let task = Task.detached { () -> [AttributedString]? in
             while !Task.isCancelled { await Task.yield() }
-            return CodeHighlight.attributed(lines: ["x = 1"], plan: [OutputSection(lines: 0..<1, language: .python)], scheme: .light, tag: nil)
+            return CodeHighlight.attributed(lines: ["x = 1"], plan: [OutputSection(lines: 0..<1, language: .python)], tag: nil)
         }
         task.cancel()
         #expect(await task.value == nil)
