@@ -95,4 +95,21 @@ import Testing
         }
         #expect(checked > 40)
     }
+
+    /// In a light theme the segmented picker's thumb is painted in `surface`, so the track (`surfaceSecondary`) must differ from
+    /// `surface` by at least 1.6:1 for the thumb to read against it. Dark themes draw the thumb as a text-colour overlay, so
+    /// they are not covered. Alloy Light (1.24:1) is a known gap, left out until its tab text margins are reviewed.
+    @Test(arguments: ["solarized-light"])
+    func trackContrastsWithSurface(themeID: String) throws {
+        func luminance(_ c: (r: Double, g: Double, b: Double)) -> Double {
+            func lin(_ v: Double) -> Double { v <= 0.03928 ? v / 12.92 : pow((v + 0.055) / 1.055, 2.4) }
+            return 0.2126 * lin(c.r) + 0.7152 * lin(c.g) + 0.0722 * lin(c.b)
+        }
+        let theme = try resolve(themeID)
+        let track = try #require(theme.colors["surfaceSecondary"])
+        let surface = try #require(theme.colors["surface"])
+        let a = luminance((track.r, track.g, track.b)), b = luminance((surface.r, surface.g, surface.b))
+        let value = (max(a, b) + 0.05) / (min(a, b) + 0.05)
+        #expect(value >= 1.6, "\(themeID) track vs surface \(String(format: "%.2f", value)) < 1.6")
+    }
 }

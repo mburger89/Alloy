@@ -184,6 +184,7 @@ tint would push a published ink or text colour under its minimum. Solarized foll
 - `questionInk`: #6C71C4 → #484EB5
 - `errorInk`: #DC322F → #C52421
 - `warningInk`: #B58900 → #826100
+- `surfaceSecondary`: #D3D3C5 → #C0C4BB (halfway between base2 and in-palette base1; the picker track and unselected tabs now read darker than the page and the selected thumb, both base3, by 1.64:1)
 - `textPrimary`: #657B83 → #56696F
 - `linkInk`: #268BD2 → #1D6AA0
 - `syntax.keyword`: #859900 → #627000

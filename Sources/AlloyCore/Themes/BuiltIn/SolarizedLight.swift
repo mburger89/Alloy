@@ -12,7 +12,7 @@ extension BuiltInThemes {
       "colors": {
     "background": "#FDF6E3",
     "surface": "#FDF6E3",
-    "surfaceSecondary": "#D3D3C5",
+    "surfaceSecondary": "#C0C4BB",
     "accent": "#268BD2",
     "separator": "#93A1A1",
     "textPrimary": "#56696F",
