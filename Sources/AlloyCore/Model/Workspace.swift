@@ -6,7 +6,7 @@ private enum PendingControlKind { case initialize, setModel(String), setMode(Str
 
 public typealias TransportFactory = @Sendable (LaunchConfiguration) -> any SessionTransport
 
-private struct SessionRecord: Codable {
+struct SessionRecord: Codable {
     var id: UUID
     var name: String
     var colorIndex: Int
@@ -90,8 +90,8 @@ public final class Workspace {
     /// Counts finished saves per path, so a read can tell that a save finished while it ran.
     @ObservationIgnored private var saveEpoch: [String: Int] = [:]
     @ObservationIgnored private var ledgerWrite: Task<Void, Never>?
-    @ObservationIgnored private var readsWrite: Task<Void, Never>?
-    @ObservationIgnored private var notesWrite: Task<Void, Never>?
+    /// The newest compaction-generations write (`generations.json`).
+    @ObservationIgnored var generationsWrite: Task<Void, Never>?
     @ObservationIgnored var toldWrite: Task<Void, Never>?
     /// Session-written notes on files and topics (Plan 5a).
     public internal(set) var notes = NotesStore()
@@ -99,9 +99,19 @@ public final class Workspace {
     public internal(set) var notesServed = 0
     /// The three shared-notes tools the local server offers.
     @ObservationIgnored public private(set) var notesTools: [MCPTool] = []
-    /// Notes.json writes: the newest unwritten snapshot, and whether a write task that will take it is queued.
-    @ObservationIgnored var notesSnapshot: NotesStore?
-    @ObservationIgnored var notesWriteQueued = false
+    /// The shared knowledge pool (notes and reads across projects); nil until the first load, and for good when it
+    /// could not open (knowledge then stays in memory for the run).
+    @ObservationIgnored var pool: KnowledgePool?
+    /// The projects whose files this workspace's notes tools may name, refreshed with the view.
+    @ObservationIgnored var knowledgeScope: KnowledgeScope
+    /// The pool's `data_version` at the last load, and what the pool held for the rows in view (the diff baselines).
+    @ObservationIgnored var poolVersion: Int64 = 0
+    @ObservationIgnored var syncedNotes: [UUID: Note] = [:]
+    @ObservationIgnored var syncedReads: [ReadGroup: [ReadEntry]] = [:]
+    @ObservationIgnored var generationsSnapshot: [String: Int] = [:]
+    /// Read groups changed since the last sync (the only ones `persistReads` looks at), and whether a pool failure was reported.
+    @ObservationIgnored var dirtyReads: Set<ReadGroup> = []
+    @ObservationIgnored var poolErrorReported = false
     /// The loopback MCP server; nil until the workspace has loaded, or when it could not start.
     @ObservationIgnored var localServer: LocalServer?
     @ObservationIgnored private var serverStart: Task<Void, Never>?
@@ -171,11 +181,7 @@ public final class Workspace {
     /// Read tool_use ids already judged, so a repeated delivery of a block is not counted twice.
     @ObservationIgnored var judgedReads: Set<String> = []
     /// Read tool_use id -> file_path, until the result arrives (a subagent's result has no structured file info).
-    /// Reads.json writes: the newest unwritten snapshot, and whether a write task that will take it is queued.
-    @ObservationIgnored var readsSnapshot: ReadsFile?
-    @ObservationIgnored var readsWriteQueued = false
     @ObservationIgnored var warnedReadFormat = false
-    @ObservationIgnored var readsWritesStarted = 0
     @ObservationIgnored var pendingReadPaths: [String: String] = [:]
     @ObservationIgnored var decorationBuildCount = 0
     @ObservationIgnored var sideBySideBuildCount = 0
@@ -269,8 +275,8 @@ public final class Workspace {
             for t in Array(background.values) { await t.value }
         }
         await ledgerWrite?.value
-        await readsWrite?.value
-        await notesWrite?.value
+        await generationsWrite?.value
+        pool?.flush()
         await toldWrite?.value
         await overlapToldWrite?.value
         await claimsWrite?.value
@@ -343,8 +349,8 @@ public final class Workspace {
     /// Whether the session's earlier conversation is still to be loaded into its transcript.
     public func isHistoryPending(_ id: Session.ID) -> Bool { historyPending.contains(id) }
     @ObservationIgnored private var historyLoads: [UUID: Task<Void, Never>] = [:]
-    @ObservationIgnored private var loaded = false
-    @ObservationIgnored private var records: [SessionRecord] = []
+    @ObservationIgnored var loaded = false
+    @ObservationIgnored var records: [SessionRecord] = []
     @ObservationIgnored private var cachedExecutable: URL?
 
     public init(projectRoot: URL, appSupport: URL, settings: AlloySettings,
@@ -367,6 +373,7 @@ public final class Workspace {
         self.projectRoot = projectRoot; self.appSupport = appSupport; self.settings = settings
         self.locate = locate; self.loginPATH = loginPATH; self.makeTransport = makeTransport; self.now = now; self.writeFile = writeFile
         self.ledger = ProjectLedger(projectRoot: projectRoot)
+        self.knowledgeScope = KnowledgeScope(ownRoot: projectRoot.path)
         self.hasCurrentNote = { [weak self] path, stamp in
             self?.notes.notes(for: .file(path)).contains { $0.stamp == stamp } ?? false
         }
@@ -483,7 +490,10 @@ public final class Workspace {
         try s.save(appSupport: appSupport)
         let launchOptionsChanged = s.shareKnowledge != settings.shareKnowledge
             || s.askBeforeSharedNotes != settings.askBeforeSharedNotes
+            || s.shareAcrossProjects != settings.shareAcrossProjects
+        let visibilityChanged = s.shareKnowledge != settings.shareKnowledge || s.shareAcrossProjects != settings.shareAcrossProjects
         settings = s
+        if visibilityChanged { reloadKnowledgeAfterSettingsChange() }
         settingsGeneration += 1
         cachedExecutable = nil
         // Live sessions pick up the new launch options at their next idle point; dormant ones at their next wake.
@@ -588,6 +598,7 @@ public final class Workspace {
         selectedSessionID = fork.id
         readIndex.copy(from: source.id, to: fork.id, generation: compactionGeneration[fork.id, default: 0],
                        fromGeneration: compactionGeneration[source.id, default: 0])
+        for e in readIndex.entries(of: fork.id) { markReadDirty(session: fork.id, key: e.path) }
         persistReads()
         copyTold(from: source.id, to: fork.id)
         copyOverlapTold(from: source.id, to: fork.id)
@@ -683,7 +694,7 @@ public final class Workspace {
         if let token, let url = serverURL {
             configuration.mcpConfigJSON = MCPServer.config(url: url, token: token)
             configuration.extraSettingsJSON = Hooks.settingsJSON(url: url, token: token)
-            configuration.appendSystemPrompt = Guidance.text
+            configuration.appendSystemPrompt = Guidance.text(shareKnowledge: settings.shareKnowledge, shareAcrossProjects: settings.shareAcrossProjects)
             configuration.allowedTools = settings.askBeforeSharedNotes ? [] : Guidance.alloyToolNames
         }
         let transport = makeTransport(configuration)
@@ -1826,9 +1837,9 @@ public final class Workspace {
     // MARK: Persistence
 
     private var ledgerURL: URL { ProjectLedger.storeURL(projectRoot: projectRoot, appSupport: appSupport) }
-    private var notesURL: URL { storeDirectory.appendingPathComponent("notes.json") }
+    var notesURL: URL { storeDirectory.appendingPathComponent("notes.json") }
     var storeDirectory: URL { ledgerURL.deletingLastPathComponent() }
-    private var readsURL: URL { storeDirectory.appendingPathComponent("reads.json") }
+    var readsURL: URL { storeDirectory.appendingPathComponent("reads.json") }
     private var sessionsURL: URL { storeDirectory.appendingPathComponent("sessions.json") }
 
     func report(_ message: String) { errors.append(message) }
@@ -1838,14 +1849,12 @@ public final class Workspace {
         guard !loaded else { return }
         loaded = true
         if let l = loadFile(ledgerURL, { try JSONDecoder().decode(ProjectLedger.self, from: $0) }) { ledger = l; for p in l.files.keys { reindex(p, detectTug: false); overlapIndex.invalidate(path: p) } }
-        if let x = loadFile(readsURL, { try ReadsFile.decode($0) }) {
-            readIndex = x.index
-            for (k, v) in x.generations { if let id = UUID(uuidString: k) { compactionGeneration[id] = v } }
+        if let r = loadFile(sessionsURL, { try JSONDecoder().decode([SessionRecord].self, from: $0) }) { records = r }
+        if let g = loadFile(generationsURL, { try JSONDecoder().decode([String: Int].self, from: $0) }) {
+            generationsSnapshot = g
+            for (k, v) in g { if let id = UUID(uuidString: k) { compactionGeneration[id] = v } }
         }
-        if let n = loadFile(notesURL, { try JSONDecoder().decode(NotesStore.self, from: $0) }) {
-            notes = n
-            if notes.expire(before: now().addingTimeInterval(-NotesStore.staleExpiry)) { persistNotes() }
-        }
+        loadKnowledge()
         if let t = loadFile(toldURL, { try JSONDecoder().decode([String: [String: ToldEntry]].self, from: $0) }) {
             for (k, v) in t { if let id = UUID(uuidString: k) { told[id] = v } }
         }
@@ -1854,10 +1863,9 @@ public final class Workspace {
             for (k, v) in t { if let id = UUID(uuidString: k) { overlapTold[id] = v } }
             pruneOverlapTold()
         }
-        if let r = loadFile(sessionsURL, { try JSONDecoder().decode([SessionRecord].self, from: $0) }) { records = r }
     }
 
-    private func loadFile<T>(_ url: URL, _ decode: (Data) throws -> T) -> T? {
+    func loadFile<T>(_ url: URL, _ decode: (Data) throws -> T) -> T? {
         guard FileManager.default.fileExists(atPath: url.path) else { return nil }
         do { return try decode(Data(contentsOf: url)) } catch {
             var dest = url.deletingLastPathComponent()
@@ -1887,59 +1895,6 @@ public final class Workspace {
                 await self?.report(message)
             }
         }
-    }
-
-    /// Writes the read index and generations off the main actor. At most one write runs and one waits; the waiting
-    /// one takes the newest snapshot when it starts, so a burst of reads costs two writes, not one per read.
-    func persistReads() {
-        readsSnapshot = ReadsFile(index: readIndex,
-                                  generations: Dictionary(uniqueKeysWithValues: compactionGeneration.map { ($0.key.uuidString, $0.value) }))
-        guard !readsWriteQueued else { return }
-        readsWriteQueued = true
-        let url = readsURL, previous = readsWrite
-        readsWrite = Task.detached { [weak self] in
-            await previous?.value
-            guard let snapshot = await self?.takeReadsSnapshot() else { return }
-            do {
-                try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-                try JSONEncoder().encode(snapshot).write(to: url, options: .atomic)
-            } catch {
-                let message = "Could not save read history: \(error.localizedDescription)"
-                await self?.report(message)
-            }
-        }
-    }
-
-    /// Writes the notes off the main actor, chained and coalesced like `persistReads`.
-    func persistNotes() {
-        notesSnapshot = notes
-        guard !notesWriteQueued else { return }
-        notesWriteQueued = true
-        let url = notesURL, previous = notesWrite
-        notesWrite = Task.detached { [weak self] in
-            await previous?.value
-            guard let snapshot = await self?.takeNotesSnapshot() else { return }
-            do {
-                try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-                try JSONEncoder().encode(snapshot).write(to: url, options: .atomic)
-            } catch {
-                let message = "Could not save shared notes: \(error.localizedDescription)"
-                await self?.report(message)
-            }
-        }
-    }
-
-    private func takeNotesSnapshot() -> NotesStore? {
-        notesWriteQueued = false
-        defer { notesSnapshot = nil }
-        return notesSnapshot
-    }
-
-    private func takeReadsSnapshot() -> ReadsFile? {
-        readsWriteQueued = false
-        readsWritesStarted += 1
-        defer { readsSnapshot = nil }
-        return readsSnapshot
     }
 
     private func persistSessions() {

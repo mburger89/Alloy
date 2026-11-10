@@ -17,7 +17,7 @@ Running more than one agent on a project works until you cannot tell who changed
 the same files. Alloy is an editor designed around that situation:
 
 - Every character in a file is attributed to the session that wrote it, to you, or to an outside change.
-- Sessions in one project share notes about files they have read, so the second session does not start from zero.
+- Several sessions in one repository, or one session per repository in separate windows, all share what they have learned, so the next session does not start from zero. Across repositories the benefit shows when work touches another repository's files or a shared topic; "Share with other projects" in Settings turns the cross-project part off.
 - Chat is a first-class surface (tool blocks, diffs, plans, questions), not a terminal.
 
 ## Status

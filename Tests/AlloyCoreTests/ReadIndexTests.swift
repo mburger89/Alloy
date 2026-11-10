@@ -255,12 +255,9 @@ private func readResult(_ id: String, _ path: String, start: Int = 1, num: Int, 
     }
 
     @Test func corruptReadsFileIsMovedAside() async throws {
-        let h = Harness(); let root = dirs.make(); let support = dirs.make()
-        let path = try write(root, "a.txt")
-        let ws = makeWS(root: root, support: support, h)
-        _ = await ws.newSession(name: "A")
-        await doRead(ws, h.transports[0], "t1", path)
+        let root = dirs.make(); let support = dirs.make()
         let dir = ProjectLedger.storeURL(projectRoot: root, appSupport: support).deletingLastPathComponent()
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         try Data("{broken".utf8).write(to: dir.appendingPathComponent("reads.json"))
         let ws2 = makeWS(root: root, support: support, Harness())
         _ = await ws2.newSession(name: "A")
@@ -331,7 +328,7 @@ private func readResult(_ id: String, _ path: String, start: Int = 1, num: Int, 
         let root = dirs.make(); let support = dirs.make()
         var index = ReadIndex()
         let stamp = FileStamp(modified: Date(timeIntervalSince1970: 1), size: 3)
-        index.record(ReadEntry(session: UUID(), path: "x", lines: nil, stamp: stamp, date: Date(timeIntervalSince1970: 2), generation: 0))
+        index.record(ReadEntry(session: UUID(), path: "x", lines: nil, stamp: stamp, date: Date(), generation: 0))
         let dir = ProjectLedger.storeURL(projectRoot: root, appSupport: support).deletingLastPathComponent()
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         try JSONEncoder().encode(index).write(to: dir.appendingPathComponent("reads.json"))
@@ -373,16 +370,24 @@ private func readResult(_ id: String, _ path: String, start: Int = 1, num: Int, 
         #expect(ws.judgedReads.isEmpty && ws.pendingReadPaths.isEmpty)
     }
 
-    @Test func burstOfWritesIsCoalesced() async throws {
+    @Test func unchangedPersistsLeaveThePoolAsItWas() async throws {
         let h = Harness(); let root = dirs.make(); let support = dirs.make()
         let ws = makeWS(root: root, support: support, h)
         _ = await ws.newSession(name: "A")
-        let before = ws.readsWritesStarted
+        let path = try write(root, "a.txt")
+        await doRead(ws, h.transports[0], "t1", path)
         for _ in 0..<30 { ws.persistReads() }
         await ws.settle()
-        #expect(ws.readsWritesStarted - before == 1)
-        let url = ProjectLedger.storeURL(projectRoot: root, appSupport: support).deletingLastPathComponent().appendingPathComponent("reads.json")
-        #expect(FileManager.default.fileExists(atPath: url.path))
+        // Unchanged groups are not written again; the pool holds the one read, at an absolute path.
+        let fresh = try KnowledgePool(url: ws.poolURL, onError: { _ in })
+        let reads = fresh.loadReads()
+        // A burst of persists with nothing new to write commits nothing: another connection sees no change.
+        let version = fresh.dataVersion()
+        for _ in 0..<30 { ws.persistReads() }
+        await ws.settle()
+        #expect(fresh.dataVersion() == version)
+        let real = try #require(NotePath.realPath(root.path))
+        #expect(reads.count == 1 && reads[0].path == real + "/a.txt" && reads[0].project == real)
     }
 
     @Test func nonTextAndEmptyReadsAreNotFormatProblems() async throws {

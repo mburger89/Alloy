@@ -3,7 +3,7 @@ import Foundation
 /// One read of (part of) a file by a session, with the file's stamp when the read finished.
 public struct ReadEntry: Codable, Sendable, Equatable {
     public var session: UUID
-    /// Project-relative.
+    /// Absolute in the knowledge pool; a view key (project-relative) inside a workspace.
     public var path: String
     /// The lines the session saw; nil means the whole file.
     public var lines: ClosedRange<Int>?
@@ -11,10 +11,16 @@ public struct ReadEntry: Codable, Sendable, Equatable {
     public var date: Date
     /// The session's compaction generation at read time.
     public var generation: Int
+    /// The reading session's display name; nil for entries written before the pool existed.
+    public var authorName: String?
+    /// The reader's real project root; nil for entries written before the pool existed.
+    public var project: String?
 
-    public init(session: UUID, path: String, lines: ClosedRange<Int>?, stamp: FileStamp, date: Date, generation: Int) {
+    public init(session: UUID, path: String, lines: ClosedRange<Int>?, stamp: FileStamp, date: Date, generation: Int,
+                authorName: String? = nil, project: String? = nil) {
         self.session = session; self.path = path; self.lines = lines; self.stamp = stamp
         self.date = date; self.generation = generation
+        self.authorName = authorName; self.project = project
     }
 }
 
@@ -30,6 +36,14 @@ public struct ReadIndex: Codable, Sendable {
     private enum CodingKeys: String, CodingKey { case byPath }
 
     public init() {}
+
+    /// An index holding exactly `entries`, as loaded (nothing merged).
+    init(entries: [ReadEntry]) {
+        for e in entries { byPath[e.path, default: []].append(e); entryCounts[e.session, default: 0] += 1 }
+    }
+
+    /// Every entry, in per-file order.
+    var allEntries: [ReadEntry] { byPath.values.flatMap { $0 } }
 
     public init(from decoder: Decoder) throws {
         byPath = try decoder.container(keyedBy: CodingKeys.self).decode([String: [ReadEntry]].self, forKey: .byPath)
@@ -146,20 +160,29 @@ extension Workspace {
             }
             guard let read = parsed, let entryLines = Self.readLines(read) else { return }
             let sid = s.id, generation = compactionGeneration[s.id, default: 0], date = now(), root = projectRoot
+            let scope = knowledgeScope, name = s.name
             track { [weak self] in
-                let found = await Task.detached { () -> (String, FileStamp)? in
-                    guard let rel = ProjectLedger.relativePath(read.filePath, root: root),
-                          let stamp = FileStamp.read(read.filePath) else { return nil }
-                    return (rel, stamp)
-                }.value
-                guard let self, let (rel, stamp) = found else { return }
-                self.readIndex.record(ReadEntry(session: sid, path: rel, lines: entryLines.range, stamp: stamp,
-                                                date: date, generation: generation))
-                self.persistReads()
+                let found = await Task.detached { Self.keyAndStamp(read.filePath, root: root, scope: scope) }.value
+                guard let self, let (key, stamp) = found else { return }
+                self.recordRead(ReadEntry(session: sid, path: key, lines: entryLines.range, stamp: stamp,
+                                          date: date, generation: generation, authorName: name, project: scope.ownRoot))
             }
         default:
             break
         }
+    }
+
+    /// The scope key (relative in the own project, absolute in another known one) and the stamp of the file a Read
+    /// named, or nil when it is outside every known project or unreadable. Does file system lookups.
+    nonisolated static func keyAndStamp(_ file: String, root: URL, scope: KnowledgeScope) -> (String, FileStamp)? {
+        let joined = file.hasPrefix("/") ? file : root.path + "/" + file
+        guard let real = NotePath.realPath(joined), let scoped = scope.key(forReal: real),
+              let stamp = FileStamp.read(real) else { return nil }
+        // An own-project file is keyed as the path was typed (a link inside the project stays `link/x`), the form
+        // `NotePath.resolve` uses; another project's file keeps its absolute real key.
+        let key = scoped.hasPrefix("/") ? scoped
+            : (ProjectLedger.relativePath(URL(fileURLWithPath: joined).standardizedFileURL.path, root: root) ?? scoped)
+        return (key, stamp)
     }
 
     /// A subagent's Read result carries no `tool_use_result`, only the numbered text (`<line>\t<text>` per line).
@@ -208,13 +231,12 @@ extension Workspace {
 
     /// Decides, from the index as it is now and the file's current stamp, whether this Read repeats one already done.
     private func judgeRead(path file: String, requested: ClosedRange<Int>?, session s: Session) {
+        refreshKnowledge()
         let sid = s.id, generation = compactionGeneration[s.id, default: 0], root = projectRoot
+        let scope = knowledgeScope
         let snapshot = readIndex
         track { [weak self] in
-            let found = await Task.detached { () -> (String, FileStamp)? in
-                guard let rel = ProjectLedger.relativePath(file, root: root), let stamp = FileStamp.read(file) else { return nil }
-                return (rel, stamp)
-            }.value
+            let found = await Task.detached { Self.keyAndStamp(file, root: root, scope: scope) }.value
             guard let self, let (rel, stamp) = found else { return }
             let seen = snapshot.current(path: rel, stamp: stamp).contains {
                 ($0.session != sid || $0.generation == generation) && ReadIndex.covers($0.lines, requested)

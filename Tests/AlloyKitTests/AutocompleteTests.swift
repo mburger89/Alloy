@@ -217,7 +217,8 @@ import Testing
         model.draft = ""
         try write(rig, "later.txt")
         model.draft = "@lat"
-        try await settle { model.suggestions?.items.map(\.id) == ["later.txt"] }
+        // The rig keeps Alloy's own data (the shared knowledge pool) under support/, inside the project folder.
+        try await settle { model.suggestions?.items.map(\.id).filter { !$0.hasPrefix("support/") } == ["later.txt"] }
     }
 
     @Test func returnWithNoMatchesSends() async throws {

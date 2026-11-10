@@ -60,6 +60,9 @@ struct SettingsView: Component {
                 Text("Shared knowledge").font(size: 12).foregroundColor(.mutedInk)
                 Toggle(isOn: flag(\.shareKnowledge)) { Text("Share knowledge between sessions").font(size: 13) }
                     .accessibilityIdentifier("settings-share-knowledge")
+                Toggle(isOn: flag(\.shareAcrossProjects)) { Text("Share with other projects").font(size: 13) }
+                    .disabled(!workspace.settings.shareKnowledge)
+                    .accessibilityIdentifier("settings-share-other-projects")
                 Toggle(isOn: flag(\.askBeforeSharedNotes)) { Text("Ask before sessions use Alloy's tools").font(size: 13) }
                     .accessibilityIdentifier("settings-ask-shared-notes")
                 Text("Running sessions pick up a change when they are next idle.").font(size: 11).foregroundColor(.mutedInk)
@@ -114,6 +117,7 @@ struct SettingsView: Component {
         let defaults = AlloySettings()
         var s = workspace.settings
         s.shareKnowledge = defaults.shareKnowledge
+        s.shareAcrossProjects = defaults.shareAcrossProjects
         s.askBeforeSharedNotes = defaults.askBeforeSharedNotes
         apply(s)
     }

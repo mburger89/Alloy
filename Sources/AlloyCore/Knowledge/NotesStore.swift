@@ -17,11 +17,16 @@ public struct Note: Codable, Sendable, Equatable {
     public var date: Date
     /// When the note was first seen to be out of date; `NotesStore.expire` drops it `staleExpiry` later.
     public var staleSince: Date?
+    /// The writing session's display name; nil for notes written before the pool existed.
+    public var authorName: String?
+    /// The writer's real project root; nil for notes written before the pool existed.
+    public var project: String?
 
     public init(id: UUID = UUID(), author: UUID, subject: NoteSubject, text: String, stamp: FileStamp?, date: Date,
-                staleSince: Date? = nil) {
+                staleSince: Date? = nil, authorName: String? = nil, project: String? = nil) {
         self.id = id; self.author = author; self.subject = subject; self.text = text
         self.stamp = stamp; self.date = date; self.staleSince = staleSince
+        self.authorName = authorName; self.project = project
     }
 }
 
@@ -40,6 +45,9 @@ public struct NotesStore: Codable, Sendable, Equatable {
     public private(set) var all: [Note] = []
 
     public init() {}
+
+    /// A store holding exactly `notes`, as loaded (no limits applied).
+    init(notes: [Note]) { all = notes }
 
     /// A topic is matched by its trimmed name without regard to case ("Auth" finds "auth").
     static func topicKey(_ name: String) -> String { name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }

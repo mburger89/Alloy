@@ -33,7 +33,7 @@ A session can't see another session's memory, because each is its own `claude` p
 - **Enforcing the check.** No hook blocks or rewrites a session's Read (user decision, 2026-11-09). If a session re-reads anyway, that is allowed; it is counted (goal 5).
 - **Automatic summaries made by Alloy.** Alloy never spends usage summarising files on its own (user decision). Summaries come only from sessions' normal work.
 - **Sharing the model's memory itself.** Out of reach: the contents still have to arrive in the session's own context. The savings come from fewer tool round trips, snippets instead of whole files, and summaries instead of re-reads.
-- **Sharing across projects.** Notes belong to one project folder.
+- **Sharing across projects.** Out of scope here; covered by `2026-11-09-alloy-cross-project-knowledge-design.md`.
 
 ## 4. Anti-goals (failures even if it "works")
 

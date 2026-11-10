@@ -40,6 +40,18 @@ private final class KHarness: @unchecked Sendable {
                          "mcp__alloy__sessions_changes", "mcp__alloy__send_message",
                          "mcp__alloy__claim_region", "mcp__alloy__release_region"]
 
+    @Test @MainActor func launchOmitsOtherProjectsSentenceWhenSwitchedOff() async throws {
+        let h = KHarness()
+        var s = AlloySettings(); s.shareAcrossProjects = false
+        let ws = workspace(s, h)
+        _ = await ws.newSession(name: "a")
+        await ws.settle()
+        let c = try #require(h.configs.first)
+        #expect(c.appendSystemPrompt == Guidance.text(shareKnowledge: true, shareAcrossProjects: false))
+        #expect(c.appendSystemPrompt?.contains("other Alloy projects") == false)
+        await ws.stopAll()
+    }
+
     @Test @MainActor func launchPassesNotesServerGuidanceAndAllowRule() async throws {
         let h = KHarness()
         let ws = workspace(AlloySettings(), h)
@@ -50,7 +62,7 @@ private final class KHarness: @unchecked Sendable {
         #expect(json.contains("\"alloy\""))
         #expect(json.contains("\"Authorization\":\"Bearer "))
         #expect(json.contains(try #require(ws.serverURL).absoluteString))
-        #expect(c.appendSystemPrompt == Guidance.text)
+        #expect(c.appendSystemPrompt == Guidance.text())
         #expect(c.allowedTools == tools)
         #expect(c.arguments().contains("--allowedTools"))
         let settings = try #require(c.extraSettingsJSON)
@@ -109,7 +121,7 @@ private final class KHarness: @unchecked Sendable {
         let c = try #require(h.configs.first)
         #expect(c.allowedTools.isEmpty)
         #expect(c.mcpConfigJSON != nil)
-        #expect(c.appendSystemPrompt == Guidance.text)
+        #expect(c.appendSystemPrompt == Guidance.text())
         #expect(!c.arguments().contains("--allowedTools"))
         await ws.stopAll()
     }
@@ -144,8 +156,8 @@ private final class KHarness: @unchecked Sendable {
     }
 
     @Test func guidanceNeverSaysClaudeCode() {
-        #expect(!Guidance.text.contains("Claude Code"))
-        #expect(Guidance.text.hasPrefix("This project is shared with other sessions through Alloy."))
+        #expect(!Guidance.text().contains("Claude Code"))
+        #expect(Guidance.text().hasPrefix("This project is shared with other sessions through Alloy."))
     }
 
     @Test @MainActor func answerPathNeverSendsSuggestions() async throws {

@@ -455,11 +455,9 @@ private final class Dirs: @unchecked Sendable {
     @Test func corruptNotesFileIsMovedAside() async throws {
         let root = dirs.make(), support = dirs.make()
         let ws = makeWS(root: root, support: support)
-        let s = await ws.newSession(name: "A")
-        _ = try await call(ws, "notes_write", ["topic": .string("t"), "text": .string("x")], as: s.id)
-        await ws.settle()
-        let file = try #require(FileManager.default.enumerator(at: support, includingPropertiesForKeys: nil)?
-            .compactMap { $0 as? URL }.first { $0.lastPathComponent == "notes.json" })
+        let file = ProjectLedger.storeURL(projectRoot: root, appSupport: support).deletingLastPathComponent()
+            .appendingPathComponent("notes.json")
+        try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
         try "{not json".write(to: file, atomically: true, encoding: .utf8)
         let again = makeWS(root: root, support: support)
         await again.restore()
@@ -543,11 +541,33 @@ private final class Dirs: @unchecked Sendable {
                 var args: [String: JSONValue] = ["path": .string(p)]
                 if tool == "notes_write" { args["text"] = .string("x") }
                 let r = try await call(ws, tool, args, as: s.id)
-                #expect(r.isError && r.text.contains("outside the project"), "\(tool) \(p)")
+                #expect(r.isError && r.text.contains("outside your Alloy projects"), "\(tool) \(p)")
             }
         }
         #expect(ws.notes.all.isEmpty)
         await ws.stopAll()
+    }
+
+    @Test func lookupAcceptsOtherKnownProject() throws {
+        let own = dirs.make().appendingPathComponent("own"), api = dirs.make().appendingPathComponent("api")
+        _ = try write(own, "a.txt", "x\n")
+        let file = try write(api, "Routes.swift", "y\n")
+        let realApi = try #require(NotePath.realPath(api.path))
+        // The pool stores real paths, and the scope uses them as stored.
+        let scope = KnowledgeScope(ownRoot: own.path, known: [KnownProject(root: realApi, name: "api")])
+        let r = try #require(NotePath.resolve(file, root: own, scope: scope))
+        let realFile = try #require(NotePath.realPath(file))
+        #expect(r.relative == realFile && r.root == realApi)
+        #expect(NotePath.resolve(file, root: own) == nil)
+    }
+
+    @Test func refusalNamesAlloyProjects() throws {
+        let own = dirs.make().appendingPathComponent("own")
+        try FileManager.default.createDirectory(at: own, withIntermediateDirectories: true)
+        let other = try write(dirs.make(), "z.txt", "z\n")
+        #expect(NotePath.resolve(other, root: own) == nil)
+        #expect(NotesTools.outside(other).text
+            == "\(other) is outside your Alloy projects; the notes tools only cover files under folders opened in Alloy.")
     }
 
     @Test func descriptorCheckRefusesASwappedFile() throws {
@@ -567,7 +587,7 @@ private final class Dirs: @unchecked Sendable {
         try FileManager.default.createSymbolicLink(at: root.appendingPathComponent("dirlink"), withDestinationURL: parent)
         let viaDir = NotePath(relative: "dirlink/secret.txt", url: root.appendingPathComponent("dirlink/secret.txt"), root: real)
         guard case .outside(let b) = NotesTools.readServable(viaDir) else { Issue.record("served through a dir link"); return }
-        #expect(b.contains("outside the project"))
+        #expect(b.contains("outside your Alloy projects"))
         // The honest case is served, with the stamp of the same descriptor.
         let ok = NotePath(relative: "a.txt", url: URL(fileURLWithPath: real + "/a.txt"), root: real)
         guard case .text(let bytes, let stamp) = NotesTools.readServable(ok) else { Issue.record("refused a good file"); return }

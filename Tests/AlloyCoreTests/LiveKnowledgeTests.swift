@@ -233,4 +233,76 @@ struct LiveKnowledgeTests {
         await ws.stopAll()
         #expect(!summary.contains { $0.hasPrefix("FAIL") }, "see \(scratch)/live-knowledge.log")
     }
+    /// Two windows on two repositories sharing one application-support folder: a note written for a file in `api` reaches
+    /// a session in `app` that asks about that file. Pass: the `app` session called notes_lookup on `api`'s absolute path
+    /// and the result carried the note, or its first message carried the shared block naming `api`.
+    @Test @MainActor func crossProjectNoteReachesOtherWindow() async throws {
+        let fm = FileManager.default
+        try fm.createDirectory(atPath: scratch, withIntermediateDirectories: true)
+        let base = URL(fileURLWithPath: scratch).appendingPathComponent("cross-\(UUID().uuidString.prefix(8))").resolvingSymlinksInPath()
+        let app = base.appendingPathComponent("app"), api = base.appendingPathComponent("api")
+        let support = base.appendingPathComponent("support")
+        for d in [app, api, support] { try fm.createDirectory(at: d, withIntermediateDirectories: true) }
+        defer { try? fm.removeItem(at: base) }
+        try "struct Routes {\n    static let users = \"/users\"\n    static let orders = \"/orders\"\n}\n"
+            .write(to: api.appendingPathComponent("Routes.swift"), atomically: true, encoding: .utf8)
+        try "print(\"app\")\n".write(to: app.appendingPathComponent("main.swift"), atomically: true, encoding: .utf8)
+        for repo in [app, api] {
+            for args in [["init", "-q"], ["add", "."], ["-c", "user.email=a@b.c", "-c", "user.name=t", "commit", "-qm", "init"]] {
+                let p = Process(); p.executableURL = URL(fileURLWithPath: "/usr/bin/git"); p.arguments = args
+                p.currentDirectoryURL = repo; try p.run(); p.waitUntilExit()
+            }
+        }
+
+        let recorders = Recorders()
+        func window(_ root: URL) -> Workspace {
+            Workspace(projectRoot: root, appSupport: support, settings: AlloySettings(),
+                      makeTransport: { cfg in RecordingTransport(inner: ClaudeProcess(configuration: cfg), recorder: recorders.make()) })
+        }
+        // Both windows are open (and registered in the pool) before either session starts.
+        let wsApi = window(api), wsApp = window(app)
+        await wsApi.settle(); await wsApp.settle()
+        Self.log("=== cross-project run \(Date()) app=\(app.path) api=\(api.path)")
+        var summary: [String] = []
+        func verdict(_ name: String, _ ok: Bool?, _ detail: String) {
+            let v = ok == nil ? "NOT OBSERVED" : (ok! ? "PASS" : "FAIL")
+            summary.append("\(v): \(name) -- \(detail)")
+            Self.log("\(v): \(name) -- \(detail)")
+        }
+
+        // Session in api: read Routes.swift, write a note.
+        let a = await wsApi.newSession(name: "Reader")
+        await wsApi.send("/model haiku", to: a.id)
+        let recA = recorders.all[0]
+        _ = await Self.turn(wsApi, a, "Read Routes.swift, then call mcp__alloy__notes_write with a one-sentence summary of it. Reply done.", recA)
+        var noteWritten = Self.tools(a, notesPrefix).contains { $0.name == notesPrefix + "write" }
+        if !noteWritten {
+            _ = await Self.turn(wsApi, a, "You must call the tool mcp__alloy__notes_write now (subject Routes.swift, text: one sentence about what Routes.swift does). Do it.", recA)
+            noteWritten = Self.tools(a, notesPrefix).contains { $0.name == notesPrefix + "write" }
+            Self.log("api session needed a firmer prompt for notes_write")
+        }
+        await wsApi.settle()
+        let note = wsApi.notes.all.first { $0.author == a.id }
+        verdict("api session wrote a note", noteWritten ? note != nil : nil, "text=\(note?.text ?? "-")")
+
+        // Session in app asks about api's file.
+        let b = await wsApp.newSession(name: "Asker")
+        await wsApp.send("/model haiku", to: b.id)
+        let recB = recorders.all[1]
+        let routes = api.appendingPathComponent("Routes.swift").path
+        _ = await Self.turn(wsApp, b, "What does ../api/Routes.swift do? Check the shared notes first.", recB)
+        let lookups = Self.tools(b, notesPrefix).filter { $0.name == notesPrefix + "lookup" }
+        let noteText = note?.text ?? "\u{0}"
+        let lookupHit = lookups.contains { $0.resultText.contains(noteText) && ($0.input["path"]?.stringValue == routes) }
+        let firstWire = recB.sent.first { $0.contains("\"type\":\"user\"") } ?? ""
+        let told = firstWire.contains("Routes.swift") && firstWire.contains("(in api)")
+        Self.log("app lookups=\(lookups.map { "\($0.input):\($0.status):\($0.resultText.prefix(200))" })")
+        Self.log("app first wire=\(firstWire.prefix(600))")
+        Self.log("app reply: \(Self.lastAssistantText(b))")
+        verdict("app session reached api's note", noteWritten ? (lookupHit || told) : nil,
+                "lookupHit=\(lookupHit) toldInFirstMessage=\(told) path=\(routes)")
+        Self.log("COST: \([a, b].map { String(format: "%@=$%.4f", $0.name, $0.costUSD) })")
+        await wsApi.stopAll(); await wsApp.stopAll()
+        #expect(!summary.contains { $0.hasPrefix("FAIL") || $0.hasPrefix("NOT OBSERVED") }, "see \(scratch)/live-knowledge.log")
+    }
 }

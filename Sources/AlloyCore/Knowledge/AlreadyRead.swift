@@ -73,6 +73,7 @@ public enum AlreadyRead {
     public static func block(for session: UUID, candidates: [String], index: ReadIndex, notes: NotesStore,
                              stamps: [String: FileStamp?], names: [UUID: String],
                              changedBy: (String, Date) -> Author? = { _, _ in nil },
+                             display: (String) -> String = { $0 },
                              told: [String: ToldEntry], generation: Int = 0, timeZone: TimeZone = .current)
         -> (text: String, files: [SharedFile], told: [String: ToldEntry])? {
         let formatter = DateFormatter()
@@ -99,7 +100,7 @@ public enum AlreadyRead {
             if told[path] == entry { continue }
             let changed = reader.stamp != stamp
             let name = oneLine(names[reader.session] ?? "another session")
-            var line = "\(oneLine(path)) — read by \"\(name)\" at \(formatter.string(from: reader.date)), "
+            var line = "\(oneLine(display(path))) — read by \"\(name)\" at \(formatter.string(from: reader.date)), "
             let summary = note.map { summarize(oneLine($0.text)) }.flatMap { $0.isEmpty ? nil : $0 }
             if changed {
                 let who: String

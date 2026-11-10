@@ -350,12 +350,14 @@ private final class Transports: @unchecked Sendable {
     }
 
     @Test func guidanceMentionsCoordinationBriefly() {
-        let words = Guidance.text.split(whereSeparator: \.isWhitespace).count
+        let words = Guidance.text(shareAcrossProjects: false).split(whereSeparator: \.isWhitespace).count
         #expect(words < 250)
-        #expect(!Guidance.text.contains("Claude Code"))
-        for n in ["sessions_changes", "claim_region", "release_region"] { #expect(Guidance.text.contains(n)) }
+        #expect(!Guidance.text().contains("Claude Code"))
+        for n in ["sessions_changes", "claim_region", "release_region"] { #expect(Guidance.text().contains(n)) }
         #expect(words < 150)
+        // The default text (with the cross-project sentence) gets a cap of 175, raised deliberately for that sentence.
+        #expect(Guidance.text().split(whereSeparator: \.isWhitespace).count < 175)
         // Argument names are explicit, so a model does not invent `summary`.
-        #expect(Guidance.text.contains("`text`") && Guidance.text.contains("`path`"))
+        #expect(Guidance.text().contains("`text`") && Guidance.text().contains("`path`"))
     }
 }

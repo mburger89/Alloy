@@ -40,18 +40,24 @@ struct NotePath: Sendable, Equatable {
         return path.hasPrefix(prefix) && path.count > prefix.count
     }
 
-    /// Resolves `raw` (absolute or relative to `root`) before any disk access to the file itself. Nil when it names
-    /// nothing, the root itself, or anything outside the root once symlinks are followed.
+    /// Resolves `raw` (absolute or relative to `root`) in a scope of only the own project.
     static func resolve(_ raw: String, root: URL) -> NotePath? {
+        resolve(raw, root: root, scope: KnowledgeScope(ownRoot: root.path))
+    }
+
+    /// Resolves `raw` (absolute or relative to the session's own `root`) before any disk access to the file itself.
+    /// Nil when it names nothing, a project root itself, or anything outside every project in `scope` once symlinks
+    /// are followed. `relative` is the scope key; `root` is the containing project's real root.
+    static func resolve(_ raw: String, root: URL, scope: KnowledgeScope) -> NotePath? {
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, !trimmed.contains("\0"), let rootPath = realPath(root.path) else { return nil }
+        guard !trimmed.isEmpty, !trimmed.contains("\0") else { return nil }
         let joined = trimmed.hasPrefix("/") ? trimmed : root.path + "/" + trimmed
         let standard = URL(fileURLWithPath: joined).standardizedFileURL
-        guard let resolved = realPath(standard.path), isUnder(resolved, root: rootPath) else { return nil }
-        let inside = String(resolved.dropFirst(rootPath.count + 1))
-        // The key a session's Read would have been indexed under.
-        let key = ProjectLedger.relativePath(standard.path, root: root) ?? inside
-        return NotePath(relative: key, url: URL(fileURLWithPath: resolved), root: rootPath)
+        guard let resolved = realPath(standard.path), let scoped = scope.key(forReal: resolved),
+              let home = scope.root(ofKey: scoped) else { return nil }
+        // The key a session's Read would have been indexed under (own project only).
+        let key = scoped.hasPrefix("/") ? scoped : (ProjectLedger.relativePath(standard.path, root: root) ?? scoped)
+        return NotePath(relative: key, url: URL(fileURLWithPath: resolved), root: home)
     }
 }
 
@@ -112,7 +118,7 @@ enum NotesTools {
         let fd: Int32, stamp: FileStamp
         switch openChecked(p) {
         case .outside:
-            return .outside("\(rel) is outside the project; the notes tools only cover files under the project root.")
+            return .outside(NotesTools.outsideText(rel))
         case .notRegular: return .refuse("\(rel) is not a regular file, so notes_read does not serve it.")
         case .gone: return .refuse(notFresh(rel))
         case .file(let f, let st): fd = f; stamp = st
@@ -130,8 +136,12 @@ enum NotesTools {
         return .text([UInt8](data), stamp)
     }
 
+    static func outsideText(_ raw: String) -> String {
+        "\(raw) is outside your Alloy projects; the notes tools only cover files under folders opened in Alloy."
+    }
+
     static func outside(_ raw: String) -> MCPToolResult {
-        MCPToolResult(text: "\(raw) is outside the project; the notes tools only cover files under the project root.", isError: true)
+        MCPToolResult(text: outsideText(raw), isError: true)
     }
 
     /// The covered lines of a `total`-line file, as sorted, non-touching ranges.
@@ -220,7 +230,7 @@ struct NotesLookupTool: MCPTool {
     ])
 
     func call(_ arguments: JSONValue, caller: MCPCaller) async -> MCPToolResult {
-        guard let ws = ref.workspace, let root = await ws.notesRoot() else { return NotesTools.closing }
+        guard let ws = ref.workspace, let root = await ws.notesRoot(), let scope = await ws.refreshedScope() else { return NotesTools.closing }
         let path = arguments["path"]?.stringValue, topic = arguments["topic"]?.stringValue
         guard (path == nil) != (topic == nil) else {
             return MCPToolResult(text: "Pass exactly one of path or topic.", isError: true)
@@ -233,7 +243,7 @@ struct NotesLookupTool: MCPTool {
             guard let text = await ws.lookupTopic(name) else { return NotesTools.closing }
             return MCPToolResult(text: text)
         }
-        guard let path, let resolved = NotePath.resolve(path, root: root) else { return NotesTools.outside(path ?? "") }
+        guard let path, let resolved = NotePath.resolve(path, root: root, scope: scope) else { return NotesTools.outside(path ?? "") }
         let (stamp, escaped) = await Task.detached { NotesTools.stamp(of: resolved) }.value
         if escaped { return NotesTools.outside(path) }
         guard let text = await ws.lookupFile(resolved.relative, stamp: stamp) else { return NotesTools.closing }
@@ -253,7 +263,7 @@ struct NotesReadTool: MCPTool {
     ], required: ["path"])
 
     func call(_ arguments: JSONValue, caller: MCPCaller) async -> MCPToolResult {
-        guard let ws = ref.workspace, let root = await ws.notesRoot() else { return NotesTools.closing }
+        guard let ws = ref.workspace, let root = await ws.notesRoot(), let scope = await ws.refreshedScope() else { return NotesTools.closing }
         guard let path = arguments["path"]?.stringValue else { return MCPToolResult(text: "path is required.", isError: true) }
         func integer(_ key: String) -> (value: Int?, bad: Bool) {
             guard let v = arguments[key], v != .null else { return (nil, false) }
@@ -265,7 +275,7 @@ struct NotesReadTool: MCPTool {
         if let start, start < 1 { return MCPToolResult(text: "startLine must be at least 1.", isError: true) }
         if let start, let end, end < start { return MCPToolResult(text: "endLine is before startLine.", isError: true) }
         if let end, end < 1 { return MCPToolResult(text: "endLine must be at least 1.", isError: true) }
-        guard let resolved = NotePath.resolve(path, root: root) else { return NotesTools.outside(path) }
+        guard let resolved = NotePath.resolve(path, root: root, scope: scope) else { return NotesTools.outside(path) }
         let rel = resolved.relative
 
         let disk = await Task.detached { NotesTools.readServable(resolved) }.value
@@ -274,7 +284,7 @@ struct NotesReadTool: MCPTool {
         case .outside(let text): return MCPToolResult(text: text, isError: true)
         case .text(let bytes, let stamp):
             guard let entries = await ws.currentReads(rel, stamp: stamp) else { return NotesTools.closing }
-            if entries.isEmpty { return MCPToolResult(text: NotesTools.notFresh(rel)) }
+            if entries.isEmpty { return MCPToolResult(text: NotesTools.notFresh(scope.display(rel))) }
             let covering = entries.map(\.lines)
             let served = await Task.detached { NotesTools.serve(bytes, path: rel, covering: covering, start: start, end: end) }.value
             if served.served { await ws.countNoteServed() }
@@ -295,7 +305,7 @@ struct NotesWriteTool: MCPTool {
     ], required: ["text"])
 
     func call(_ arguments: JSONValue, caller: MCPCaller) async -> MCPToolResult {
-        guard let ws = ref.workspace, let root = await ws.notesRoot() else { return NotesTools.closing }
+        guard let ws = ref.workspace, let root = await ws.notesRoot(), let scope = await ws.refreshedScope() else { return NotesTools.closing }
         let path = arguments["path"]?.stringValue, topic = arguments["topic"]?.stringValue
         guard (path == nil) != (topic == nil) else {
             return MCPToolResult(text: "Pass exactly one of path or topic.", isError: true)
@@ -315,13 +325,13 @@ struct NotesWriteTool: MCPTool {
             }
             subject = .topic(name); stamp = nil; label = "topic \"\(name)\""
         } else {
-            guard let path, let resolved = NotePath.resolve(path, root: root) else { return NotesTools.outside(path ?? "") }
+            guard let path, let resolved = NotePath.resolve(path, root: root, scope: scope) else { return NotesTools.outside(path ?? "") }
             let (found, escaped) = await Task.detached { NotesTools.stamp(of: resolved) }.value
             if escaped { return NotesTools.outside(path) }
             guard let found else {
-                return MCPToolResult(text: "\(resolved.relative) does not exist or is not a file.", isError: true)
+                return MCPToolResult(text: "\(AlreadyRead.oneLine(scope.display(resolved.relative))) does not exist or is not a file.", isError: true)
             }
-            subject = .file(resolved.relative); stamp = found; label = resolved.relative
+            subject = .file(resolved.relative); stamp = found; label = AlreadyRead.oneLine(scope.display(resolved.relative))
         }
         guard await ws.addNote(author: caller.sessionID, subject: subject, text: text, stamp: stamp) else { return NotesTools.closing }
         return MCPToolResult(text: "Saved your note on \(label).")
@@ -337,9 +347,23 @@ extension Workspace {
         isShuttingDown ? nil : readIndex.current(path: path, stamp: stamp)
     }
 
+    /// The knowledge scope after picking up other windows' changes; nil once Alloy is closing.
+    func refreshedScope() -> KnowledgeScope? {
+        guard !isShuttingDown else { return nil }
+        refreshKnowledge()
+        return knowledgeScope
+    }
+
     func countNoteServed() { notesServed += 1 }
 
-    private func name(of session: UUID) -> String { AlreadyRead.oneLine(self.session(session)?.name ?? "a closed session") }
+    /// A session's name: its current one here, else the name it left with its note or read (another window's session).
+    /// A session of another project is named with that project's label.
+    func name(of session: UUID, authorName: String?, project: String?, fallback: String = "a closed session") -> String {
+        if let live = self.session(session)?.name { return AlreadyRead.oneLine(live) }
+        let who = authorName ?? fallback
+        guard let project, project != knowledgeScope.ownRoot else { return AlreadyRead.oneLine(who) }
+        return AlreadyRead.oneLine("\(who) (in \(knowledgeScope.label(ofRoot: project)))")
+    }
 
     /// A note's text as data: written by a session, quoted, on one line, never carrying the block header.
     private static func framed(_ text: String) -> String {
@@ -350,6 +374,7 @@ extension Workspace {
 
     /// Refreshes staleness for a file's notes from its current stamp, drops expired notes, and saves on any change.
     func reconcileNotes(_ path: String, stamp: FileStamp?) {
+        refreshKnowledge()
         var changed = notes.reconcile(path: path, stamp: stamp, at: now())
         if notes.expire(before: now().addingTimeInterval(-NotesStore.staleExpiry)) { changed = true }
         if changed { persistNotes() }
@@ -358,25 +383,26 @@ extension Workspace {
     /// A file changed (watcher, ledger, session edit or save): start the expiry clock on its notes. The stamp is read off main.
     func noteFileChanged(_ path: String) {
         guard notes.paths.contains(path) else { return }
-        let url = projectRoot.appendingPathComponent(path)
+        let target = knowledgeScope.absolute(path)
         track { [weak self] in
-            let stamp = await Task.detached { FileStamp.read(url.path) }.value
+            let stamp = await Task.detached { FileStamp.read(target) }.value
             self?.reconcileNotes(path, stamp: stamp)
         }
     }
 
     func lookupFile(_ path: String, stamp: FileStamp?) -> String? {
         guard !isShuttingDown else { return nil }
+        refreshKnowledge()
         reconcileNotes(path, stamp: stamp)
         let readers = readIndex.readers(path: path)
         let notes = self.notes.notes(for: .file(path))
-        var lines = ["Shared knowledge about \(path):"]
+        var lines = ["Shared knowledge about \(AlreadyRead.oneLine(knowledgeScope.display(path))):"]
         if readers.isEmpty { lines.append("Read by: nobody yet.") } else {
             lines.append("Read by:")
             for e in readers.sorted(by: { $0.date > $1.date }).prefix(20) {
                 let what = e.lines.map { "lines \($0.lowerBound)-\($0.upperBound)" } ?? "the whole file"
                 let state = stamp.map { $0 == e.stamp ? "file unchanged since" : "file changed since" } ?? "file is gone now"
-                lines.append("- \(name(of: e.session)) read \(what) at \(Self.stamp(e.date)) (\(state))")
+                lines.append("- \(name(of: e.session, authorName: e.authorName, project: e.project)) read \(what) at \(Self.stamp(e.date)) (\(state))")
             }
         }
         let current = stamp.map { readIndex.current(path: path, stamp: $0) } ?? []
@@ -395,7 +421,7 @@ extension Workspace {
             lines.append("Notes:")
             for n in notes.suffix(20) {
                 let label = self.notes.isCurrent(n, stamp: stamp) ? "[current]" : "[stale]"
-                lines.append("- \(label) \(name(of: n.author)), \(Self.stamp(n.date)), \(Self.framed(n.text))")
+                lines.append("- \(label) \(name(of: n.author, authorName: n.authorName, project: n.project)), \(Self.stamp(n.date)), \(Self.framed(n.text))")
             }
         }
         // Only what is still true answers anything: a reader of the file as it is now, or a note that is not stale.
@@ -405,19 +431,26 @@ extension Workspace {
 
     func lookupTopic(_ topic: String) -> String? {
         guard !isShuttingDown else { return nil }
+        refreshKnowledge()
         let found = notes.notes(for: .topic(topic))
         if found.isEmpty { return "No notes on the topic \"\(topic)\"." }
         notesServed += 1
         var lines = ["Notes on the topic \"\(topic)\":"]
-        for n in found.suffix(20) { lines.append("- [current] \(name(of: n.author)), \(Self.stamp(n.date)), \(Self.framed(n.text))") }
+        for n in found.suffix(20) {
+            var line = "- [current] \(name(of: n.author, authorName: n.authorName, project: n.project)), \(Self.stamp(n.date)), \(Self.framed(n.text))"
+            if let p = n.project, p != knowledgeScope.ownRoot { line += " (from \(AlreadyRead.oneLine(knowledgeScope.label(ofRoot: p))))" }
+            lines.append(line)
+        }
         return lines.joined(separator: "\n")
     }
 
     /// Stores a note and saves it; false once Alloy is closing.
     func addNote(author: UUID, subject: NoteSubject, text: String, stamp: FileStamp?) -> Bool {
         guard !isShuttingDown else { return false }
+        refreshKnowledge()
         if case .file(let path) = subject { notes.reconcile(path: path, stamp: stamp, at: now()) }
-        notes.add(Note(author: author, subject: subject, text: text, stamp: stamp, date: now()))
+        notes.add(Note(author: author, subject: subject, text: text, stamp: stamp, date: now(),
+                       authorName: session(author)?.name, project: knowledgeScope.ownRoot))
         persistNotes()
         return true
     }

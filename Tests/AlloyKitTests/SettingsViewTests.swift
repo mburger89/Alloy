@@ -263,6 +263,30 @@ import Testing
         await rig.workspace.stopAll()
     }
 
+    @Test func shareOtherProjectsToggleSaves() async throws {
+        let rig = Rig()
+        let window = try alloyWindow(rig.workspace)
+        try await open(window)
+        #expect(try window.element(identifier: "settings-share-other-projects").isEnabled)
+        try window.click(window.element(identifier: "settings-share-other-projects"))
+        try await window.runUntil { !rig.workspace.settings.shareAcrossProjects }
+        #expect(!AlloySettings.load(appSupport: rig.root.appendingPathComponent("support")).shareAcrossProjects)
+        await rig.workspace.stopAll()
+    }
+
+    @Test func shareOtherProjectsDisabledWithoutSharing() async throws {
+        let rig = Rig()
+        let window = try alloyWindow(rig.workspace)
+        try await open(window)
+        try window.click(window.element(identifier: "settings-share-knowledge"))
+        try await window.runUntil { !rig.workspace.settings.shareKnowledge }
+        try await window.runUntil { (try? window.element(identifier: "settings-share-other-projects").isEnabled) == false }
+        try window.click(window.element(identifier: "settings-share-other-projects"))
+        for _ in 0..<50 { window.tick() }
+        #expect(rig.workspace.settings.shareAcrossProjects, "a disabled toggle does not change")
+        await rig.workspace.stopAll()
+    }
+
     @Test func panelHasLabelAndRole() async throws {
         let rig = Rig()
         let window = try alloyWindow(rig.workspace)

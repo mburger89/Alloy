@@ -34,12 +34,20 @@ extension Workspace {
     /// The "already read" block for a message about to be sent to `s`, or nil when the master switch is off or there
     /// is nothing new to tell. Stamps are read off the main actor in one batch; the block itself is built here.
     func sharedContext(for s: Session, message: String) async -> (text: String, files: [SharedFile], pending: PendingTold)? {
-        guard settings.shareKnowledge, readIndex.hasReads(excluding: s.id) else { return nil }
+        guard settings.shareKnowledge else { return nil }
+        refreshKnowledge()
+        guard readIndex.hasReads(excluding: s.id) else { return nil }
         let recent = recentFiles(of: s.id)
-        let root = projectRoot
-        let prepared = await Task.detached { Self.prepareCandidates(message: message, recent: recent, root: root) }.value
+        let root = projectRoot, scope = knowledgeScope
+        let prepared = await Task.detached { Self.prepareCandidates(message: message, recent: recent, root: root, scope: scope) }.value
         guard !prepared.candidates.isEmpty, !isShuttingDown else { return nil }
-        let names = Dictionary(sessions.map { ($0.id, $0.name) }, uniquingKeysWith: { a, _ in a })
+        var names = Dictionary(sessions.map { ($0.id, $0.name) }, uniquingKeysWith: { a, _ in a })
+        // Readers in other windows are not sessions here; the name they left with their read stands in, with its project.
+        for c in prepared.candidates {
+            for e in readIndex.readers(path: c) where names[e.session] == nil {
+                names[e.session] = name(of: e.session, authorName: e.authorName, project: e.project, fallback: "another session")
+            }
+        }
         let ledger = self.ledger
         var table = told[s.id] ?? [:]
         for p in inflightTold where p.session == s.id { table.merge(p.updates) { _, new in new } }
@@ -47,7 +55,8 @@ extension Workspace {
                                       stamps: prepared.stamps, names: names,
                                       changedBy: { path, read in
                                           ledger.files[path]?.edits.last { $0.date > read }?.author
-                                      }, told: table, generation: compactionGeneration[s.id, default: 0])
+                                      },
+                                      display: { scope.display($0) }, told: table, generation: compactionGeneration[s.id, default: 0])
         guard let built else { return nil }
         let pending = PendingTold(session: s.id, updates: built.told)
         inflightTold.append(pending)
@@ -82,14 +91,20 @@ extension Workspace {
     /// against the root before any disk access, and a symlink out of the root is refused by `NotePath`.
     nonisolated static func prepareCandidates(message: String, recent: [String], root: URL)
         -> (candidates: [String], stamps: [String: FileStamp?]) {
+        prepareCandidates(message: message, recent: recent, root: root, scope: KnowledgeScope(ownRoot: root.path))
+    }
+
+    /// As above, across every project in `scope`; candidates are scope keys.
+    nonisolated static func prepareCandidates(message: String, recent: [String], root: URL, scope: KnowledgeScope)
+        -> (candidates: [String], stamps: [String: FileStamp?]) {
         var candidates: [String] = []
         var stamps: [String: FileStamp?] = [:]
-        let rootForms = [root.standardizedFileURL.path, root.resolvingSymlinksInPath().path]
+        let rootForms = [root.standardizedFileURL.path, root.resolvingSymlinksInPath().path] + scope.spellings
         func add(_ raw: String) {
             let joined = raw.hasPrefix("/") ? raw : root.path + "/" + raw
             let standard = URL(fileURLWithPath: joined).standardizedFileURL.path
             guard rootForms.contains(where: { standard.hasPrefix($0.hasSuffix("/") ? $0 : $0 + "/") }),
-                  let path = NotePath.resolve(raw, root: root) else { return }
+                  let path = NotePath.resolve(raw, root: root, scope: scope) else { return }
             guard stamps[path.relative] == nil else { return }
             let (stamp, _) = NotesTools.stamp(of: path)
             guard let stamp else { return }

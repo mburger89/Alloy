@@ -13,6 +13,10 @@ public struct AlloySettings: Codable, Equatable, Sendable {
     /// Sessions share notes about files through Alloy's local MCP server.
     public var shareKnowledge: Bool
 
+    /// With sharing on, notes and reads are also shared with every other project opened in Alloy; off keeps each
+    /// project's knowledge to itself.
+    public var shareAcrossProjects: Bool
+
     /// With sharing on, still ask before a session uses Alloy's tools (notes and coordination). The stored key keeps its
     /// original name so an older settings file still loads.
     public var askBeforeSharedNotes: Bool
@@ -25,7 +29,7 @@ public struct AlloySettings: Codable, Equatable, Sendable {
     public var darkTheme: String
 
     public init(claudePath: String? = nil, lastProjectPath: String? = nil,
-                shareKnowledge: Bool = true, askBeforeSharedNotes: Bool = false,
+                shareKnowledge: Bool = true, shareAcrossProjects: Bool = true, askBeforeSharedNotes: Bool = false,
                 themeMode: ThemeMode = .single, theme: String = "dracula",
                 lightTheme: String = "alloy-light", darkTheme: String = "dracula") {
         self.themeMode = themeMode
@@ -35,11 +39,12 @@ public struct AlloySettings: Codable, Equatable, Sendable {
         self.claudePath = claudePath
         self.lastProjectPath = lastProjectPath
         self.shareKnowledge = shareKnowledge
+        self.shareAcrossProjects = shareAcrossProjects
         self.askBeforeSharedNotes = askBeforeSharedNotes
     }
 
     private enum CodingKeys: String, CodingKey {
-        case claudePath, lastProjectPath, shareKnowledge, askBeforeSharedNotes, themeMode, theme, lightTheme, darkTheme
+        case claudePath, lastProjectPath, shareKnowledge, shareAcrossProjects, askBeforeSharedNotes, themeMode, theme, lightTheme, darkTheme
     }
 
     /// Every key is optional, so a file written by an older Alloy still loads with its values intact.
@@ -48,6 +53,7 @@ public struct AlloySettings: Codable, Equatable, Sendable {
         claudePath = try c.decodeIfPresent(String.self, forKey: .claudePath)
         lastProjectPath = try c.decodeIfPresent(String.self, forKey: .lastProjectPath)
         shareKnowledge = try c.decodeIfPresent(Bool.self, forKey: .shareKnowledge) ?? true
+        shareAcrossProjects = try c.decodeIfPresent(Bool.self, forKey: .shareAcrossProjects) ?? true
         askBeforeSharedNotes = try c.decodeIfPresent(Bool.self, forKey: .askBeforeSharedNotes) ?? false
         // The theme keys are lenient: a hand-edited bad value falls back to the default instead of failing the whole file
         // (which would make `load` return defaults and the next save wipe every other setting).
