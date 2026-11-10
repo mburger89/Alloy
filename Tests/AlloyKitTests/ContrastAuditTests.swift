@@ -185,8 +185,14 @@ private func ratio(_ a: RGB, _ b: RGB) -> Double {
 
         // Tabs (MetalUI `TabStrip`): selected, unselected, hovered.
         add("tabs.selected", text, [.background], 4.5, .metalUI)
-        add("tabs.unselected", text.opacity(0.62), [.surfaceSecondary], 4.5, .metalUI)
-        add("tabs.hover", text.opacity(0.62), [.surfaceSecondary, text.opacity(0.06)], 4.5, .metalUI)
+        // The unselected ink (label, close glyph, dirty dot) is `Theme.textSecondary` when the theme sets it, else
+        // textPrimary at 0.64 (MetalUI 0aec3e03, G30). `Color.secondary` resolves the first; the bare MetalUI theme sets no
+        // textSecondary, so the `.fallback` pairs model the second and stay MetalUI-owned. The bar is `surfaceSecondary`,
+        // and a hovered tab adds a textPrimary 0.06 wash.
+        add("tabs.unselected", Color.secondary, [.surfaceSecondary], 4.5)
+        add("tabs.hover", Color.secondary, [.surfaceSecondary, text.opacity(0.06)], 4.5)
+        add("tabs.unselected.fallback", text.opacity(0.64), [.surfaceSecondary], 4.5, .metalUI)
+        add("tabs.hover.fallback", text.opacity(0.64), [.surfaceSecondary, text.opacity(0.06)], 4.5, .metalUI)
 
         // MetalUI's own `.secondary` text (`Theme.textSecondary`): the default of a text field placeholder, a progress
         // caption, Markdown code captions and multi-line text. It can land on any fill, so every fill is audited.
@@ -194,10 +200,8 @@ private func ratio(_ a: RGB, _ b: RGB) -> Double {
                                                 ("sidebarFill", .sidebarFill), ("chatFill", .chatFill), ("panelFill", .panelFill),
                                                 ("markdownCodeFill", .markdownCodeFill)]
         for (name, fill) in levelSurfaces { add("text.secondary.on.\(name)", Color.secondary, [fill], 4.5) }
-        // Segmented picker labels (MetalUI draws them in plain `textPrimary`, unselected and selected) and the unselected
-        // tab ink (textPrimary at 0.64) over the picker track.
+        // Segmented picker labels (MetalUI draws them in plain `textPrimary`, unselected and selected).
         add("picker.unselected.onTrack", text, [.surfaceSecondary], 4.5, .metalUI)
-        add("tabs.unselected.onTrack", text.opacity(0.64), [.surfaceSecondary], 4.5, .metalUI)
 
         // The Inline | Side by side picker (MetalUI segmented `Picker`): labels on the track and on the selected pill, and
         // the pill against the track.
@@ -265,8 +269,9 @@ private func ratio(_ a: RGB, _ b: RGB) -> Double {
             let pass = value >= pair.minimum
             print(String(format: "AUDIT|%@|%@|%.2f|%.1f|%@|%@", dark ? "dark" : "light", pair.id, value, pair.minimum,
                          pair.owner == .alloy ? "alloy" : "metalui", pass ? "ok" : "FAIL"))
-            // The bare MetalUI theme carries no `textSecondary` slot; the built-in audit below covers it.
-            if !pass && pair.owner == .alloy && !pair.id.hasPrefix("text.secondary.on.") { failures.append("\(pair.id) \(String(format: "%.2f", value)) < \(pair.minimum)") }
+            // The bare MetalUI theme carries no `textSecondary` slot (the tab ink pairs resolve it too); the built-in audit below covers them.
+            if !pass && pair.owner == .alloy && !pair.id.hasPrefix("text.secondary.on.")
+                && pair.id != "tabs.unselected" && pair.id != "tabs.hover" { failures.append("\(pair.id) \(String(format: "%.2f", value)) < \(pair.minimum)") }
         }
         #expect(failures.isEmpty, "\(dark ? "dark" : "light"): \(failures.joined(separator: "; "))")
     }

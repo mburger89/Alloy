@@ -151,12 +151,12 @@ tint would push a published ink or text colour under its minimum. Solarized foll
 
 ### Text levels
 
-`textSecondary` and `textTertiary` are MetalUI's own secondary and tertiary text (placeholders, captions, Markdown code captions). Both are optional: a theme that leaves them out gets MetalUI's derivation from `textPrimary`. Every built-in sets both. Tertiary text is drawn nowhere that Alloy audits, so the tertiary values are the palettes' own muted colours and are not adjusted: Dracula comment #6272A4, Solarized Dark base01 #586E75, Solarized Light base1 #93A1A1, One Dark comment #5C6370; Alloy Dark and Alloy Light use #7B8294 and #7D838E. Secondary is audited at 4.5:1 on the background, surface, sidebar, chat, panel and Markdown code fills, and at 3:1 on the segmented-picker track (`surfaceSecondary`), where Alloy draws no secondary text. Alloy Dark and Alloy Light use their `mutedInk` (#C2C8D3, #4E545F) at 4.5:1 throughout, Solarized Dark uses base0 #839496 as published, and the three adjustments are listed under Dracula, Solarized Light and One Dark.
+`textSecondary` and `textTertiary` are MetalUI's own secondary and tertiary text (placeholders, captions, Markdown code captions). Both are optional: a theme that leaves them out gets MetalUI's derivation from `textPrimary`. Every built-in sets both. Tertiary text is drawn nowhere that Alloy audits, so the tertiary values are the palettes' own muted colours and are not adjusted: Dracula comment #6272A4, Solarized Dark base01 #586E75, Solarized Light base1 #93A1A1, One Dark comment #5C6370; Alloy Dark and Alloy Light use #7B8294 and #7D838E. Secondary is audited at 4.5:1 on the background, surface, sidebar, chat, panel and Markdown code fills, and at 4.5:1 on the segmented-picker track and tab bar (`surfaceSecondary`, also under a hovered tab's 6% textPrimary wash), because MetalUI draws the unselected tab ink (label, close glyph, dirty dot) in `textSecondary` (MetalUI 0aec3e03). Alloy Dark and Alloy Light use their `mutedInk` (#C2C8D3, #4E545F) at 4.5:1 throughout, and the four adjustments are listed under Dracula, Solarized Dark, Solarized Light and One Dark.
 
 ### Dracula
 
 - `questionInk`: #BD93F9 → #E2CFFC
-- `textSecondary`: #6272A4 → #97A2C3
+- `textSecondary`: #6272A4 → #BEC5DA
 - `errorInk`: #FF5555 → #FF8C8C
 - `syntax.comment`: #6272A4 → #97A2C3
 - `sessionColors[6]`: #FF5555 → #FF5D5D
@@ -164,6 +164,7 @@ tint would push a published ink or text colour under its minimum. Solarized foll
 
 ### Solarized Dark
 
+- `textSecondary`: #839496 → #94A2A4 (base0 lightened until the unselected tab ink reads on a hovered tab)
 - `questionInk`: #6C71C4 → #ACAFDE
 - `errorInk`: #DC322F → #E77472
 - `warningInk`: #B58900 → #BF9100
@@ -193,7 +194,7 @@ tint would push a published ink or text colour under its minimum. Solarized foll
 - `warningInk`: #B58900 → #826100
 - `surfaceSecondary`: #D3D3C5 → #C0C4BB (halfway between base2 and in-palette base1; the picker track and unselected tabs now read darker than the page and the selected thumb, both base3, by 1.64:1)
 - `textPrimary`: #657B83 → #56696F
-- `textSecondary`: #93A1A1 → #5F6E6E (base1 darkened until it reads on the page; the picker track is the tightest fill at 3.0:1)
+- `textSecondary`: #93A1A1 → #444F4F (base1 darkened until it reads on the page and on the unselected-tab bar, where a hovered tab is the tightest fill at 4.5:1)
 - `linkInk`: #268BD2 → #1D6AA0
 - `syntax.keyword`: #859900 → #627000
 - `syntax.string`: #2AA198 → #1F756F
@@ -219,7 +220,7 @@ tint would push a published ink or text colour under its minimum. Solarized foll
 
 - `questionInk`: #C678DD → #DDAEEA
 - `errorInk`: #E06C75 → #E5848B
-- `textSecondary`: #7F848E → #9DA1A9
+- `textSecondary`: #7F848E → #B7BAC0
 - `syntax.keyword`: #C678DD → #CC85E0
 - `syntax.comment`: #5C6370 → #9198A5
 - `syntax.property`: #E06C75 → #E5848B

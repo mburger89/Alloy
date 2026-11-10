@@ -171,8 +171,11 @@ Gaps G1-G7 come from spec section 5. Each was sent to the MetalUI session. Stopg
 ## G27: independent secondary and tertiary text levels (forwarded)
 MetalUI derives its secondary and tertiary text from one source, so a theme cannot set them separately. Forwarded; in progress upstream as PR #259.
 
-## G28: the segmented Picker thumb needs an edge (forwarded)
-The thumb is painted in `surface`, so on a theme whose page equals `surface` (Solarized Light) the selected segment vanishes and the control reads inverted. Asked for a hairline stroke or shadow, as on AppKit.
+## G28: the segmented Picker thumb needs an edge (#260)
+- Status: adopted (MetalUI 0aec3e03). The selected segment draws a 1px `textPrimary` edge, at 0.10 alpha in light themes and 0.12 in dark, so the thumb no longer vanishes on a theme whose page equals `surface` (Solarized Light). Alloy needed no change. The contrast audit's `picker.selectedVsTrack` still measures the fill against the track only; it does not count the edge.
+
+## G30: unselected tab ink follows `textSecondary` (#262)
+- Status: adopted (MetalUI 0aec3e03). An unselected `TabStrip` tab's ink (label, close glyph, dirty dot) is `Theme.textSecondary` when the theme sets it, else `textPrimary` at 0.64. Unselected segmented Picker labels stay full `textPrimary`. Every built-in sets `textSecondary`, and the audit's `tabs.unselected` and `tabs.hover` pairs are now Alloy-owned and enforced at 4.5:1 on the tab bar (`surfaceSecondary`). Dracula, Solarized Dark, Solarized Light and One Dark `textSecondary` were adjusted to pass (docs/themes.md).
 
 ## Note: MetalUI-internal colours with no token
 These are hard-coded white inside MetalUI and cannot follow a theme: the `Toggle` `.switch` knob, the `Toggle` `.button` on-label, and `borderedProminent` button labels. Alloy uses none of them today, but they would break on a theme with a light accent.
