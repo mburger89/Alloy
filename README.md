@@ -1,8 +1,11 @@
 # Alloy
 
 Alloy is a native macOS code editor built around LLM sessions. It hosts several [Claude Code](https://claude.com/claude-code)
-CLI sessions on one folder at the same time, shows every change each session makes as a live diff attributed to that
-session, and lets the sessions share what they have already read.
+CLI sessions on a project folder at the same time, shows every change each session makes as a live diff attributed to
+that session, and lets the sessions share what they have already read.
+
+You are not limited to one repository at a time: each Alloy window holds one project, and you can run several windows
+side by side, one per repository, each with its own sessions, diffs and history.
 
 It is built on [MetalUI](https://github.com/mburger89/MetalUI), a GPU-rendered Swift UI framework.
 
@@ -120,6 +123,9 @@ swift test
 
 - `<project-dir>` is the project; `file` (optional) opens in the code panel at launch. With no arguments Alloy reopens
   the last project, or asks for a folder. `/` and your home folder itself are never accepted as a project.
+- To work on several repositories at once, launch Alloy once per repository (for example
+  `.build/release/Alloy ~/src/app &` and `.build/release/Alloy ~/src/api &`). Each window keeps its own sessions,
+  edit ledger and shared notes; the projects do not interfere with each other. The folder need not be a git repository.
 - The tests never launch the real `claude`. Opt-in live tests drive the real CLI against a scratch repository in your
   temporary directory and cost real (small) API usage, on the cheapest model:
 
