@@ -47,6 +47,8 @@ let app = try App()
 // default look. The controller lives for the whole process: it watches the themes folder.
 let themeController = ThemeController(appSupport: appSupport, settings: settings, host: app,
                                       watcher: FSEventsSource(root: ThemeLibrary.userDirectory(appSupport: appSupport)))
+// The one place Alloy writes under `.claude`, and only when the user clicks "Install theme skill" in Settings.
+themeController.skillInstaller = ThemeSkillInstaller(home: FileManager.default.homeDirectoryForCurrentUser)
 themeController.folderOpener = { NSWorkspace.shared.open($0) }
 // The system's own appearance (the windows' scheme follows the forced one, so it can't answer this).
 themeController.systemScheme = { NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? .dark : .light }

@@ -87,3 +87,28 @@ import Testing
         #expect(Self.library.resolve(draft: file).notes.isEmpty)
     }
 }
+
+/// `ThemeContrast.rules` is what the theme skill shows; it must describe exactly the pairs `findings` checks.
+@Suite struct ThemeContrastRulesTests {
+    @Test func rulesMatchFindings() {
+        var names = Set(ThemeContrast.rules.flatMap { $0.foregrounds + $0.backgrounds.flatMap { $0 } })
+        names.subtract(["pickerThumb", "textSecondary", "syntax.*", "sessionColors[*]"])
+        var colors: [String: ThemeRGBA] = [:]
+        for name in names { colors[name] = ThemeRGBA(r: 0.5, g: 0.5, b: 0.5) }
+        for syntax in ["syntax.keyword", "syntax.comment", "syntax.string"] { colors[syntax] = ThemeRGBA(r: 0.5, g: 0.5, b: 0.5) }
+        let grey = ThemeRGBA(r: 0.5, g: 0.5, b: 0.5)
+        for appearance in [ThemeAppearance.dark, .light] {
+            // Everything is the same grey, so every pair fails and shows up as a finding.
+            let theme = ResolvedTheme(id: "t", name: "t", appearance: appearance, colors: colors, sessionColors: Array(repeating: grey, count: 6))
+            func key(_ fg: String, _ layers: [String], _ minimum: Double) -> String {
+                let foreground = fg.hasPrefix("syntax.") ? "syntax.*" : fg
+                let normal = foreground.hasPrefix("sessionColors[") ? "sessionColors[*]" : foreground
+                return "\(normal)|\(layers.joined(separator: ">"))|\(minimum)"
+            }
+            let found = Set(ThemeContrast.findings(theme).map { key($0.foreground, $0.layers, $0.minimum) })
+            let described = Set(ThemeContrast.rules.flatMap(\.pairs).map { key($0.foreground, $0.layers, $0.minimum) })
+            #expect(found.subtracting(described).isEmpty, "checked but not described (\(appearance)): \(found.subtracting(described))")
+            #expect(described.subtracting(found).isEmpty, "described but not checked (\(appearance)): \(described.subtracting(found))")
+        }
+    }
+}

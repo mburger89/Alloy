@@ -20,8 +20,57 @@ public struct ContrastFinding: Equatable, Sendable, Codable {
     }
 }
 
+/// One group of pairs `ThemeContrast.findings` checks: every foreground against every background (a background with
+/// several names is layers drawn over each other, bottom first). `syntax.*` stands for every syntax slot and
+/// `sessionColors[*]` for every session colour.
+public struct ContrastRule: Equatable, Sendable {
+    public var foregrounds: [String]
+    public var backgrounds: [[String]]
+    public var minimum: Double
+    public var note: String?
+
+    /// The pairs as `findings` names them: foreground, layers, minimum.
+    public var pairs: [(foreground: String, layers: [String], minimum: Double)] {
+        foregrounds.flatMap { fg in backgrounds.map { (fg, $0, minimum) } }
+    }
+}
+
 /// A pure WCAG 2.1 contrast check over a resolved theme.
 public enum ThemeContrast {
+    /// MetalUI's derived secondary text: `textPrimary` at this alpha when `textSecondary` is not set.
+    public static let derivedSecondaryAlphaDark = 0.648
+    public static let derivedSecondaryAlphaLight = 0.588
+
+    private static let textFills = ["background", "surface", "sidebarFill", "chatFill", "panelFill", "markdownCodeFill"]
+    private static let tints = ["thinkingTint", "readTint", "shellTint", "editAddTint", "editRemoveTint", "errorTint",
+                                "warningTint", "questionTint", "planTint", "commandTint", "webTint"]
+
+    /// Every pair group `findings` checks, in a form the theme skill renders. A test keeps it equal to `findings`.
+    public static let rules: [ContrastRule] = [
+        ContrastRule(foregrounds: ["textPrimary", "mutedInk", "textSecondary"], backgrounds: textFills.map { [$0] }, minimum: 4.5,
+                     note: "textSecondary not set: textPrimary at alpha \(derivedSecondaryAlphaDark) in a dark theme, \(derivedSecondaryAlphaLight) in a light one"),
+        ContrastRule(foregrounds: ["textPrimary", "textSecondary"], backgrounds: [["surfaceSecondary"]], minimum: 4.5, note: nil),
+        ContrastRule(foregrounds: ["textPrimary", "mutedInk"], backgrounds: tints.map { [$0] }, minimum: 4.5, note: nil),
+        ContrastRule(foregrounds: ["syntax.*"], backgrounds: [["markdownCodeFill"], ["surface"]], minimum: 4.5,
+                     note: "except syntax.comment, which needs 3"),
+        ContrastRule(foregrounds: ["syntax.comment"], backgrounds: [["markdownCodeFill"], ["surface"]], minimum: 3, note: nil),
+        ContrastRule(foregrounds: ["syntax.*"], backgrounds: [["editAddTint"], ["editRemoveTint"], ["surface", "codeSelectionFill"]],
+                     minimum: 3, note: nil),
+        ContrastRule(foregrounds: ["thinkingInk"], backgrounds: [["thinkingTint"]], minimum: 3, note: nil),
+        ContrastRule(foregrounds: ["readInk"], backgrounds: [["readTint"]], minimum: 3, note: nil),
+        ContrastRule(foregrounds: ["shellInk"], backgrounds: [["shellTint"]], minimum: 3, note: nil),
+        ContrastRule(foregrounds: ["editInk"], backgrounds: [["editAddTint"]], minimum: 3, note: nil),
+        ContrastRule(foregrounds: ["webInk"], backgrounds: [["webTint"]], minimum: 3, note: nil),
+        ContrastRule(foregrounds: ["questionInk"], backgrounds: [["questionTint"]], minimum: 3, note: nil),
+        ContrastRule(foregrounds: ["planInk"], backgrounds: [["planTint"]], minimum: 3, note: nil),
+        ContrastRule(foregrounds: ["errorInk"], backgrounds: [["errorTint"], ["panelFill"]], minimum: 4.5, note: nil),
+        ContrastRule(foregrounds: ["warningInk"], backgrounds: [["warningTint"]], minimum: 4.5, note: nil),
+        ContrastRule(foregrounds: ["linkInk"], backgrounds: [["chatFill"], ["markdownCodeFill"]], minimum: 4.5, note: nil),
+        ContrastRule(foregrounds: ["pickerThumbEdge"], backgrounds: [["surfaceSecondary"], ["surfaceSecondary", "pickerThumb"]], minimum: 3,
+                     note: "pickerThumb is the selected segment: surface in a light theme, textPrimary at alpha 0.18 over surfaceSecondary in a dark one"),
+        ContrastRule(foregrounds: ["sessionColors[*]"], backgrounds: [["sidebarFill"]], minimum: 3, note: nil),
+    ]
+
     /// WCAG 2.1 contrast ratio of two colours (alpha is ignored; composite first).
     public static func ratio(_ a: ThemeRGBA, _ b: ThemeRGBA) -> Double {
         let la = luminance(a), lb = luminance(b)
@@ -63,7 +112,7 @@ public enum ThemeContrast {
         // Secondary text: the slot when set, else textPrimary at MetalUI's derived alpha.
         var secondary: ThemeRGBA? = slot("textSecondary")
         if secondary == nil, var derived = slot("textPrimary") {
-            derived.a = theme.appearance == .dark ? 0.648 : 0.588
+            derived.a = theme.appearance == .dark ? derivedSecondaryAlphaDark : derivedSecondaryAlphaLight
             secondary = derived
         }
 

@@ -56,6 +56,9 @@ public final class ThemeController: ThemeWorkshop {
     @ObservationIgnored private let appSupport: URL
     @ObservationIgnored private let host: ThemeHost
     @ObservationIgnored private let directory: URL
+    /// Installs the theme skill from Settings. Nil (the default) hides the button, so nothing can write to a home
+    /// directory unless the app, or a test with a temporary home, supplies one.
+    @ObservationIgnored public var skillInstaller: ThemeSkillInstaller?
     @ObservationIgnored private let watcherBox = TaskBox()
     @ObservationIgnored private var reloading = false
     @ObservationIgnored private var reloadAgain = false
@@ -201,6 +204,9 @@ public final class ThemeController: ThemeWorkshop {
         unboundSettings = s
         apply()
     }
+
+    /// The themes folder's path, as the installed skill names it.
+    public var themesFolderPath: String { directory.path }
 
     public func backToDracula() throws { try choose(mode: .single, theme: "dracula") }
 

@@ -146,6 +146,11 @@ struct ThemeSection: Component {
     var close: (@MainActor () -> Void)?
     /// A theme choice that could not be saved; shown next to the controls, not in the page's shared error line.
     @State var saveError: String?
+    /// The installed theme skill's status; nil until first read (and always nil without an installer).
+    @State var skillStatus: ThemeSkillStatus?
+    @State var confirmingReplace = false
+    @State var skillError: String?
+    @State var skillLoaded = false
 
     var content: some ElementGroup {
         let themes = themes
@@ -194,9 +199,78 @@ struct ThemeSection: Component {
                 Button("Back to Dracula") { run { try themes.backToDracula() } }
                     .accessibilityIdentifier("settings-back-to-dracula")
             }
+            skillControls
         }
+        .onAppear { loadSkillStatus() }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("settings-theme-section")
+    }
+
+    // MARK: Theme skill
+
+    private var skillControls: some ElementGroup {
+        VStack(alignment: .leading, spacing: Pixels(6)) {
+            if let status = skillStatus {
+                switch status {
+                case .notInstalled:
+                    Button("Install theme skill") { install(expecting: .notInstalled) }.accessibilityIdentifier("settings-install-theme-skill")
+                case .different:
+                    Button("Update theme skill\u{2026}") { confirmingReplace = true }
+                        .accessibilityIdentifier("settings-install-theme-skill")
+                case .current:
+                    Button("Theme skill installed") {}.disabled(true).accessibilityIdentifier("settings-install-theme-skill")
+                }
+                Text("Lets Claude make Alloy themes in any session, not just /theme.").font(size: 11).foregroundColor(.mutedInk)
+                    .accessibilityIdentifier("settings-theme-skill-hint")
+                if confirmingReplace && status == .different {
+                    VStack(alignment: .leading, spacing: Pixels(6)) {
+                        Text("Replace the copy in your skills folder? Changes made to it will be lost.").font(size: 11)
+                            .accessibilityIdentifier("settings-theme-skill-confirm")
+                        HStack(spacing: Pixels(8)) {
+                            Button("Replace") { install(expecting: .different) }.accessibilityIdentifier("settings-theme-skill-replace")
+                            Button("Cancel") { confirmingReplace = false }.accessibilityIdentifier("settings-theme-skill-cancel")
+                        }
+                    }
+                }
+                if let skillError {
+                    Text(verbatim: skillError).font(size: 11).foregroundColor(.errorInk)
+                        .accessibilityIdentifier("settings-theme-skill-error")
+                }
+            }
+        }
+    }
+
+    private func skillFiles() -> [String: String] { ThemeSkill.files(themesFolder: themes.themesFolderPath) }
+
+    /// Reads the status once, off the main actor.
+    private func loadSkillStatus() {
+        guard !skillLoaded, let installer = themes.skillInstaller else { return }
+        skillLoaded = true
+        let files = skillFiles()
+        Task {
+            let status = await Task.detached { installer.status(files: files) }.value
+            skillStatus = status
+        }
+    }
+
+    /// Writes the skill off the main actor, then shows the new status (or the error).
+    private func install(expecting: ThemeSkillStatus) {
+        guard let installer = themes.skillInstaller else { return }
+        let files = skillFiles()
+        confirmingReplace = false
+        Task {
+            let result: Result<ThemeSkillStatus, Error> = await Task.detached {
+                do { return .success(try installer.install(files: files, expecting: expecting)) } catch { return .failure(error) }
+            }.value
+            switch result {
+            case .success(let status):
+                skillStatus = status
+                skillError = nil
+                // Files appeared since the status was read: ask before replacing them.
+                confirmingReplace = expecting == .notInstalled && status == .different
+            case .failure(let error): skillError = "Could not install the theme skill: \(error.localizedDescription)"
+            }
+        }
     }
 
     private func themeList(_ entries: [ThemeEntry], selected: String, listID: String, rowPrefix: String,

@@ -137,8 +137,16 @@ with "Use anyway" and "Cancel". Nothing changes until you choose. Built-in theme
 
 ### The alloy-theme skill file
 
-[docs/skills/alloy-theme/SKILL.md](skills/alloy-theme/SKILL.md) holds the same workflow as a skill you can use from your
-own sessions. Alloy never installs it: copy the folder into your own skills directory yourself.
+[docs/skills/alloy-theme](skills/alloy-theme) holds the theme skill: `SKILL.md` plus a `reference/` folder (every slot,
+and the six built-in themes with every slot filled in). Inside an Alloy theme session it follows the workflow above.
+In any other Claude session, where the theme tools do not exist, it writes the theme file straight into the themes
+folder and checks contrast itself.
+
+Installing it: open Settings and choose "Install theme skill". That copies the skill to `.claude/skills/alloy-theme` in
+your home folder, and it is the only place Alloy writes under `.claude`, and only when you click. If the installed copy
+differs (an older version, or edits of yours), the button reads "Update theme skill..." and asks before replacing it.
+Or copy the `alloy-theme` folder into your skills folder by hand. The folder here is generated from the app's own slot
+list and built-in themes; the text names the default themes folder, while the installed copy names yours.
 
 ## Slots
 

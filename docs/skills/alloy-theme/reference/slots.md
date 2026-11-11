@@ -1,0 +1,68 @@
+# Theme slots
+
+Every colour slot a theme file can set under `colors`, in file order, with what it colours. The values are
+`#RRGGBB` or `#RRGGBBAA`. A slot a theme leaves out comes from its `base`.
+
+- `background`: The window background behind everything.
+- `surface`: Raised surfaces: the composer box and the code view.
+- `surfaceSecondary`: Secondary surfaces: segmented-picker tracks and unselected tabs.
+- `accent`: The accent: selection, focus, toggles and the sidebar plus button.
+- `separator`: Hairline separators between panes and rows.
+- `textPrimary`: Primary text everywhere; secondary levels are derived from it.
+- `textSecondary`: Secondary text drawn by MetalUI controls: placeholders, captions. Optional; derived from textPrimary when absent.
+- `textTertiary`: Tertiary text drawn by MetalUI controls. Optional; derived from textPrimary when absent.
+- `scrollIndicator`: The scroll indicator thumb (usually translucent).
+- `scrim`: The dimming behind modal presentations (usually translucent).
+- `pickerThumbEdge`: The 1 px outline of the selected segment in segmented pickers; needs 3:1 against surfaceSecondary and against the selected segment.
+- `thinkingTint`: Background of thinking blocks in the chat.
+- `readTint`: Background of file-read blocks.
+- `shellTint`: Background of shell command blocks.
+- `editAddTint`: Background of added lines in edit diffs and the code panel.
+- `editRemoveTint`: Background of removed lines in edit diffs and the code panel.
+- `errorTint`: Background of error blocks.
+- `warningTint`: Background of warning blocks and notices.
+- `questionTint`: Background of question cards.
+- `planTint`: Background of plan cards.
+- `commandTint`: Background of slash-command blocks and the selected suggestion.
+- `webTint`: Background of web fetch and search blocks.
+- `thinkingInk`: Icon and accent colour of thinking blocks.
+- `readInk`: Icon and accent colour of file-read blocks.
+- `shellInk`: Icon and accent colour of shell blocks.
+- `editInk`: Icon and accent colour of edit blocks.
+- `webInk`: Icon and accent colour of web blocks.
+- `linkInk`: Links in chat text and code.
+- `questionInk`: Icon and accent colour of question cards.
+- `planInk`: Icon and accent colour of plan cards.
+- `errorInk`: Error text and icons.
+- `warningInk`: Warning text and icons.
+- `sidebarFill`: Background of the sidebar and user messages.
+- `chatFill`: Background of the chat column.
+- `panelFill`: Background of the code panel, settings and suggestion lists.
+- `markdownCodeFill`: Background of Markdown code blocks.
+- `markdownQuoteBar`: The bar beside Markdown block quotes.
+- `markdownRule`: Markdown horizontal rules.
+- `userAuthor`: Marker for edits you made in Alloy.
+- `outsideAuthor`: Marker for edits made outside Alloy.
+- `mutedInk`: Secondary text and glyphs; must read on every fill.
+- `sessionSelection`: Fill of the selected session row.
+- `controlBorder`: Border of the composer box.
+- `codeSelectionFill`: Selection fill in code views.
+- `findMatchFill`: Highlight of find matches in code views.
+- `currentFindMatchFill`: Highlight of the current find match.
+- `syntax.keyword`: Keywords.
+- `syntax.string`: String literals.
+- `syntax.comment`: Comments.
+- `syntax.number`: Numeric literals.
+- `syntax.type`: Type names.
+- `syntax.function`: Function and method names.
+- `syntax.property`: Properties, fields and parameters.
+- `syntax.constant`: Constants and booleans.
+- `syntax.builtin`: Built-in names.
+- `syntax.operator`: Operators.
+- `syntax.punctuation`: Punctuation and delimiters.
+- `syntax.attribute`: Attributes and decorators.
+- `syntax.tag`: Markup tags.
+- `syntax.heading`: Markdown headings.
+- `syntax.link`: Links in code and Markdown.
+
+`sessionColors` is a separate list of 6 to 12 colours, one per session row in the sidebar.
