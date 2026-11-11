@@ -130,6 +130,11 @@ public final class Workspace {
     /// Told.json writes: the newest unwritten snapshot, and whether a write task that will take it is queued.
     @ObservationIgnored var toldSnapshot: [String: [String: ToldEntry]]?
     @ObservationIgnored var toldWriteQueued = false
+    /// Changed paths awaiting one batched note check (see `noteFileChanged`), and whether that check is scheduled.
+    @ObservationIgnored var pendingNoteChecks: Set<String> = []
+    @ObservationIgnored var noteCheckQueued = false
+    /// How many batched note checks have run; tests watch it.
+    @ObservationIgnored var noteCheckRuns = 0
     /// Sessions whose outgoing message is having its shared context computed; later sends wait their turn, so
     /// messages keep their order.
     /// Told-updates of messages built but not yet delivered. They count as told for the next message of the session

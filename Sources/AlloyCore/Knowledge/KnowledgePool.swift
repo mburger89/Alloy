@@ -113,11 +113,66 @@ public final class KnowledgePool: @unchecked Sendable {
                     throw error
                 }
             }
+            if version < 4 {
+                try exec(handle, "BEGIN IMMEDIATE")
+                do {
+                    try migrateNotePaths(handle)
+                    try exec(handle, "PRAGMA user_version = 4")
+                    try exec(handle, "COMMIT")
+                } catch {
+                    _ = try? exec(handle, "ROLLBACK")
+                    throw error
+                }
+            }
         } catch {
             sqlite3_close(handle)
             throw error
         }
         return handle
+    }
+
+    /// Version 4: a file note is keyed by the real path of its file. A row stored under a link's path takes the real
+    /// path as its key and in its body; topic notes are untouched. Notes are separate rows, so nothing merges.
+    private static func migrateNotePaths(_ handle: OpaquePointer) throws {
+        struct Row { var id: String, key: String, body: Data }
+        var all: [Row] = []
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(handle, "SELECT id, key, body FROM notes WHERE key LIKE '/%'", -1, &stmt, nil) == SQLITE_OK else {
+            throw DBError(description: String(cString: sqlite3_errmsg(handle)))
+        }
+        while sqlite3_step(stmt) == SQLITE_ROW {
+            let n = Int(sqlite3_column_bytes(stmt, 2))
+            let body = n > 0 ? Data(bytes: sqlite3_column_blob(stmt, 2), count: n) : Data()
+            all.append(Row(id: sqlite3_column_text(stmt, 0).map { String(cString: $0) } ?? "",
+                           key: sqlite3_column_text(stmt, 1).map { String(cString: $0) } ?? "", body: body))
+        }
+        sqlite3_finalize(stmt)
+        var roots: [String] = []
+        var rootStmt: OpaquePointer?
+        if sqlite3_prepare_v2(handle, "SELECT root FROM projects", -1, &rootStmt, nil) == SQLITE_OK {
+            while sqlite3_step(rootStmt) == SQLITE_ROW { if let t = sqlite3_column_text(rootStmt, 0) { roots.append(String(cString: t)) } }
+        }
+        sqlite3_finalize(rootStmt)
+        func known(_ p: String) -> Bool { roots.contains { NotePath.isUnder(p, root: $0) } }
+        let decoder = JSONDecoder(), encoder = JSONEncoder()
+        let transient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
+        for row in all {
+            // A link out of every known project keeps its own key rather than a real path no project owns.
+            guard let real = NotePath.realPath(row.key), real != row.key, known(real) || !known(row.key),
+                  var note = try? decoder.decode(Note.self, from: row.body), case .file = note.subject else { continue }
+            note.subject = .file(real)
+            let body = try encoder.encode(note)
+            var upd: OpaquePointer?
+            guard sqlite3_prepare_v2(handle, "UPDATE notes SET key = ?, body = ? WHERE id = ?", -1, &upd, nil) == SQLITE_OK else {
+                throw DBError(description: String(cString: sqlite3_errmsg(handle)))
+            }
+            sqlite3_bind_text(upd, 1, real, -1, transient)
+            _ = body.withUnsafeBytes { sqlite3_bind_blob(upd, 2, $0.baseAddress, Int32(body.count), transient) }
+            sqlite3_bind_text(upd, 3, row.id, -1, transient)
+            let rc = sqlite3_step(upd)
+            sqlite3_finalize(upd)
+            guard rc == SQLITE_DONE else { throw DBError(description: String(cString: sqlite3_errmsg(handle))) }
+        }
     }
 
     /// Version 3: read rows are keyed by the real path of the file. A row stored under a link's path moves to the

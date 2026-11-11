@@ -96,7 +96,7 @@ public enum AlreadyRead {
             guard !others.isEmpty else { continue }
             let fresh = others.filter { $0.stamp == stamp }
             guard let reader = (fresh.isEmpty ? others : fresh).max(by: { $0.date < $1.date }) else { continue }
-            let note = notes.notes(for: .file(path)).last { notes.isCurrent($0, stamp: stamp) }
+            let note = notes.notes(for: .file(canonical(path))).last { notes.isCurrent($0, stamp: stamp) }
             let entry = ToldEntry(stamp: stamp, note: note?.id, generation: generation)
             if told[path] == entry { continue }
             let changed = reader.stamp != stamp

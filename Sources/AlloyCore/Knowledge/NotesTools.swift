@@ -14,6 +14,12 @@ struct NotePath: Sendable, Equatable {
     var url: URL
     /// The root with symlinks resolved; `url` is under it.
     var root: String
+    /// The key notes and reads are stored under: the real path's own-relative or absolute scope key. Nil in a
+    /// hand-built value, where `relative` is used.
+    var canonicalKey: String? = nil
+
+    /// The key a note about this file is stored and looked up under.
+    var key: String { canonicalKey ?? relative }
 
     /// `realpath` of the deepest existing ancestor of `path`, with the missing components appended. Nil when a
     /// component is a dangling symlink (it names something, so it cannot be treated as missing).
@@ -57,7 +63,7 @@ struct NotePath: Sendable, Equatable {
               let home = scope.root(ofKey: scoped) else { return nil }
         // The key a session's Read would have been indexed under (own project only).
         let key = scoped.hasPrefix("/") ? scoped : (ProjectLedger.relativePath(standard.path, root: root) ?? scoped)
-        return NotePath(relative: key, url: URL(fileURLWithPath: resolved), root: home)
+        return NotePath(relative: key, url: URL(fileURLWithPath: resolved), root: home, canonicalKey: scoped)
     }
 }
 
@@ -246,7 +252,7 @@ struct NotesLookupTool: MCPTool {
         guard let path, let resolved = NotePath.resolve(path, root: root, scope: scope) else { return NotesTools.outside(path ?? "") }
         let (stamp, escaped) = await Task.detached { NotesTools.stamp(of: resolved) }.value
         if escaped { return NotesTools.outside(path) }
-        guard let text = await ws.lookupFile(resolved.relative, stamp: stamp) else { return NotesTools.closing }
+        guard let text = await ws.lookupFile(resolved.relative, key: resolved.key, stamp: stamp) else { return NotesTools.closing }
         return MCPToolResult(text: text)
     }
 }
@@ -331,7 +337,7 @@ struct NotesWriteTool: MCPTool {
             guard let found else {
                 return MCPToolResult(text: "\(AlreadyRead.oneLine(scope.display(resolved.relative))) does not exist or is not a file.", isError: true)
             }
-            subject = .file(resolved.relative); stamp = found; label = AlreadyRead.oneLine(scope.display(resolved.relative))
+            subject = .file(resolved.key); stamp = found; label = AlreadyRead.oneLine(scope.display(resolved.relative))
         }
         guard await ws.addNote(author: caller.sessionID, subject: subject, text: text, stamp: stamp) else { return NotesTools.closing }
         return MCPToolResult(text: "Saved your note on \(label).")
@@ -382,20 +388,39 @@ extension Workspace {
 
     /// A file changed (watcher, ledger, session edit or save): start the expiry clock on its notes. The stamp is read off main.
     func noteFileChanged(_ path: String) {
-        guard notes.paths.contains(path) else { return }
-        let target = knowledgeScope.absolute(path)
+        guard !notes.paths.isEmpty else { return }
+        // A burst of changes (a checkout) costs a set insert each; one task resolves the whole batch.
+        pendingNoteChecks.insert(path)
+        guard !noteCheckQueued else { return }
+        noteCheckQueued = true
         track { [weak self] in
-            let stamp = await Task.detached { FileStamp.read(target) }.value
-            self?.reconcileNotes(path, stamp: stamp)
+            // Let the burst land before the batch is taken.
+            await Task.yield()
+            guard let self else { return }
+            let batch = self.pendingNoteChecks, scope = self.knowledgeScope
+            self.pendingNoteChecks = []
+            self.noteCheckQueued = false
+            self.noteCheckRuns += 1
+            // Notes are keyed by the real path, so typed paths are resolved off the main actor.
+            let found = await Task.detached { () -> [String: FileStamp?] in
+                var out: [String: FileStamp?] = [:]
+                for path in batch {
+                    let key = Self.canonicalReadKey(path, scope: scope)
+                    if out[key] == nil { out[key] = FileStamp.read(scope.absolute(key)) }
+                }
+                return out
+            }.value
+            for (key, stamp) in found where self.notes.paths.contains(key) { self.reconcileNotes(key, stamp: stamp) }
         }
     }
 
-    func lookupFile(_ path: String, stamp: FileStamp?) -> String? {
+    /// `path` is the file as the session typed it (for display); `key` is its canonical (real-path) key.
+    func lookupFile(_ path: String, key: String, stamp: FileStamp?) -> String? {
         guard !isShuttingDown else { return nil }
         refreshKnowledge()
-        reconcileNotes(path, stamp: stamp)
-        let readers = readIndex.readers(path: canonicalReadKey(path))
-        let notes = self.notes.notes(for: .file(path))
+        reconcileNotes(key, stamp: stamp)
+        let readers = readIndex.readers(path: key)
+        let notes = self.notes.notes(for: .file(key))
         var lines = ["Shared knowledge about \(AlreadyRead.oneLine(knowledgeScope.display(path))):"]
         if readers.isEmpty { lines.append("Read by: nobody yet.") } else {
             lines.append("Read by:")
@@ -405,7 +430,7 @@ extension Workspace {
                 lines.append("- \(name(of: e.session, authorName: e.authorName, project: e.project)) read \(what) at \(Self.stamp(e.date)) (\(state))")
             }
         }
-        let current = stamp.map { readIndex.current(path: canonicalReadKey(path), stamp: $0) } ?? []
+        let current = stamp.map { readIndex.current(path: key, stamp: $0) } ?? []
         if current.isEmpty {
             lines.append("notes_read can serve it: no (no session read it as it is now; use the Read tool).")
         } else if let stamp, stamp.size > ReadIndex.servableLimit {

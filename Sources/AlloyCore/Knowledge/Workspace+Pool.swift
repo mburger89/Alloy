@@ -49,7 +49,14 @@ extension Workspace {
 
     /// Without a pool, the 5a files are read into memory as 5a did, and left where they are.
     private func loadLegacyIntoMemory() {
-        if let store = loadFile(notesURL, { try JSONDecoder().decode(NotesStore.self, from: $0) }) { notes = store }
+        if let store = loadFile(notesURL, { try JSONDecoder().decode(NotesStore.self, from: $0) }) {
+            let scope = knowledgeScope
+            notes = NotesStore(notes: store.all.map { n in
+                var n = n
+                if case .file(let p) = n.subject { n.subject = .file(Self.canonicalReadKey(p, scope: scope)) }
+                return n
+            })
+        }
         if let file = loadFile(readsURL, { try ReadsFile.decode($0) }) {
             let scope = knowledgeScope
             readIndex = ReadIndex(entries: file.index.allEntries.map { e in
@@ -65,20 +72,24 @@ extension Workspace {
     /// Moves `notes.json` and `reads.json` into the pool, once per project. The files are renamed and the project is
     /// marked imported only when every write of the import succeeded; otherwise the next open tries again.
     private func importLegacyFiles(into pool: KnowledgePool) {
-        let own = knowledgeScope.ownRoot
+        let own = knowledgeScope.ownRoot, scope = knowledgeScope
         guard !pool.isImported(own) else { return }
         let failuresBefore = pool.failureCount
         let names = Dictionary(records.map { ($0.id, $0.name) }, uniquingKeysWith: { a, _ in a })
         func absolute(_ rel: String) -> String { rel.hasPrefix("/") ? rel : own + "/" + rel }
-        // A read of a file reached through a link is stored under the file it resolves to.
-        func resolved(_ rel: String) -> String { NotePath.realPath(absolute(rel)) ?? absolute(rel) }
+        // A read or note of a file reached through a link is stored under the file it resolves to.
+        func resolved(_ rel: String) -> String {
+            guard let real = NotePath.realPath(absolute(rel)) else { return absolute(rel) }
+            // A link out of every known project keeps its own path rather than a real path no project owns.
+            return scope.key(forReal: real) == nil && scope.key(forReal: absolute(rel)) != nil ? absolute(rel) : real
+        }
         var renames: [URL] = []
         var importedNotes: [Note] = [], importedGroups: [ReadGroupWrite] = []
         var legacyGenerations: [UUID: Int] = [:]
         if let store = loadFile(notesURL, { try JSONDecoder().decode(NotesStore.self, from: $0) }) {
             let imported = store.all.map { n -> Note in
                 var n = n
-                if case .file(let p) = n.subject { n.subject = .file(absolute(p)) }
+                if case .file(let p) = n.subject { n.subject = .file(resolved(p)) }
                 n.project = own
                 n.authorName = n.authorName ?? names[n.author]
                 return n

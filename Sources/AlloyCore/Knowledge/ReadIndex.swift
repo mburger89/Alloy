@@ -238,11 +238,11 @@ extension Workspace {
         let snapshot = readIndex
         track { [weak self] in
             let found = await Task.detached { Self.keyAndStamp(file, root: root, scope: scope) }.value
-            guard let self, let (rel, stamp, canonical) = found else { return }
+            guard let self, let (_, stamp, canonical) = found else { return }
             let seen = snapshot.current(path: canonical, stamp: stamp).contains {
                 ($0.session != sid || $0.generation == generation) && ReadIndex.covers($0.lines, requested)
             }
-            if seen || self.hasCurrentNote(rel, stamp) {
+            if seen || self.hasCurrentNote(canonical, stamp) {
                 s.redundantReads += 1
                 self.redundantReads += 1
             }

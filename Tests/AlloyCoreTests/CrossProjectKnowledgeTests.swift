@@ -521,6 +521,154 @@ private final class Dirs: @unchecked Sendable {
         #expect(looked.text.contains("Zed"), "\(looked.text)")
     }
 
+    // MARK: Notes keyed by real path
+
+    private func linkedProject() throws -> URL {
+        let root = dirs.make()
+        try FileManager.default.createDirectory(at: root.appendingPathComponent("real"), withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(at: root.appendingPathComponent("link"), withDestinationURL: root.appendingPathComponent("real"))
+        _ = try write(root, "real/x.swift")
+        return root
+    }
+
+    @Test func aNoteWrittenViaALinkIsFoundViaTheRealPathAndBack() async throws {
+        let support = dirs.make(), root = try linkedProject()
+        let ws = makeWS(root: root, support: support)
+        let a = await ws.newSession(name: "Alice"), b = await ws.newSession(name: "Bob")
+        let saved = try await call(ws, "notes_write", ["path": .string("link/x.swift"), "text": .string("via link")], as: a.id)
+        #expect(saved.text.contains("link/x.swift"), "\(saved.text)")
+        let viaReal = try await call(ws, "notes_lookup", ["path": .string("real/x.swift")], as: b.id)
+        #expect(viaReal.text.contains("[current]") && viaReal.text.contains("via link"), "\(viaReal.text)")
+        #expect(viaReal.text.contains("real/x.swift"))
+        _ = try await call(ws, "notes_write", ["path": .string("real/x.swift"), "text": .string("via real")], as: b.id)
+        let viaLink = try await call(ws, "notes_lookup", ["path": .string("link/x.swift")], as: a.id)
+        #expect(viaLink.text.contains("via link") && viaLink.text.contains("via real"), "\(viaLink.text)")
+        #expect(viaLink.text.contains("link/x.swift"))
+        #expect(ws.notes.paths == ["real/x.swift"], "\(ws.notes.paths)")
+    }
+
+    @Test func aNoteWrittenViaALinkIsSeenByAnotherWindowAndItsAlreadyReadBlock() async throws {
+        let support = dirs.make(), rootA = try linkedProject(), rootB = dirs.make()
+        let a = makeWS(root: rootA, support: support), b = makeWS(root: rootB, support: support)
+        let sa = await a.newSession(name: "Alice"), sb = await b.newSession(name: "Bob")
+        _ = try await call(a, "notes_write", ["path": .string("link/x.swift"), "text": .string("via link")], as: sa.id)
+        a.pool?.flush()
+        let abs = try real(rootA) + "/real/x.swift"
+        let found = try await call(b, "notes_lookup", ["path": .string(abs)], as: sb.id)
+        #expect(found.text.contains("[current]") && found.text.contains("via link") && found.text.contains("Alice"), "\(found.text)")
+        // A reader in window A gives the block something to name.
+        let stamp = try #require(FileStamp.read(abs))
+        a.recordRead(ReadEntry(session: sa.id, path: "real/x.swift", lines: nil, stamp: stamp, date: Date(), generation: 0))
+        await a.settle()
+        let ctx = try #require(await b.sharedContext(for: sb, message: "look at @\(abs)"))
+        #expect(ctx.text.contains("via link"), "\(ctx.text)")
+    }
+
+    @Test func aNoteWrittenViaALinkCountsForTheRepeatReadCheckOnTheRealPath() async throws {
+        let support = dirs.make(), root = try linkedProject()
+        let h = Harness()
+        let ws = makeWS(root: root, support: support, h)
+        let a = await ws.newSession(name: "Alice")
+        _ = try await call(ws, "notes_write", ["path": .string("link/x.swift"), "text": .string("via link")], as: a.id)
+        await doRead(ws, h.transports[0], "t1", try real(root) + "/real/x.swift")
+        #expect(ws.redundantReads == 1)
+    }
+
+    @Test func editingTheRealFileMakesANoteWrittenViaALinkStale() async throws {
+        let support = dirs.make(), root = try linkedProject()
+        let ws = makeWS(root: root, support: support)
+        let a = await ws.newSession(name: "Alice")
+        _ = try await call(ws, "notes_write", ["path": .string("link/x.swift"), "text": .string("via link")], as: a.id)
+        try "changed\nmore text\n".write(toFile: try real(root) + "/real/x.swift", atomically: true, encoding: .utf8)
+        let viaLink = try await call(ws, "notes_lookup", ["path": .string("link/x.swift")], as: a.id)
+        #expect(viaLink.text.contains("[stale]") && !viaLink.text.contains("[current]"), "\(viaLink.text)")
+        let viaReal = try await call(ws, "notes_lookup", ["path": .string("real/x.swift")], as: a.id)
+        #expect(viaReal.text.contains("[stale]") && !viaReal.text.contains("[current]"), "\(viaReal.text)")
+    }
+
+    @Test func aV3PoolNoteStoredUnderALinkIsMigratedToTheRealPath() async throws {
+        let support = dirs.make(), root = try linkedProject()
+        let own = try real(root)
+        let stamp = try #require(FileStamp.read(own + "/real/x.swift"))
+        let url = support.appendingPathComponent("Alloy/Shared/knowledge.sqlite")
+        _ = try KnowledgePool(url: url, onError: { _ in })
+        let author = UUID()
+        let fileNote = Note(author: author, subject: .file(own + "/link/x.swift"), text: "file note", stamp: stamp, date: Date(), authorName: "Zed", project: own)
+        let topicNote = Note(author: author, subject: .topic("Auth"), text: "topic note", stamp: nil, date: Date(), authorName: "Zed", project: own)
+        var db: OpaquePointer?
+        #expect(sqlite3_open(url.path, &db) == SQLITE_OK)
+        #expect(sqlite3_exec(db, "PRAGMA user_version = 3", nil, nil, nil) == SQLITE_OK)
+        let transient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
+        for (n, key) in [(fileNote, own + "/link/x.swift"), (topicNote, "topic:auth")] {
+            let body = try JSONEncoder().encode(n)
+            var ins: OpaquePointer?
+            #expect(sqlite3_prepare_v2(db, "INSERT INTO notes(id, key, project, body) VALUES(?, ?, ?, ?)", -1, &ins, nil) == SQLITE_OK)
+            sqlite3_bind_text(ins, 1, n.id.uuidString, -1, transient); sqlite3_bind_text(ins, 2, key, -1, transient)
+            sqlite3_bind_text(ins, 3, own, -1, transient)
+            _ = body.withUnsafeBytes { sqlite3_bind_blob(ins, 4, $0.baseAddress, Int32(body.count), transient) }
+            #expect(sqlite3_step(ins) == SQLITE_DONE)
+            sqlite3_finalize(ins)
+        }
+        sqlite3_close(db)
+
+        let ws = makeWS(root: root, support: support)
+        let s = await ws.newSession(name: "Bob")
+        let pool = try #require(ws.pool)
+        let rows = pool.loadNotes()
+        #expect(Set(rows.map(\.subject)) == [.file(own + "/real/x.swift"), .topic("Auth")], "\(rows.map(\.subject))")
+        #expect(Set(rows.map(\.id)) == [fileNote.id, topicNote.id])
+        let looked = try await call(ws, "notes_lookup", ["path": .string("real/x.swift")], as: s.id)
+        #expect(looked.text.contains("file note"), "\(looked.text)")
+        let topic = try await call(ws, "notes_lookup", ["topic": .string("Auth")], as: s.id)
+        #expect(topic.text.contains("topic note"), "\(topic.text)")
+    }
+
+    private func writeLinkedLegacyNote(root: URL, support: URL) throws {
+        let stamp = try #require(FileStamp.read(try real(root) + "/real/x.swift"))
+        var store = NotesStore()
+        store.add(Note(author: UUID(), subject: .file("link/x.swift"), text: "legacy link note", stamp: stamp, date: Date()))
+        let dir = ProjectLedger.storeURL(projectRoot: root, appSupport: support).deletingLastPathComponent()
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        try JSONEncoder().encode(store).write(to: dir.appendingPathComponent("notes.json"))
+    }
+
+    @Test func aLegacyNoteWrittenViaALinkIsImportedUnderTheRealPath() async throws {
+        let support = dirs.make(), root = try linkedProject()
+        try writeLinkedLegacyNote(root: root, support: support)
+        let ws = makeWS(root: root, support: support)
+        let s = await ws.newSession(name: "Bob")
+        await ws.settle()
+        let looked = try await call(ws, "notes_lookup", ["path": .string("real/x.swift")], as: s.id)
+        #expect(looked.text.contains("legacy link note") && looked.text.contains("[current]"), "\(looked.text)")
+    }
+
+    @Test func aLegacyNoteWrittenViaALinkIsFoundByTheRealPathWithoutAPool() async throws {
+        let support = dirs.make(), root = try linkedProject()
+        try writeLinkedLegacyNote(root: root, support: support)
+        try FileManager.default.createDirectory(at: support.appendingPathComponent("Alloy"), withIntermediateDirectories: true)
+        try Data("not a folder".utf8).write(to: support.appendingPathComponent("Alloy/Shared"))
+        let ws = makeWS(root: root, support: support)
+        let s = await ws.newSession(name: "Bob")
+        #expect(ws.pool == nil)
+        let looked = try await call(ws, "notes_lookup", ["path": .string("real/x.swift")], as: s.id)
+        #expect(looked.text.contains("legacy link note") && looked.text.contains("[current]"), "\(looked.text)")
+    }
+
+    @Test func aBurstOfUnrelatedChangesIsOneBatchAndALinkNoteStillGoesStale() async throws {
+        let support = dirs.make(), root = try linkedProject()
+        let ws = makeWS(root: root, support: support)
+        let a = await ws.newSession(name: "Alice")
+        _ = try await call(ws, "notes_write", ["path": .string("link/x.swift"), "text": .string("via link")], as: a.id)
+        try "changed\nmore text\n".write(toFile: try real(root) + "/real/x.swift", atomically: true, encoding: .utf8)
+        await ws.settle()
+        let before = ws.noteCheckRuns
+        for i in 0..<500 { ws.noteFileChanged("unrelated/f\(i).txt") }
+        ws.noteFileChanged("real/x.swift")
+        await ws.settle()
+        #expect(ws.noteCheckRuns - before == 1, "\(ws.noteCheckRuns - before)")
+        #expect(ws.notes.all.first?.staleSince != nil)
+    }
+
     private func isolatedSettings() -> AlloySettings { var s = AlloySettings(); s.shareAcrossProjects = false; return s }
 
     /// Makes the pool's connection see a change by another connection (a window of another project registering).
