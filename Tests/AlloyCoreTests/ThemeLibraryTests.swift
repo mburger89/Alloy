@@ -251,15 +251,20 @@ import Testing
     }
 
     @Test func duplicateIdsKeepFirstAndReportRest() throws {
-        let dir = try tempDir()
-        defer { try? FileManager.default.removeItem(at: dir) }
-        try write(themeJSON("Upper"), "a.JSON", in: dir)
-        try write(themeJSON("Lower"), "a.json", in: dir)
-        let names = try FileManager.default.contentsOfDirectory(atPath: dir.path)
-        guard names.count == 2 else { return }   // case-insensitive volume: the two names cannot coexist
-        let library = load(dir)
+        // `a.JSON` and `a.json` share the id `user/a`. A case-insensitive volume cannot hold both names in one
+        // folder, so they live in two folders and the listing hands the loader both.
+        let upperDir = try tempDir(), lowerDir = try tempDir()
+        defer {
+            try? FileManager.default.removeItem(at: upperDir)
+            try? FileManager.default.removeItem(at: lowerDir)
+        }
+        try write(themeJSON("Upper"), "a.JSON", in: upperDir)
+        try write(themeJSON("Lower"), "a.json", in: lowerDir)
+        let files = [lowerDir.appendingPathComponent("a.json"), upperDir.appendingPathComponent("a.JSON")]
+        let library = ThemeLibrary.load(builtIns: testBuiltIns, userDirectory: upperDir, previous: nil,
+                                        listing: { _ in files })
         #expect(library.user.map(\.id) == ["user/a"])
-        #expect(library.user.first?.file.name == "Upper")
+        #expect(library.user.first?.file.name == "Upper")   // "a.JSON" sorts before "a.json"
         #expect(library.errors.map(\.fileName) == ["a.json"])
     }
 

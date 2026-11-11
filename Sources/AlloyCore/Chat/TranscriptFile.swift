@@ -7,7 +7,8 @@ public enum TranscriptFile {
     /// character outside `[A-Za-z0-9]` replaced by `-`, per UTF-16 unit like the CLI. Symlinks resolve first
     /// (the CLI uses the real path, so `/tmp` is `/private/tmp`).
     public static func url(cliSessionID: String, projectRoot: URL, home: URL) -> URL {
-        let real = projectRoot.resolvingSymlinksInPath().path
+        // realpath, not resolvingSymlinksInPath: Foundation strips /private (/private/tmp/x -> /tmp/x), the CLI does not.
+        let real = NotePath.realPath(projectRoot.path) ?? projectRoot.resolvingSymlinksInPath().path
         let slug = String(decoding: real.utf16.map { u -> UInt16 in
             switch u {
             case 0x30...0x39, 0x41...0x5A, 0x61...0x7A: return u

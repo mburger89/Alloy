@@ -48,6 +48,17 @@ private final class WarnRig {
         advance(1)
     }
 
+    /// Polls on the main actor until `condition` holds (up to 5 s). `emit` only queues an event on the session's
+    /// stream; the workspace's consumer task handles it on a later main-actor turn, which `settle()` does not wait for.
+    func until(_ condition: () -> Bool) async -> Bool {
+        let deadline = ContinuousClock.now + .seconds(5)
+        while !condition() {
+            if ContinuousClock.now > deadline { return false }
+            try? await Task.sleep(for: .milliseconds(2))
+        }
+        return true
+    }
+
     func advance(_ seconds: TimeInterval) { clock.date.addTimeInterval(seconds); manual.advance(by: seconds) }
 
     /// Lets the expiry sleeper wake and run after `advance`.
@@ -396,12 +407,14 @@ private func noticeText(_ e: TestElement, _ w: TestWindow) -> String {
         #expect(r.workspace.coordinationWarnings.count == 1)
         await r.bag[0].emit(.toolResult(ToolResultMessage(toolUseID: "ta", isError: true, text: "denied",
                                                           result: .none)))
-        await r.workspace.settle()
-        #expect(r.workspace.coordinationWarnings.isEmpty)
+        // The result reaches the workspace through the session's stream; wait for its effect.
+        #expect(await r.until { r.workspace.coordinationWarnings.isEmpty })
         // A different call's failure leaves another warning alone.
         let o = await WarnRig.make()
         await o.overlap()
         await o.bag[0].emit(.toolResult(ToolResultMessage(toolUseID: "other", isError: true, text: "x", result: .none)))
+        // Nothing observable changes for "other", so give the stream a bounded stretch to deliver it, then check.
+        try await Task.sleep(for: .milliseconds(100))
         await o.workspace.settle()
         #expect(o.workspace.coordinationWarnings.count == 1)
     }
@@ -413,8 +426,7 @@ private func noticeText(_ e: TestElement, _ w: TestWindow) -> String {
         r.hook(r.a, id: "ta", line: 11)      // Ada is told about it
         #expect(r.workspace.coordinationWarnings.count == 1)
         await r.bag[1].emit(.toolResult(ToolResultMessage(toolUseID: "tb", isError: true, text: "denied", result: .none)))
-        await r.workspace.settle()
-        #expect(r.workspace.coordinationWarnings.isEmpty)
+        #expect(await r.until { r.workspace.coordinationWarnings.isEmpty })
         // If Ada's own edit went through, the warning stays: there is still a live edit beside the lines.
         let o = await WarnRig.make()
         await o.applied(.outside, [25: "outside"])

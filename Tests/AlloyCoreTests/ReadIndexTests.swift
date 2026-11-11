@@ -81,6 +81,25 @@ private func readResult(_ id: String, _ path: String, start: Int = 1, num: Int, 
         await ws.settle()
     }
 
+    /// `/tmp` is `/private/tmp`; Foundation's `resolvingSymlinksInPath` strips the prefix, so a project opened by its
+    /// `/tmp` spelling must still own the files the CLI names by their real path.
+    @Test func aProjectUnderTmpRecordsReadsAndNotes() async throws {
+        let h = Harness()
+        let root = URL(fileURLWithPath: "/tmp/alloy-tmp-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let path = try write(root, "a.txt")
+        let ws = makeWS(root: root, support: dirs.make(), h)
+        let s = await ws.newSession(name: "A")
+        await doRead(ws, h.transports[0], "t1", "/private" + path)
+        #expect(ws.readIndex.readers(path: "a.txt").count == 1)
+        let tool = try #require(ws.notesTools.first { $0.name == "notes_write" })
+        let r = await tool.call(.object(["path": .string("a.txt"), "text": .string("x")]), caller: MCPCaller(sessionID: s.id))
+        #expect(!r.isError, "\(r.text)")
+        #expect(ws.notes.notes(for: .file("a.txt")).count == 1)
+        await ws.stopAll()
+    }
+
     @Test func readIsIndexedWithStamp() async throws {
         let h = Harness(); let root = dirs.make()
         let path = try write(root, "a.txt")

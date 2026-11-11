@@ -102,14 +102,17 @@ public struct ThemeLibrary: Equatable, Sendable {
 
     /// Reads `userDirectory/*.json`. Synchronous and cheap; safe to call from a background context.
     /// A file that stops parsing keeps its `previous` good version and is reported in `errors`.
-    public static func load(builtIns: [ThemeEntry], userDirectory: URL, previous: ThemeLibrary?) -> ThemeLibrary {
+    /// `listing` returns the candidate files (default: the folder's contents); tests pass their own, since a
+    /// case-insensitive volume cannot hold two names that differ only in case.
+    public static func load(builtIns: [ThemeEntry], userDirectory: URL, previous: ThemeLibrary?,
+                            listing: ((URL) -> [URL])? = nil) -> ThemeLibrary {
         var errors: [ThemeLoadError] = []
         var entries: [ThemeEntry] = []
         var seen: Set<String> = []
         let fm = FileManager.default
         let keys: [URLResourceKey] = [.fileSizeKey, .isRegularFileKey]
-        let urls = (try? fm.contentsOfDirectory(at: userDirectory, includingPropertiesForKeys: keys,
-                                                options: [.skipsHiddenFiles])) ?? []
+        let urls = listing?(userDirectory) ?? (try? fm.contentsOfDirectory(
+            at: userDirectory, includingPropertiesForKeys: keys, options: [.skipsHiddenFiles])) ?? []
 
         for url in urls.sorted(by: { $0.lastPathComponent < $1.lastPathComponent }) {
             let fileName = url.lastPathComponent

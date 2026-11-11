@@ -36,6 +36,15 @@ enum ReplayError: Error { case notText }
         #expect(u.path == "/home/x/.claude/projects/-private-tmp-a-b-c-d/abc.jsonl")
     }
 
+    @Test func slugOfAProjectUnderTmpUsesTheRealPrivatePath() throws {
+        let dir = URL(fileURLWithPath: "/tmp/alloy-slug-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let u = TranscriptFile.url(cliSessionID: "abc", projectRoot: dir, home: URL(fileURLWithPath: "/home/x"))
+        let slug = ("/private" + dir.path).map { $0.isASCII && ($0.isLetter || $0.isNumber) ? String($0) : "-" }.joined()
+        #expect(u.path == "/home/x/.claude/projects/\(slug)/abc.jsonl")
+    }
+
     @Test func lastMessageUUIDIsTheNewestAssistantRecord() throws {
         let data = try Self.sample()
         // Later records are a system line, last-prompt and cost-state; the message before them is the assistant's.
