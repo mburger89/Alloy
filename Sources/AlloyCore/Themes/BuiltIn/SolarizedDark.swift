@@ -20,6 +20,7 @@ extension BuiltInThemes {
     "textTertiary": "#586E75",
     "scrollIndicator": "#FFFFFF59",
     "scrim": "#0000006B",
+    "pickerThumbEdge": "#869799",
     "thinkingTint": "#0B3244",
     "readTint": "#043740",
     "shellTint": "#142E33",

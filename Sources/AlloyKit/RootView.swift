@@ -54,6 +54,7 @@ struct AlloyScreen: Component {
                 SidebarView(workspace: workspace, showSettings: settingsShown)
                     .frame(minWidth: Pixels(200), idealWidth: Pixels(250), maxWidth: Pixels(380))
                 VStack(spacing: 0) {
+                    if let themes { ThemeBar(themes: themes) }
                     CoordinationNotice(workspace: workspace)
                     ZStack {
                         ChatView(workspace: workspace, store: store)

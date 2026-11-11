@@ -31,7 +31,7 @@ struct SettingsView: Component {
                 .accessibilityIdentifier("settings-close")
             }
             if let themes {
-                ThemeSection(themes: themes)
+                ThemeSection(themes: themes, workspace: workspace, close: close)
                 Divider()
             }
             VStack(alignment: .leading, spacing: Pixels(8)) {
@@ -141,6 +141,9 @@ struct SettingsView: Component {
 /// the `ThemeController`, so a pick repaints at once and is saved.
 struct ThemeSection: Component {
     let themes: ThemeController
+    /// With `close`, enables "Make a theme with Claude…".
+    var workspace: Workspace?
+    var close: (@MainActor () -> Void)?
     /// A theme choice that could not be saved; shown next to the controls, not in the page's shared error line.
     @State var saveError: String?
 
@@ -181,6 +184,13 @@ struct ThemeSection: Component {
             HStack(spacing: Pixels(8)) {
                 Button("Open themes folder") { themes.openThemesFolder(using: themes.folderOpener) }
                     .accessibilityIdentifier("settings-open-themes")
+                if let workspace, let close {
+                    Button("Make a theme with Claude\u{2026}") {
+                        close()
+                        Task { await workspace.newThemeSession(description: nil) }
+                    }
+                    .accessibilityIdentifier("settings-make-theme")
+                }
                 Button("Back to Dracula") { run { try themes.backToDracula() } }
                     .accessibilityIdentifier("settings-back-to-dracula")
             }
@@ -217,9 +227,9 @@ struct ThemeSection: Component {
         return Binding(get: { themes.currentSettings.themeMode }, set: { mode in run { try themes.choose(mode: mode) } })
     }
 
-    private func pick(theme: String) { run { try themes.choose(theme: theme) } }
-    private func pick(light: String) { run { try themes.choose(light: light) } }
-    private func pick(dark: String) { run { try themes.choose(dark: dark) } }
+    private func pick(theme: String) { run { try themes.request(theme: theme) } }
+    private func pick(light: String) { run { try themes.request(light: light) } }
+    private func pick(dark: String) { run { try themes.request(dark: dark) } }
 
     private func run(_ change: () throws -> Void) {
         do { try change(); saveError = nil } catch { saveError = "Could not save the theme: \(error.localizedDescription)" }

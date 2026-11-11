@@ -35,6 +35,7 @@ public actor LocalServer {
     private var port: UInt16 = 0
     private var tokenToSession: [String: UUID] = [:]
     private var sessionToToken: [UUID: String] = [:]
+    private var sessionScopes: [UUID: Set<MCPToolScope>] = [:]
     private struct OpenConnection {
         let connection: NWConnection
         let task: Task<Void, Never>
@@ -123,7 +124,9 @@ public actor LocalServer {
     }
 
     /// A random 32-byte, hex-encoded bearer token, stable for the session until revoked.
-    public func token(for session: UUID) -> String {
+    /// Each call sets the session's tool scopes, replacing any earlier ones.
+    public func token(for session: UUID, scopes: Set<MCPToolScope> = [.shared]) -> String {
+        sessionScopes[session] = scopes
         if let existing = sessionToToken[session] { return existing }
         var bytes = [UInt8](repeating: 0, count: 32)
         let status = SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes)
@@ -139,6 +142,7 @@ public actor LocalServer {
 
     public func revoke(session: UUID) {
         hookProblemReported.remove(session)
+        sessionScopes[session] = nil
         if let token = sessionToToken.removeValue(forKey: session) { tokenToSession[token] = nil }
     }
 
@@ -222,7 +226,7 @@ public actor LocalServer {
             var caller: MCPCaller?
             if let auth = head.headers["authorization"], auth.lowercased().hasPrefix("bearer ") {
                 let candidate = String(auth.dropFirst(7)).trimmingCharacters(in: .whitespaces)
-                if let s = session(forBearer: candidate) { caller = MCPCaller(sessionID: s) }
+                if let s = session(forBearer: candidate) { caller = MCPCaller(sessionID: s, scopes: sessionScopes[s] ?? [.shared]) }
             }
             guard let caller else {
                 await fail(conn, 401, declared: declared ?? 0, have: have); return

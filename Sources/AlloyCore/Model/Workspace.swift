@@ -20,10 +20,14 @@ struct SessionRecord: Codable {
     var forkSource: String?
     /// The source's last message when the fork was made (`Session.forkPoint`).
     var forkPoint: String?
+    /// What the session is for; nil (a record from before themes) means coding.
+    var purpose: SessionPurpose?
 
     init(id: UUID, name: String, colorIndex: Int, hasConversation: Bool,
          cliSessionID: String? = nil, model: String? = nil, permissionMode: String? = nil,
-         slashCommands: [SlashCommandInfo]? = nil, forkSource: String? = nil, forkPoint: String? = nil) {
+         slashCommands: [SlashCommandInfo]? = nil, forkSource: String? = nil, forkPoint: String? = nil,
+         purpose: SessionPurpose? = nil) {
+        self.purpose = purpose
         self.forkSource = forkSource
         self.forkPoint = forkPoint
         self.id = id; self.name = name; self.colorIndex = colorIndex; self.hasConversation = hasConversation
@@ -43,6 +47,7 @@ struct SessionRecord: Codable {
         slashCommands = try c.decodeIfPresent([SlashCommandInfo].self, forKey: .slashCommands)
         forkSource = try c.decodeIfPresent(String.self, forKey: .forkSource)
         forkPoint = try c.decodeIfPresent(String.self, forKey: .forkPoint)
+        purpose = try c.decodeIfPresent(SessionPurpose.self, forKey: .purpose)
     }
 }
 
@@ -179,6 +184,10 @@ public final class Workspace {
     @ObservationIgnored var claimsWrite: Task<Void, Never>?
     /// The four coordination tools the local server offers next to the notes tools.
     @ObservationIgnored public private(set) var coordinationTools: [MCPTool] = []
+    /// The UI the theme tools reach (Plan 7b); set by the app's theme controller.
+    @ObservationIgnored public weak var themeWorkshop: ThemeWorkshop?
+    /// The five theme tools, offered only to theme sessions.
+    @ObservationIgnored public private(set) var themeTools: [MCPTool] = []
     /// Session messages delivered within the last minute, for the rate limits.
     @ObservationIgnored var messageLog: [(from: UUID, to: UUID, at: Date)] = []
     /// The project root as hook paths may spell it: standardised and symlink-resolved (computed once, in `init`).
@@ -388,6 +397,7 @@ public final class Workspace {
         }
         self.notesTools = NotesTools.make(workspace: self)
         self.coordinationTools = CoordinationTools.make(workspace: self)
+        self.themeTools = ThemeTools.make(workspace: self)
         self.hookRootForms = Self.hookRootForms(of: projectRoot)
     }
 
@@ -402,7 +412,7 @@ public final class Workspace {
         guard !isShuttingDown else { return }
         let task = Task { @MainActor [weak self] in
             guard let self else { return }
-            let server = LocalServer(tools: notesTools + coordinationTools, onListenerFailure: { [weak self] error in
+            let server = LocalServer(tools: notesTools + coordinationTools + themeTools, onListenerFailure: { [weak self] error in
                 Task { @MainActor in await self?.listenerFailed(error) }
             }, report: { [weak self] message in
                 Task { @MainActor in self?.report(message) }
@@ -437,11 +447,11 @@ public final class Workspace {
     }
 
     /// The bearer token for a session, minted on first use. Nil when the server is not running.
-    func mcpToken(for id: UUID) async -> String? {
+    func mcpToken(for id: UUID, scopes: Set<MCPToolScope>) async -> String? {
         await startServer()
         await revocations[id]?.value
         guard !isShuttingDown, let server = localServer else { return nil }
-        let token = await server.token(for: id)
+        let token = await server.token(for: id, scopes: scopes)
         mcpTokens[id] = token
         return token
     }
@@ -462,9 +472,27 @@ public final class Workspace {
     // MARK: Sessions
 
     @discardableResult
-    public func newSession(name: String) async -> Session {
+    public func newSession(name: String) async -> Session { await newSession(name: name, purpose: .coding) }
+
+    /// `/theme [description]`: a new session that makes a theme with the user. Its first message is the description
+    /// (or a stock opening line), because a stream-json session sits silent until it gets one.
+    @discardableResult
+    public func newThemeSession(description: String?) async -> Session {
+        let trimmed = description?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let shown = trimmed.count > 40 ? String(trimmed.prefix(40)) + "\u{2026}" : trimmed
+        let s = await newSession(name: trimmed.isEmpty ? "Theme: new" : "Theme: \(shown)", purpose: .theme)
+        guard session(s.id) != nil else { return s }
+        selectedSessionID = s.id
+        let first = trimmed.isEmpty ? "Help me make an Alloy theme." : trimmed
+        await send(OutgoingMessage(text: first, images: [], priority: nil), to: s.id, routeSlash: false)
+        return s
+    }
+
+    @discardableResult
+    func newSession(name: String, purpose: SessionPurpose) async -> Session {
         ensureLoaded()
-        let s = Session(id: UUID(), name: allowedName(name, for: nil), colorIndex: records.count % 12, projectRoot: projectRoot)
+        let s = Session(id: UUID(), name: allowedName(name, for: nil), colorIndex: records.count % 12, projectRoot: projectRoot,
+                        purpose: purpose)
         if Self.isReserved(name) { s.transcript.appendNotice(kind: .commandOutput, text: Self.reservedNotice(for: s.name)) }
         if isShuttingDown {
             // Not registered and never launched; the caller gets a stopped session.
@@ -597,7 +625,7 @@ public final class Workspace {
         let fork = Session(id: UUID(), name: trimmed.isEmpty ? "\(source.name) (fork)" : allowedName(trimmed, for: nil),
                            colorIndex: records.count % 12, projectRoot: projectRoot,
                            hasConversation: true, model: source.model, permissionMode: source.permissionMode,
-                           forkSource: source.forkSource ?? source.cliSessionID, forkPoint: point)
+                           forkSource: source.forkSource ?? source.cliSessionID, forkPoint: point, purpose: source.purpose)
         if Self.isReserved(trimmed) { fork.transcript.appendNotice(kind: .commandOutput, text: Self.reservedNotice(for: fork.name)) }
         sessions.append(fork)
         // Before the selection: selecting a session with pending history is what loads it, at the fork point.
@@ -684,7 +712,10 @@ public final class Workspace {
             return
         }
         // Sharing needs the server and this session's token; without either the session launches as if sharing were off.
-        let token = settings.shareKnowledge ? await mcpToken(for: s.id) : nil
+        var scopes: Set<MCPToolScope> = settings.shareKnowledge ? [.shared] : []
+        if s.purpose == .theme { scopes.insert(.theme) }
+        let shared = scopes.contains(.shared), theme = scopes.contains(.theme)
+        let token = scopes.isEmpty ? nil : await mcpToken(for: s.id, scopes: scopes)
         if stoppedDuringLaunch.contains(s.id) || isShuttingDown { markStopped(s); return }
         s.beginProcess()
         // The CLI keeps the model on a fork but starts it in the default permission mode (probed): a fork's
@@ -702,9 +733,15 @@ public final class Workspace {
         if configuration.resumeSessionAt != nil { launchedAtForkPoint.insert(s.id) } else { launchedAtForkPoint.remove(s.id) }
         if let token, let url = serverURL {
             configuration.mcpConfigJSON = MCPServer.config(url: url, token: token)
-            configuration.extraSettingsJSON = Hooks.settingsJSON(url: url, token: token)
-            configuration.appendSystemPrompt = Guidance.text(shareKnowledge: settings.shareKnowledge, shareAcrossProjects: settings.shareAcrossProjects)
-            configuration.allowedTools = settings.askBeforeSharedNotes ? [] : Guidance.alloyToolNames
+            if shared { configuration.extraSettingsJSON = Hooks.settingsJSON(url: url, token: token) }
+            var prompts: [String] = []
+            if shared { prompts.append(Guidance.text(shareKnowledge: settings.shareKnowledge, shareAcrossProjects: settings.shareAcrossProjects)) }
+            if theme { prompts.append(ThemeGuidance.text) }
+            configuration.appendSystemPrompt = prompts.joined(separator: "\n\n")
+            configuration.allowedTools = settings.askBeforeSharedNotes ? []
+                : (shared ? Guidance.alloyToolNames : []) + (theme ? Guidance.themeToolNames : [])
+        } else if theme {
+            s.transcript.appendNotice(kind: .error, text: "Theme tools are unavailable: Alloy's local server is not running.")
         }
         let transport = makeTransport(configuration)
         let stream: AsyncStream<ProcessEvent>
@@ -783,6 +820,7 @@ public final class Workspace {
     private func failLaunch(_ s: Session, _ message: String) {
         revokeToken(for: s.id)
         if stoppedDuringLaunch.contains(s.id) { markStopped(s); return }
+        noteThemeSessionEnded(s.id)
         s.status = .failedToLaunch(message)
         deferredControls.removeValue(forKey: s.id)
         if discardQueue(for: s.id) {
@@ -790,7 +828,14 @@ public final class Workspace {
         }
     }
 
+    /// Tells the theme workshop a theme session's process is gone, so it can drop that session's preview.
+    private func noteThemeSessionEnded(_ id: UUID) {
+        guard session(id)?.purpose == .theme else { return }
+        themeWorkshop?.themeSessionEnded(id)
+    }
+
     private func markStopped(_ s: Session) {
+        noteThemeSessionEnded(s.id)
         pendingRelaunch.remove(s.id)
         turnPending.remove(s.id)
         revokeToken(for: s.id)
@@ -830,6 +875,7 @@ public final class Workspace {
         if case .message(.controlCancel(let rid)) = event { promptInputs.removeValue(forKey: rid) }
         if case .exited = event {
             pendingRelaunch.remove(s.id)
+            noteThemeSessionEnded(s.id)
             releaseIdleWaiters(s.id, reachedIdle: false)
             revokeToken(for: s.id)
             forgetPending(for: s.id)
@@ -880,17 +926,24 @@ public final class Workspace {
     }
 
     public func send(_ message: OutgoingMessage, to id: Session.ID) async {
+        await send(message, to: id, routeSlash: true)
+    }
+
+    /// `routeSlash: false` sends the text verbatim, skipping slash-command routing (a theme's first message is the
+    /// user's description, which may itself start with `/`).
+    func send(_ message: OutgoingMessage, to id: Session.ID, routeSlash: Bool) async {
         guard let s = session(id) else { return }
         if isShuttingDown {
             s.transcript.appendNotice(kind: .error, text: "Message not sent: Alloy is quitting")
             return
         }
-        switch message.images.isEmpty && message.origin == nil ? SlashCommands.route(message.text) : .passThrough {
+        switch routeSlash && message.images.isEmpty && message.origin == nil ? SlashCommands.route(message.text) : .passThrough {
         case .passThrough: break
         case .setModel(let name): await setModel(name, for: id); return
         case .setMode(let mode): await setPermissionMode(mode, for: id); return
         case .showModelPicker: s.requestModelPicker = true; return
         case .fork(let name): await fork(id, name: name); return
+        case .theme(let description): await newThemeSession(description: description); return
         case .localHelp:
             s.transcript.appendNotice(kind: .commandOutput, text: SlashCommands.helpText(s.slashCommands))
             return
@@ -1163,6 +1216,7 @@ public final class Workspace {
         }
         entry.task.cancel()
         shellWindows.removeValue(forKey: id)
+        noteThemeSessionEnded(id)
         await entry.transport.terminate()
         if let s = session(id) {
             s.transcript.finalizeStreaming()
@@ -1213,6 +1267,7 @@ public final class Workspace {
             }
         }
         for id in Array(entries.keys) + Array(late.keys) {
+            noteThemeSessionEnded(id)
             forgetPending(for: id)
             releaseAwaitingEcho(for: id)
             guard let s = session(id) else { continue }
@@ -1910,7 +1965,8 @@ public final class Workspace {
         for s in sessions {
             let r = SessionRecord(id: s.id, name: s.name, colorIndex: s.colorIndex, hasConversation: s.hasConversation,
                                   cliSessionID: s.cliSessionID, model: s.model, permissionMode: s.permissionMode,
-                                  slashCommands: s.slashCommands.isEmpty ? nil : s.slashCommands, forkSource: s.forkSource, forkPoint: s.forkPoint)
+                                  slashCommands: s.slashCommands.isEmpty ? nil : s.slashCommands, forkSource: s.forkSource, forkPoint: s.forkPoint,
+                                  purpose: s.purpose == .coding ? nil : s.purpose)
             if let i = records.firstIndex(where: { $0.id == s.id }) { records[i] = r } else { records.append(r) }
         }
         do {
@@ -2001,7 +2057,8 @@ public final class Workspace {
         for r in records where session(r.id) == nil {
             let s = Session(id: r.id, name: r.name, colorIndex: r.colorIndex, projectRoot: projectRoot,
                             hasConversation: r.hasConversation, cliSessionID: r.cliSessionID,
-                            model: r.model, permissionMode: r.permissionMode, forkSource: r.forkSource, forkPoint: r.forkPoint)
+                            model: r.model, permissionMode: r.permissionMode, forkSource: r.forkSource, forkPoint: r.forkPoint,
+                            purpose: r.purpose ?? .coding)
             s.status = .dormant
             // A name saved before "Alloy" was reserved.
             if Self.isReserved(r.name) {

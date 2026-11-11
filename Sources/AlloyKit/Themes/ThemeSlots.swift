@@ -26,6 +26,7 @@ public enum ThemeSlots {
         ThemeSlot(name: "textTertiary", purpose: "Tertiary text drawn by MetalUI controls. Optional; derived from textPrimary when absent.", color: Color.metalUITertiary, apply: { theme, rgba in theme.textTertiary = rgba.hsla }),
         ThemeSlot(name: "scrollIndicator", purpose: "The scroll indicator thumb (usually translucent).", color: Color(ColorToken.scrollIndicator), apply: { theme, rgba in theme.scrollIndicator = rgba.hsla }),
         ThemeSlot(name: "scrim", purpose: "The dimming behind modal presentations (usually translucent).", color: Color(ColorToken.scrim), apply: { theme, rgba in theme.scrim = rgba.hsla }),
+        ThemeSlot(name: "pickerThumbEdge", purpose: "The 1 px outline of the selected segment in segmented pickers; needs 3:1 against surfaceSecondary and against the selected segment.", color: Color.pickerThumbEdge, apply: { theme, rgba in theme[SegmentedThumbEdge.self] = Color(rgba.hsla) }),
     ]
 
     /// A slot backed by the palette key `K`; `also` is a second key that follows it (the code panel's diff row tints

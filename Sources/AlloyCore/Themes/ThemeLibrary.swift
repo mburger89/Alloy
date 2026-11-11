@@ -98,6 +98,24 @@ public struct ThemeLibrary: Equatable, Sendable {
                              colors: colors, sessionColors: sessionColors)
     }
 
+    /// A draft merged over its `base` chain like `resolve(_:)`. An unknown or missing base falls back by appearance and
+    /// adds a note.
+    public func resolve(draft: ThemeFile, id: String = "draft") -> (theme: ResolvedTheme, notes: [String]) {
+        var notes: [String] = []
+        if let base = draft.base, baseEntry(base) == nil {
+            let fallback = draft.appearance == .dark ? "alloy-dark" : "alloy-light"
+            notes.append("Unknown base \"\(base)\"; using \(fallback).")
+        }
+        let entry = ThemeEntry(id: id, file: draft, isBuiltIn: false)
+        var library = self
+        library.user.removeAll { $0.id == id }
+        library.user.append(entry)
+        let theme = library.resolve(id)
+            ?? ResolvedTheme(id: id, name: draft.name, appearance: draft.appearance, colors: draft.colors,
+                             sessionColors: draft.sessionColors ?? [])
+        return (theme, notes)
+    }
+
     // MARK: Loading
 
     /// Reads `userDirectory/*.json`. Synchronous and cheap; safe to call from a background context.

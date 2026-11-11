@@ -150,10 +150,16 @@ Gaps G1-G7 come from spec section 5. Each was sent to the MetalUI session. Stopg
 - Wanted API: a list-selection style or key (selection fill plus the text colours that go with it), instead of reusing the tint.
 
 ## G23 Segmented picker: selected pill barely differs from the track
-- Status: open (filed in polish batch B)
+- Status: resolved (2026-11-11). The selected segment is outlined at 3:1 or better in every built-in, through the `pickerThumbEdge` slot (see G31); the fill is unchanged.
 - Used by: the code panel's Inline | Side by side picker.
 - Gap: the selected segment's fill against the track measured 1.24:1 light (white on E4E7EC) and 1.68:1 dark; WCAG 1.4.11 asks 3:1 for a state indicator. Labels themselves pass (selected 17.8 light / 6.6 dark, unselected 14.4 / 11.1).
 - Wanted: a stronger selected-segment treatment (border or accent), or a theme key.
+
+## G31: a themeable segmented-picker thumb edge
+- Status: requested and forwarded 2026-11-11, then adopted with the MetalUI revision that adds `SegmentedThumbEdge` (MetalUI 5e2ce935).
+- Used by: the code panel's Inline | Side by side picker, and every segmented picker.
+- Gap: the selected segment's 1 px edge was fixed at `textPrimary` 0.10 (light) or 0.12 (dark), far below the 3:1 non-text contrast WCAG 1.4.11 asks for (G23).
+- Adopted as: the `pickerThumbEdge` theme slot sets `SegmentedThumbEdge`. Its default is the old edge. Every built-in sets its own colour at 3:1 against the track and the thumb, and `ThemeContrast` checks the same two pairs in user-made themes.
 
 ## G24 Menu items cannot carry an identifier or a tooltip
 - Status: adopted (MetalUI #253, "Menu items carry a Button's accessibilityIdentifier and help"; Alloy at MetalUI 8de0b5b4)

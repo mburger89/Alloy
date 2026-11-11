@@ -3,8 +3,16 @@ import Foundation
 /// Who is calling a tool: the Alloy session whose token authenticated the request.
 public struct MCPCaller: Sendable {
     public let sessionID: UUID
-    public init(sessionID: UUID) { self.sessionID = sessionID }
+    /// The tool scopes the session's token grants.
+    public let scopes: Set<MCPToolScope>
+    public init(sessionID: UUID, scopes: Set<MCPToolScope> = [.shared]) {
+        self.sessionID = sessionID
+        self.scopes = scopes
+    }
 }
+
+/// Which sessions may see a tool: `.shared` tools go to every session, `.theme` tools only to theme-making sessions.
+public enum MCPToolScope: String, Sendable, Hashable { case shared, theme }
 
 public struct MCPToolResult: Sendable, Equatable {
     public let text: String
@@ -21,7 +29,13 @@ public protocol MCPTool: Sendable {
     var description: String { get }
     /// A JSON Schema object; its `type` must be `"object"`.
     var inputSchema: JSONValue { get }
+    /// Which callers see this tool. Defaults to `.shared`.
+    var scope: MCPToolScope { get }
     func call(_ arguments: JSONValue, caller: MCPCaller) async -> MCPToolResult
+}
+
+extension MCPTool {
+    public var scope: MCPToolScope { .shared }
 }
 
 /// JSON-RPC handling for the MCP subset Alloy serves: initialize, ping, tools/list, tools/call.
@@ -72,7 +86,7 @@ public enum MCPServer {
         case "ping":
             return result(id: id, .object([:]))
         case "tools/list":
-            let list = tools.map { tool -> JSONValue in
+            let list = tools.filter { caller.scopes.contains($0.scope) }.map { tool -> JSONValue in
                 .object([
                     "name": .string(tool.name),
                     "description": .string(tool.description),
@@ -82,7 +96,7 @@ public enum MCPServer {
             return result(id: id, .object(["tools": .array(list)]))
         case "tools/call":
             guard let name = params["name"]?.stringValue else { return error(id: id, code: -32602, "Missing tool name") }
-            guard let tool = tools.first(where: { $0.name == name }) else {
+            guard let tool = tools.first(where: { $0.name == name && caller.scopes.contains($0.scope) }) else {
                 return error(id: id, code: -32602, "Unknown tool: \(name)")
             }
             let outcome: MCPToolResult

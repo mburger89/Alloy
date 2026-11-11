@@ -30,7 +30,7 @@ import Testing
         await transport.emit(.systemInit(SystemInit(model: "m", permissionMode: "default", sessionID: "s", tools: [],
                                                     slashCommands: [], terminalSlashCommands: ["doctor"])))
         await transport.emit(.commandsChanged(commands))
-        try await settle { session.slashCommands.count == 4 }
+        try await settle { session.slashCommands.count == 5 }
         if working {
             await transport.emit(.assistantBlock(messageID: "m1", block: .text("working")))
             try await settle { session.status == .working }

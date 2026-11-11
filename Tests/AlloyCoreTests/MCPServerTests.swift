@@ -12,6 +12,16 @@ private struct EchoTool: MCPTool {
     }
 }
 
+private struct ThemeEchoTool: MCPTool {
+    let name = "theme_echo"
+    let description = "A theme-scoped tool"
+    let inputSchema: JSONValue = .object(["type": .string("object")])
+    var scope: MCPToolScope { .theme }
+    func call(_ arguments: JSONValue, caller: MCPCaller) async -> MCPToolResult {
+        MCPToolResult(text: "theme")
+    }
+}
+
 private struct Harness {
     let server: LocalServer
     let url: URL
@@ -19,11 +29,11 @@ private struct Harness {
     let token: String
     let urlSession: URLSession
 
-    static func make() async throws -> Harness {
-        let server = LocalServer(tools: [EchoTool()])
+    static func make(tools: [MCPTool] = [EchoTool()], scopes: Set<MCPToolScope> = [.shared]) async throws -> Harness {
+        let server = LocalServer(tools: tools)
         let url = try await server.start()
         let session = UUID()
-        let token = await server.token(for: session)
+        let token = await server.token(for: session, scopes: scopes)
         return Harness(server: server, url: url, session: session, token: token,
                        urlSession: URLSession(configuration: .ephemeral))
     }
@@ -173,6 +183,54 @@ private func rawPost(port: Int, token: String, body: String = pingBody, extra: S
         #expect(bad?["error"]?["code"]?.intValue == -32602)
         let (ping, _) = try await h.rpc(#"{"jsonrpc":"2.0","id":4,"method":"ping"}"#)
         #expect(ping?["result"] == .object([:]))
+        await h.stop()
+    }
+
+    private func listedNames(_ h: Harness, token: String? = nil) async throws -> [String] {
+        let (data, _) = try await h.post(Data(#"{"jsonrpc":"2.0","id":1,"method":"tools/list"}"#.utf8), token: token)
+        let list = JSONValue.parse(data)
+        return (list?["result"]?["tools"]?.arrayValue ?? []).compactMap { $0["name"]?.stringValue }
+    }
+
+    private func callTheme(_ h: Harness, token: String? = nil) async throws -> JSONValue? {
+        let (data, _) = try await h.post(
+            Data(#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"theme_echo"}}"#.utf8), token: token)
+        return JSONValue.parse(data)
+    }
+
+    @Test func toolsOutsideTheCallersScopeAreInvisible() async throws {
+        let tools: [MCPTool] = [EchoTool(), ThemeEchoTool()]
+        let shared = try await Harness.make(tools: tools, scopes: [.shared])
+        #expect(try await listedNames(shared) == ["echo"])
+        let hidden = try await callTheme(shared)
+        #expect(hidden?["error"]?["code"]?.intValue == -32602)
+        #expect(hidden?["error"]?["message"]?.stringValue == "Unknown tool: theme_echo")
+        await shared.stop()
+
+        let both = try await Harness.make(tools: tools, scopes: [.shared, .theme])
+        #expect(Set(try await listedNames(both)) == ["echo", "theme_echo"])
+        let ok = try await callTheme(both)
+        #expect(ok?["result"]?["content"]?.arrayValue?.first?["text"]?.stringValue == "theme")
+        await both.stop()
+
+        let themeOnly = try await Harness.make(tools: tools, scopes: [.theme])
+        #expect(try await listedNames(themeOnly) == ["theme_echo"])
+        await themeOnly.stop()
+    }
+
+    @Test func scopesFollowTheLatestTokenCall() async throws {
+        let h = try await Harness.make(tools: [EchoTool(), ThemeEchoTool()], scopes: [.shared])
+        let again = await h.server.token(for: h.session, scopes: [.theme])
+        #expect(again == h.token)
+        #expect(try await listedNames(h) == ["theme_echo"])
+        await h.stop()
+    }
+
+    @Test func revokeDropsScopes() async throws {
+        let h = try await Harness.make(tools: [EchoTool(), ThemeEchoTool()], scopes: [.theme])
+        await h.server.revoke(session: h.session)
+        let fresh = await h.server.token(for: h.session)
+        #expect(try await listedNames(h, token: fresh) == ["echo"])
         await h.stop()
     }
 

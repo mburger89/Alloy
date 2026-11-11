@@ -97,7 +97,11 @@ Your own themes are `*.json` files in the user themes folder, which Alloy watche
 - or `$ALLOY_DATA_DIR/Alloy/Themes` when `ALLOY_DATA_DIR` is set
 
 "Open themes folder" in Settings opens it. The file format and every colour slot are in [docs/themes.md](docs/themes.md).
-Making themes with Claude (`/theme`) is coming later.
+
+Make a theme with Claude: type `/theme` (optionally followed by a description, such as `/theme warm, low contrast`) or
+click "Make a theme with Claude…" in Settings. A theme session drafts a theme with you, shows it live on the whole app
+and saves it. A bar above the chat offers Keep and Discard, and warns before you activate a theme with hard-to-read
+colours. See [docs/themes.md](docs/themes.md).
 
 ## Requirements
 

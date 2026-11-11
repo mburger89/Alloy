@@ -56,6 +56,90 @@ and tests every pair of colours the app draws in two tiers: 4.5:1 for text and 3
 comments and for text on highlight fills. Alloy Dark and Alloy Light meet 4.5:1 throughout; see
 [Contrast adjustments](#contrast-adjustments) for the tiers and what was changed in each built-in.
 
+## Making a theme with Claude
+
+Type `/theme` in any session, or click "Make a theme with Claude…" in Settings. Alloy opens a new session named
+`Theme: <description>` (or `Theme: new`) that knows how to make a theme. `/theme warm, low contrast` sends
+`warm, low contrast` as the first message; a bare `/theme` and the Settings button send "Help me make an Alloy theme."
+The `/theme` text itself is not added to the session it was typed in. The session asks about your taste, drafts a
+theme, shows it live and saves it when you are happy.
+
+Theme sessions get five tools, even when "Share knowledge" is off (the session then has no notes tools). They are named
+`mcp__alloy__theme_*`:
+
+| Tool | Input | Output |
+| --- | --- | --- |
+| `theme_slots` | none | Every slot with what it colours and its value in the theme on screen, the session colours, and the file format. |
+| `theme_read` | `name`: a theme id, `user/<file>` or display name | The theme's file and its fully resolved colours. |
+| `theme_check` | `theme`: a draft, as a JSON object in the theme-file format or a string holding one | `findings` (colour pairs below their minimum), `ignoredSlots` (names Alloy does not know) and `notes`. Shows nothing. |
+| `theme_preview` | `theme`: a draft | The same report, plus `previewing`. The draft appears on the whole app. |
+| `theme_save` | `name`, `theme` | The same report, plus `saved` (the id), `name`, `renamed` and `active` (always false). |
+
+`name` in `theme_save` replaces the draft's own name. Saving never switches themes.
+
+### Preview, Keep and Discard
+
+A preview repaints the whole app with the draft and forces the scheme to the draft's appearance, whatever your theme
+mode. Your settings and files are not touched. Only one preview exists at a time, app-wide: a newer one replaces the
+current one. A bar above the chat reads "Previewing <name>" with two buttons:
+
+- **Keep** saves the draft first when it is not saved yet, then makes it your theme. In "One theme" mode it becomes the
+  theme; in "Match system" mode it fills the light or dark slot by the draft's appearance.
+- **Discard** brings back your own theme. So does the previewing session ending (stopped, exited or failed to launch)
+  or Alloy quitting. A theme the session already saved stays in the picker.
+
+If the draft has hard-to-read pairs, the bar adds a line such as "3 colour pairs are hard to read".
+
+### Segmented picker outline (user decisions 2026-11-11)
+
+The selected segment of a segmented picker is outlined by the `pickerThumbEdge` slot (MetalUI `SegmentedThumbEdge`, G31); the track fill is not darkened. In Alloy Light the thumb is only 1.24:1 against the track, and fixing that through the fill would break `textSecondary` and the tab ink on the same fill. Each built-in sets its own edge, a mix of its `textPrimary` into its `surfaceSecondary`, at 3:1 or better against both the track and the thumb. The audit enforces this for all six, with no exemption.
+
+| Theme | `pickerThumbEdge` | vs track (`surfaceSecondary`) | vs thumb |
+| --- | --- | --- | --- |
+| Dracula | `#C0C1C3` | 5.08 | 3.12 |
+| Alloy Dark | `#9FA5B4` | 5.30 | 3.15 |
+| Alloy Light | `#7B808B` | 3.19 | 3.96 |
+| Solarized Dark | `#869799` | 4.27 | 3.13 |
+| Solarized Light | `#616A6B` | 3.13 | 5.15 |
+| One Dark | `#A9AFBA` | 4.43 | 3.11 |
+
+### The contrast check
+
+`theme_check`, `theme_preview` and `theme_save` report every pair below its minimum, with the ratio:
+
+| Pair | Minimum |
+| --- | --- |
+| `textPrimary`, `mutedInk` and `textSecondary` on the background, surface, sidebar, chat, panel and Markdown code fills | 4.5:1 |
+| `textPrimary` and `textSecondary` on `surfaceSecondary` | 4.5:1 |
+| `textPrimary` and `mutedInk` on each tint (thinking, read, shell, added, removed, error, warning, question, plan, command, web) | 4.5:1 |
+| Syntax colours on the Markdown code fill and the surface | 4.5:1 (comments 3:1) |
+| Syntax colours on the added and removed line tints, and on the surface under the code selection | 3:1 |
+| Each block ink (thinking, read, shell, edit, web, question, plan) on its own tint | 3:1 |
+| `errorInk` on `errorTint` and on the panel fill, `warningInk` on `warningTint`, `linkInk` on the chat and code fills | 4.5:1 |
+| `pickerThumbEdge` on `surfaceSecondary` (the track), and on the selected segment (`surface` in a light theme, `textPrimary` at 0.18 over the track in a dark one); skipped when the slot is absent | 3:1 |
+| Each session colour on the sidebar | 3:1 |
+
+Secondary text that a theme leaves out is `textPrimary` at MetalUI's derived opacity, and is checked that way.
+
+Activating a theme that has findings (Keep, or a click in Settings) shows a strip: "3 colour pairs are hard to read"
+with "Use anyway" and "Cancel". Nothing changes until you choose. Built-in themes never warn.
+
+### Save names and ownership
+
+- A saved theme becomes `<themes folder>/<slug>.json`, where the slug is the name in lowercase ASCII letters and digits
+  with every other run turned into `-`, at most 64 characters. Its id is `user/<slug>`.
+- A name that matches a built-in theme, or a file that is not the session's own, gets the next free name: `Name 2`,
+  `Name 3`, and so on (`renamed` is true in the reply).
+- A session may overwrite a file only if it wrote it and the file still has the bytes it wrote. Editing a file by hand
+  makes it yours: later saves from the session go to a new name. Ownership is recorded in `theme-owners.json` next to
+  the settings, outside the themes folder.
+- The session's author line is "Made in an Alloy theme session" unless the draft sets `author`.
+
+### The alloy-theme skill file
+
+[docs/skills/alloy-theme/SKILL.md](skills/alloy-theme/SKILL.md) holds the same workflow as a skill you can use from your
+own sessions. Alloy never installs it: copy the folder into your own skills directory yourself.
+
 ## Slots
 
 Every slot name a theme file can set, with its purpose. MetalUI tokens come first, then Alloy's keys, then syntax colours.
@@ -72,6 +156,7 @@ Every slot name a theme file can set, with its purpose. MetalUI tokens come firs
 | `textTertiary` | Tertiary text drawn by MetalUI controls. Optional; derived from textPrimary when absent. |
 | `scrollIndicator` | The scroll indicator thumb (usually translucent). |
 | `scrim` | The dimming behind modal presentations (usually translucent). |
+| `pickerThumbEdge` | The 1 px outline of the selected segment in segmented pickers; needs 3:1 against surfaceSecondary and against the selected segment. |
 | `thinkingTint` | Background of thinking blocks in the chat. |
 | `readTint` | Background of file-read blocks. |
 | `shellTint` | Background of shell command blocks. |

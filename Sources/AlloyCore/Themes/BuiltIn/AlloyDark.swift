@@ -18,6 +18,7 @@ extension BuiltInThemes {
     "textTertiary": "#7B8294",
     "scrollIndicator": "#FFFFFF59",
     "scrim": "#0000006B",
+    "pickerThumbEdge": "#9FA5B4",
     "thinkingTint": "#2A2340",
     "readTint": "#17303C",
     "shellTint": "#3A2D14",

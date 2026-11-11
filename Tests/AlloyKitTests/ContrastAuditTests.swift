@@ -209,6 +209,9 @@ private func ratio(_ a: RGB, _ b: RGB) -> Double {
         add("picker.unselected", text, [.surfaceSecondary], 4.5)
         add("picker.selected", text, [.surfaceSecondary, pill], 4.5, .metalUI)
         add("picker.selectedVsTrack", pill, [.surfaceSecondary], 3, .metalUI)
+        // The selected segment's outline (`pickerThumbEdge`, Ruling 12): 3:1 against the track and against the thumb.
+        add("picker.thumbEdgeVsTrack", .pickerThumbEdge, [.surfaceSecondary], 3)
+        add("picker.thumbEdgeVsThumb", .pickerThumbEdge, [.surfaceSecondary, pill], 3)
 
         // Settings view on the panel fill: title, labels, hints, the error line and the close glyph.
         add("settings.text", text, [.panelFill], 4.5)
@@ -228,6 +231,11 @@ private func ratio(_ a: RGB, _ b: RGB) -> Double {
             add("coordination.notice.\(name).text", text, [tint], 4.5)
             add("coordination.notice.\(name).dismiss", text, [tint], 3)
         }
+
+        // The theme bar: preview strip on commandTint, findings and the activation warning on warningTint.
+        add("themebar.text", text, [.commandTint], 4.5)
+        add("themebar.warning", .warningInk, [.warningTint], 4.5)
+        add("themebar.warningText", text, [.warningTint], 4.5)
 
         // Disabled controls: MetalUI draws them at half opacity.
         add("disabled.onSurface", text.opacity(0.5), [.surface], 3, .metalUI)
@@ -271,7 +279,8 @@ private func ratio(_ a: RGB, _ b: RGB) -> Double {
                          pair.owner == .alloy ? "alloy" : "metalui", pass ? "ok" : "FAIL"))
             // The bare MetalUI theme carries no `textSecondary` slot (the tab ink pairs resolve it too); the built-in audit below covers them.
             if !pass && pair.owner == .alloy && !pair.id.hasPrefix("text.secondary.on.")
-                && pair.id != "tabs.unselected" && pair.id != "tabs.hover" { failures.append("\(pair.id) \(String(format: "%.2f", value)) < \(pair.minimum)") }
+                && pair.id != "tabs.unselected" && pair.id != "tabs.hover"
+                && !pair.id.hasPrefix("picker.thumbEdge") { failures.append("\(pair.id) \(String(format: "%.2f", value)) < \(pair.minimum)") }
         }
         #expect(failures.isEmpty, "\(dark ? "dark" : "light"): \(failures.joined(separator: "; "))")
     }
@@ -322,6 +331,21 @@ private func ratio(_ a: RGB, _ b: RGB) -> Double {
                 "panel.code.removed", "panel.code.selection", "panel.code.find", "panel.code.findCurrent"].contains(id)
     }
 
+    /// Ruling 12: each built-in outlines the selected segment at 3:1 or better against the track and the thumb, with its
+    /// own colour (the table in docs/themes.md).
+    @Test(arguments: [("dracula", "#C0C1C3"), ("alloy-dark", "#9FA5B4"), ("alloy-light", "#7B808B"),
+                      ("solarized-dark", "#869799"), ("solarized-light", "#616A6B"), ("one-dark", "#A9AFBA")])
+    func thumbEdgeMeetsThreeToOne(themeID: String, hex: String) throws {
+        let library = ThemeLibrary(builtIns: BuiltInThemes.all)
+        let resolved = try #require(library.resolve(themeID))
+        #expect(resolved.colors["pickerThumbEdge"]?.hex.uppercased() == hex, "\(themeID) edge colour")
+        let dark = resolved.appearance == .dark
+        let applied = ThemeApplier.theme(for: resolved)
+        let results = try Self.resolve(Self.pairs().filter { $0.id.hasPrefix("picker.thumbEdge") }, dark: dark, theme: applied)
+        #expect(results.map(\.0.id) == ["picker.thumbEdgeVsTrack", "picker.thumbEdgeVsThumb"])
+        for (pair, value) in results { #expect(value >= 3.0, "\(themeID) \(pair.id) \(String(format: "%.2f", value))") }
+    }
+
     @Test func theMathIsWCAG() {
         let black = RGB(r: 0, g: 0, b: 0), white = RGB(r: 1, g: 1, b: 1)
         #expect(abs(ratio(black, white) - 21) < 0.001)
@@ -335,7 +359,7 @@ private func ratio(_ a: RGB, _ b: RGB) -> Double {
         let ids = Set(Self.pairs().map(\.id))
         #expect(ids.count > 250)
         for must in ["sidebar.selected.secondary", "chat.shell.title", "syntax.keyword.panelRemoved", "composer.placeholder",
-                     "panel.code.gutter", "text.secondary.on.surface", "coordination.mark.error", "coordination.notice.warning.text", "tabs.hover", "disabled.onSurface", "settings.secondary"] {
+                     "panel.code.gutter", "text.secondary.on.surface", "coordination.mark.error", "coordination.notice.warning.text", "tabs.hover", "themebar.text", "disabled.onSurface", "settings.secondary"] {
             #expect(ids.contains(must), "\(must) is audited")
         }
     }

@@ -104,3 +104,17 @@ public struct ThemeFile: Equatable, Sendable {
             colors: colors, sessionColors: sessionColors)
     }
 }
+
+extension ThemeFile {
+    /// Pretty-printed JSON with sorted keys and uppercase hex colours; round-trips through `parse`.
+    public func encoded() throws -> Data {
+        var dict: [String: Any] = ["name": name, "appearance": appearance.rawValue]
+        if let base { dict["base"] = base }
+        if let author { dict["author"] = author }
+        if let credit { dict["credit"] = credit }
+        dict["colors"] = colors.mapValues { $0.hex }
+        if let sessionColors { dict["sessionColors"] = sessionColors.map(\.hex) }
+        let options: JSONSerialization.WritingOptions = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+        return try JSONSerialization.data(withJSONObject: dict, options: options)
+    }
+}

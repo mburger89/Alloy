@@ -49,9 +49,10 @@ import Testing
         let themed = try themedResolve(colors, theme: applied, dark: dark)
         let names = ThemeSlots.all.map(\.name) + (1...8).map { "session\($0)" }
         #expect(plain.count == themed.count)
-        // textSecondary and textTertiary are the only slots that deliberately differ from the plain window: the plain
-        // window derives them from textPrimary at an opacity, the built-in sets them exactly.
-        for (index, name) in names.enumerated() where !["textSecondary", "textTertiary"].contains(name) && !close(plain[index], themed[index]) {
+        // textSecondary and textTertiary differ from the plain window on purpose: the plain window derives them from
+        // textPrimary at an opacity, the built-in sets them exactly. pickerThumbEdge differs too: both Alloy themes
+        // outline the selected segment at 3:1 (Ruling 12), where MetalUI's default is a faint hairline.
+        for (index, name) in names.enumerated() where !["textSecondary", "textTertiary", "pickerThumbEdge"].contains(name) && !close(plain[index], themed[index]) {
             Issue.record("\(dark ? "dark" : "light") \(name): \(plain[index]) vs \(themed[index])")
         }
     }

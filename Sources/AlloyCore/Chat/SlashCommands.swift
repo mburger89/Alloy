@@ -10,6 +10,8 @@ public enum SlashRoute: Equatable, Sendable {
     case localHelp
     /// `/fork [name]`: a new session from this conversation.
     case fork(name: String?)
+    /// `/theme [description]`: a new theme-making session.
+    case theme(description: String?)
 }
 
 public enum SlashCommands {
@@ -26,6 +28,7 @@ public enum SlashCommands {
         case "plan": return argument.isEmpty ? .setMode(.plan) : .passThrough
         case "help": return .localHelp
         case "fork": return .fork(name: argument.isEmpty ? nil : argument)
+        case "theme": return .theme(description: argument.isEmpty ? nil : argument)
         default: return .passThrough
         }
     }

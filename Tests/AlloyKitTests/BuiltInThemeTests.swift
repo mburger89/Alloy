@@ -15,6 +15,13 @@ import Testing
         #expect(BuiltInThemes.all.first?.id == "dracula")
     }
 
+    @Test func builtInsHaveNoContrastFindings() throws {
+        for entry in BuiltInThemes.all {
+            let findings = ThemeContrast.findings(try resolve(entry.id))
+            #expect(findings.isEmpty, "\(entry.id): \(findings.map { "\($0.pair) \($0.ratio) < \($0.minimum)" })")
+        }
+    }
+
     @Test func everyBuiltInIsCreditedAndParses() throws {
         for entry in BuiltInThemes.all {
             #expect(entry.isBuiltIn)

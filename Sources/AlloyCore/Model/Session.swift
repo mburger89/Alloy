@@ -9,6 +9,9 @@ public enum SessionStatus: Equatable, Sendable {
     case failedToLaunch(String)
 }
 
+/// What a session is for. A theme session gets the theme guidance and tools.
+public enum SessionPurpose: String, Codable, Sendable { case coding, theme }
+
 @MainActor @Observable
 public final class Session: Identifiable {
     public let id: UUID
@@ -41,6 +44,8 @@ public final class Session: Identifiable {
     /// With `forkSource`: the last message of the source when the fork was made (`--resume-session-at`), so every
     /// launch of the unsent fork starts from that point however far the source has moved on. Cleared with `forkSource`.
     public internal(set) var forkPoint: String?
+    /// What the session is for; a theme session gets the theme guidance and tools at every launch.
+    public internal(set) var purpose: SessionPurpose
     /// Slash commands the user may run, without the terminal-only ones.
     public internal(set) var slashCommands: [SlashCommandInfo] = []
     /// TUI-only commands (`/doctor`, ...) hidden from `slashCommands`.
@@ -57,7 +62,8 @@ public final class Session: Identifiable {
 
     init(id: UUID, name: String, colorIndex: Int, projectRoot: URL, hasConversation: Bool = false,
          cliSessionID: String? = nil, model: String? = nil, permissionMode: String? = nil, forkSource: String? = nil,
-         forkPoint: String? = nil) {
+         forkPoint: String? = nil, purpose: SessionPurpose = .coding) {
+        self.purpose = purpose
         self.forkSource = forkSource
         self.forkPoint = forkPoint
         self.hasConversation = hasConversation
@@ -85,9 +91,15 @@ public final class Session: Identifiable {
     /// Commands Alloy handles itself, offered in `/` autocomplete beside the CLI's.
     static func withLocalCommands(_ commands: [SlashCommandInfo]) -> [SlashCommandInfo] {
         // Nothing is offered until the CLI has given its list (an empty list means "not known yet").
-        guard !commands.isEmpty, !commands.contains(where: { $0.name == "fork" }) else { return commands }
-        return commands + [SlashCommandInfo(name: "fork", description: "Start a new session from this conversation",
-                                            argumentHint: "[name]")]
+        guard !commands.isEmpty else { return commands }
+        var result = commands
+        if !commands.contains(where: { $0.name == "fork" }) {
+            result.append(SlashCommandInfo(name: "fork", description: "Start a new session from this conversation", argumentHint: "[name]"))
+        }
+        if !commands.contains(where: { $0.name == "theme" }) {
+            result.append(SlashCommandInfo(name: "theme", description: "Make a theme with Claude in a new session", argumentHint: "[description]"))
+        }
+        return result
     }
 
     /// A saved list for a session whose process has not started; the CLI's next list replaces it.

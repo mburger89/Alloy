@@ -198,6 +198,8 @@ extension Color {
     static let metalUITertiary = Color.primary.opacity(0.306)
     static let sessionSelection = Color(SessionSelectionFill.self)
     static let controlBorder = Color(ControlBorder.self)
+    /// The 1 px outline of the selected segment in a segmented picker (MetalUI `SegmentedThumbEdge`).
+    static let pickerThumbEdge = Color(SegmentedThumbEdge.self)
     static let codeSelectionFill = Color(CodeSelectionFill.self)
     static let findMatchFill = Color(FindMatchFill.self)
     static let currentFindMatchFill = Color(CurrentFindMatchFill.self)

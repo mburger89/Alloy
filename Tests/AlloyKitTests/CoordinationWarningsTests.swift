@@ -451,6 +451,12 @@ private func noticeText(_ e: TestElement, _ w: TestWindow) -> String {
             toolUseID: "ta", isError: false, text: "ok",
             result: .edit(filePath: r.root.appendingPathComponent("f.txt").path, originalFile: before, hunks: [hunk]))))
         await r.workspace.settle()
+        // `emit` only queues the event; wait until both authors' edits are in the ledger.
+        #expect(await r.until {
+            let edits = r.workspace.ledger.files["f.txt"]?.edits ?? []
+            return edits.contains { $0.author == .session(r.a.id) } && edits.contains { $0.author == .session(r.b.id) }
+                && r.workspace.coordinationWarnings.count == 1
+        })
         let edits = try #require(r.workspace.ledger.files["f.txt"]?.edits)
         let adas = try #require(edits.first { $0.author == .session(r.a.id) })
         let beas = try #require(edits.first { $0.author == .session(r.b.id) })

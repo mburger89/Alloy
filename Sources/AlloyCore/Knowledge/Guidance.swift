@@ -14,6 +14,8 @@ public enum Guidance {
     public static let notesToolNames = ["mcp__alloy__notes_lookup", "mcp__alloy__notes_read", "mcp__alloy__notes_write"]
     public static let coordinationToolNames = ["mcp__alloy__sessions_changes", "mcp__alloy__send_message",
                                                "mcp__alloy__claim_region", "mcp__alloy__release_region"]
+    public static let themeToolNames = ["mcp__alloy__theme_slots", "mcp__alloy__theme_read", "mcp__alloy__theme_check",
+                                        "mcp__alloy__theme_preview", "mcp__alloy__theme_save"]
     /// The only tools Alloy pre-approves, each named exactly (never a wildcard).
     public static let alloyToolNames = notesToolNames + coordinationToolNames
 }

@@ -887,7 +887,8 @@ private let original = "import Foundation\n\nfunc login(user: String, password: 
         let b = try #require(ws2.sessions.first { $0.id == a.id })
         #expect(b.status == .dormant && h2.transports.isEmpty)
         #expect(b.slashCommands == [compact,
-            SlashCommandInfo(name: "fork", description: "Start a new session from this conversation", argumentHint: "[name]")])
+            SlashCommandInfo(name: "fork", description: "Start a new session from this conversation", argumentHint: "[name]"),
+            SlashCommandInfo(name: "theme", description: "Make a theme with Claude in a new session", argumentHint: "[description]")])
     }
 
     // MARK: Lazy restore, cost, PATH
@@ -1197,13 +1198,14 @@ private let original = "import Foundation\n\nfunc login(user: String, password: 
         await h.transports[0].emit(.controlResponse(requestID: rid, result: .success(.object(["commands": cmds]))))
         await waitUntil("commands") { !a.slashCommands.isEmpty }
         #expect(a.slashCommands == [SlashCommandInfo(name: "compact", description: "Compact", argumentHint: "[focus]"),
-            SlashCommandInfo(name: "fork", description: "Start a new session from this conversation", argumentHint: "[name]")])
+            SlashCommandInfo(name: "fork", description: "Start a new session from this conversation", argumentHint: "[name]"),
+            SlashCommandInfo(name: "theme", description: "Make a theme with Claude in a new session", argumentHint: "[description]")])
         #expect(a.terminalOnlyCommands == ["doctor"])
         await h.transports[0].emit(.commandsChanged([
             SlashCommandInfo(name: "cost", description: "Cost", argumentHint: nil),
             SlashCommandInfo(name: "doctor", description: "Diagnose", argumentHint: nil),
         ]))
-        await waitUntil("replaced") { a.slashCommands.map(\.name) == ["cost", "fork"] }
+        await waitUntil("replaced") { a.slashCommands.map(\.name) == ["cost", "fork", "theme"] }
     }
 
     @Test func helpListsCommandsLocally() async {

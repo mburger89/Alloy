@@ -167,6 +167,20 @@ import Testing
         try await t.window.runUntil { (try? t.window.element(identifier: "theme-row-dracula"))?.isSelected == true }
     }
 
+    @Test func makeThemeButtonStartsAThemeSession() async throws {
+        let t = try await setup()
+        defer { t.controller.stop() }
+        try t.window.click(t.window.element(identifier: "settings-make-theme"))
+        try await t.window.runUntil { (try? t.window.element(identifier: "settings-view")) == nil }
+        await waitFor("the theme session exists") { t.rig.workspace.sessions.contains { $0.name == "Theme: new" } }
+        await t.rig.workspace.settle()
+        let session = try #require(t.rig.workspace.sessions.first { $0.id == t.rig.workspace.selectedSessionID })
+        #expect(session.name == "Theme: new")
+        #expect(session.purpose == .theme)
+        await waitFor("the session launched") { t.rig.transports.count == 1 }
+        await t.rig.workspace.stopAll()
+    }
+
     @Test func openThemesFolderUsesOpener() async throws {
         let t = try await setup()
         defer { t.controller.stop() }

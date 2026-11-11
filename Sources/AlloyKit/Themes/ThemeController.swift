@@ -11,16 +11,43 @@ private final class TaskBox: @unchecked Sendable {
     deinit { task?.cancel() }
 }
 
+/// A draft shown on the whole app without touching settings (Ruling 6).
+public struct ThemePreview: Equatable {
+    public var name: String
+    public var session: UUID
+    public var draft: ThemeFile
+    public var resolved: ResolvedTheme
+    /// The saved theme's id once the previewing session has saved a file equal to the draft.
+    public var savedID: String?
+    public var findings: [ContrastFinding]
+}
+
+/// Which setting an activation fills.
+public enum ActivationSlot: Equatable, Sendable { case single, light, dark }
+
+/// An activation held back because the theme has contrast findings (Ruling 9).
+public struct PendingActivation: Equatable {
+    public var themeID: String
+    public var findingCount: Int
+    public var slot: ActivationSlot
+}
+
+public enum ThemeActivationError: Error, Equatable { case unknownTheme(String) }
+
 /// Chooses, applies and live-reloads the app theme. A change only assigns the host's themes (a repaint); it never
 /// touches sessions, tabs or scroll positions.
 ///
 /// The controller exists before any workspace does (the launcher is themed too). Until `bind` it keeps the settings
 /// itself and saves them directly; afterwards the workspace owns them and `choose` goes through `updateSettings`.
 @MainActor @Observable
-public final class ThemeController {
+public final class ThemeController: ThemeWorkshop {
     public private(set) var library: ThemeLibrary
     /// Set when the chosen theme isn't available and a fallback was applied; the settings file is left as it is.
     public private(set) var notice: String?
+    /// The draft on screen, if any. One at a time, app-wide.
+    public private(set) var preview: ThemePreview?
+    /// An activation waiting for the user's answer to the contrast warning.
+    public private(set) var pendingActivation: PendingActivation?
     /// How many library reloads ran (tests use it to check that event bursts coalesce).
     @ObservationIgnored public private(set) var reloadCount = 0
 
@@ -66,6 +93,7 @@ public final class ThemeController {
     public convenience init(workspace: Workspace, host: ThemeHost, watcher: FileChangeSource?) {
         self.init(appSupport: workspace.appSupport, settings: workspace.settings, host: host, watcher: watcher)
         self.workspace = workspace
+        workspace.themeWorkshop = self
     }
 
     /// The settings to open a workspace with: the current ones, with the last project replaced.
@@ -84,6 +112,7 @@ public final class ThemeController {
             try? workspace.updateSettings(s)
         }
         self.workspace = workspace
+        workspace.themeWorkshop = self
         apply()
     }
 
@@ -136,6 +165,13 @@ public final class ThemeController {
             host.preferredColorScheme = nil
         }
         notice = notes.isEmpty ? nil : notes.joined(separator: " ")
+        // A preview sits on top of the user's theme, whatever the theme mode (Ruling 6).
+        if let preview {
+            let theme = ThemeApplier.theme(for: preview.resolved)
+            host.lightTheme = theme
+            host.darkTheme = theme
+            host.preferredColorScheme = preview.resolved.appearance == .dark ? .dark : .light
+        }
     }
 
     /// Re-reads the themes folder off the main actor, then applies on it. A file that no longer parses keeps its last
@@ -172,5 +208,115 @@ public final class ThemeController {
     public func openThemesFolder(using open: (URL) -> Void) {
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         open(directory)
+    }
+
+    // MARK: ThemeWorkshop
+
+    public var slotCatalog: [ThemeSlotInfo] { ThemeSlots.all.map { ThemeSlotInfo(name: $0.name, purpose: $0.purpose) } }
+
+    /// The scheme the system is in, for `shownTheme` in match-system mode. The app wires it to the real appearance.
+    @ObservationIgnored public var systemScheme: @MainActor () -> ColorScheme = { .dark }
+
+    public var shownTheme: ResolvedTheme? {
+        if let preview { return preview.resolved }
+        let s = currentSettings
+        switch s.themeMode {
+        case .single: return library.resolve(s.theme) ?? library.resolve("dracula")
+        case .matchSystem:
+            return systemScheme() == .dark
+                ? library.resolve(s.darkTheme) ?? library.resolve("dracula")
+                : library.resolve(s.lightTheme) ?? library.resolve("alloy-light")
+        }
+    }
+
+    public func preview(_ draft: ThemeFile, resolved: ResolvedTheme, session: UUID) {
+        preview = ThemePreview(name: draft.name, session: session, draft: draft, resolved: resolved, savedID: nil,
+                               findings: ThemeContrast.findings(resolved))
+        apply()
+    }
+
+    public func didSave(_ saved: SavedTheme, file: ThemeFile, session: UUID) async {
+        await reload()
+        guard var p = preview, p.session == session else { return }
+        if Self.sameContent(p.draft, file) {
+            p.savedID = saved.id
+        } else if p.savedID == saved.id {
+            p.savedID = nil // the same file now holds something else
+        }
+        preview = p
+    }
+
+    /// Ruling 7: equal means the same appearance, base, colours and session colours.
+    private static func sameContent(_ a: ThemeFile, _ b: ThemeFile) -> Bool {
+        a.appearance == b.appearance && a.base == b.base && a.colors == b.colors && a.sessionColors == b.sessionColors
+    }
+
+    public func discardPreview() {
+        guard preview != nil else { return }
+        preview = nil
+        apply()
+    }
+
+    /// Safe to call more than once for a session: only the session that owns the current preview discards it.
+    public func themeSessionEnded(_ session: UUID) {
+        guard preview?.session == session else { return }
+        discardPreview()
+    }
+
+    /// Tests only: runs after Keep's save and before it activates, to land a newer preview mid-save.
+    @ObservationIgnored var afterKeepSave: (@MainActor () -> Void)?
+
+    /// Saves the preview if it isn't saved yet, then activates it through the contrast warning.
+    public func keepPreview() async throws {
+        guard let p = preview else { return }
+        // A remembered save only counts while the file in the library still holds the previewed draft.
+        var id = p.savedID.flatMap { saved in
+            library.entry(saved).map { Self.sameContent($0.file, p.draft) } == true ? saved : nil
+        }
+        if id == nil {
+            let store = ThemeStore(appSupport: appSupport)
+            let builtIns = BuiltInThemes.all
+            let draft = p.draft, name = p.name, session = p.session
+            id = try await Task.detached { try store.save(draft, name: name, session: session, builtIns: builtIns).id }.value
+            await reload()
+        }
+        afterKeepSave?()
+        guard let id else { return }
+        let single = currentSettings.themeMode == .single
+        try request(theme: single ? id : nil,
+                    light: !single && p.draft.appearance == .light ? id : nil,
+                    dark: !single && p.draft.appearance == .dark ? id : nil)
+        // Only the preview this Keep was for goes away; a newer one (from any session) stays.
+        if preview == p { discardPreview() }
+    }
+
+    /// The checked way to activate: themes with contrast findings wait for `confirmActivation()`.
+    public func request(theme: String? = nil, light: String? = nil, dark: String? = nil) throws {
+        let (id, slot): (String, ActivationSlot)
+        if let theme { (id, slot) = (theme, .single) } else if let light { (id, slot) = (light, .light) } else if let dark { (id, slot) = (dark, .dark) } else { return }
+        guard let resolved = library.resolve(id) else { throw ThemeActivationError.unknownTheme(id) }
+        let findings = ThemeContrast.findings(resolved)
+        if findings.isEmpty {
+            pendingActivation = nil
+            try activate(PendingActivation(themeID: id, findingCount: 0, slot: slot))
+        } else {
+            pendingActivation = PendingActivation(themeID: id, findingCount: findings.count, slot: slot)
+        }
+    }
+
+    public func confirmActivation() throws {
+        guard let pending = pendingActivation else { return }
+        pendingActivation = nil
+        try activate(pending)
+    }
+
+    public func cancelActivation() { pendingActivation = nil }
+
+    private func activate(_ a: PendingActivation) throws {
+        switch a.slot {
+        case .single: try choose(theme: a.themeID)
+        case .light: try choose(light: a.themeID)
+        case .dark: try choose(dark: a.themeID)
+        }
     }
 }
