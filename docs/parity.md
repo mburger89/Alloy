@@ -48,6 +48,10 @@ First real `--trace time` recordings of `typingLatency` and `memory` (harness 0e
   "EditHistory apply" (500 edits) 1,347 ms to 532 ms. Texts containing "\r" still take the untrimmed path.
 - MetalUI follow-ups are gap G33: (b) per-frame map capacity, (d) Rope.lineStart and per-row styling caches,
   (e) rope chunk overhead; (a) automatic retention and (c) interned element IDs await a design.
+- G33 (b) and (d) merged in MetalUI 07173201. Re-profiled the same test: the code view's prepaint fell from 561 to
+  119-259 samples and per-row line lookups (`Rope.lineStart`) from about 108 to 1, but whole-frame work is within
+  run-to-run noise (3,169 before; 3,342 and 3,113 after) and typing latency is unchanged (38.1 and 37.7 ms). Single
+  traces vary several-fold for individual layout functions, so compare frame totals across repeated runs.
 
 ## memory (large file open) - run 2026-11-11-163850 (resolved)
 

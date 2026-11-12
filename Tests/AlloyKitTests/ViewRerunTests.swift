@@ -15,10 +15,10 @@ import Testing
         let window = try alloyWindow(rig.workspace)
         try await window.runUntil { (try? window.element(identifier: "code-view")) != nil }
         for _ in 0..<10 { window.tick(); await Task.yield() }
-        let before = BodyProbe.count("SidebarView"), before2 = BodyProbe.count("AlloyScreen")
-        for _ in 0..<20 { window.tick(); await Task.yield() }
-        #expect(BodyProbe.count("SidebarView") == before)
-        #expect(BodyProbe.count("AlloyScreen") == before2)
+        var reruns: [String: Int] = [:]
+        for _ in 0..<20 { probed(["SidebarView", "AlloyScreen"], &reruns) { window.tick() }; await Task.yield() }
+        #expect(reruns["SidebarView"] == 0)
+        #expect(reruns["AlloyScreen"] == 0)
     }
 
     @Test func typingLeavesSidebarScreenAndChatAlone() async throws {
@@ -30,12 +30,15 @@ import Testing
         try window.click(window.element(identifier: "code-view"))
         for _ in 0..<5 { window.tick(); await Task.yield() }
         let names = ["SidebarView", "AlloyScreen", "FilePanelView", "ChatView", "ChatColumn", "CodePanel", "FilePanelHeader", "FileTabStrip"]
-        let before = Dictionary(uniqueKeysWithValues: names.map { ($0, BodyProbe.count($0)) })
+        var reruns: [String: Int] = [:]
         let doc = try #require(rig.workspace.document("login.swift"))
         let version = doc.buffer.version
         let textLength = doc.buffer.snapshot().text.count
         window.resetFrameWork()
-        for _ in 0..<20 { window.typeText("a"); window.tick(); await Task.yield() }
+        for _ in 0..<20 {
+            probed(names, &reruns) { window.typeText("a"); window.tick() }
+            await Task.yield()
+        }
         #expect(doc.buffer.version != version)
         let work = window.frameWork
         let requests = work.reduce(0) { $0 + $1.elementRequests }, prepaints = work.reduce(0) { $0 + $1.elementPrepaints }
@@ -46,12 +49,11 @@ import Testing
         #expect(requests < 3000, "element requests \(requests)")
         #expect(hits > 0)
         print("FRAMEWORK frames=\(work.count) requests=\(requests) prepaints=\(prepaints) hits=\(hits) misses=\(misses) ineligible=\(ineligible)")
-        let after = Dictionary(uniqueKeysWithValues: names.map { ($0, BodyProbe.count($0)) })
         #expect(doc.buffer.snapshot().text.count == textLength + 20)
         // The header and tab strip show the dirty dot: one re-run for clean to dirty, none per keystroke after that.
-        for n in ["FilePanelHeader", "FileTabStrip"] { #expect(after[n]! - before[n]! <= 1, "\(n)") }
+        for n in ["FilePanelHeader", "FileTabStrip"] { #expect(reruns[n]! <= 1, "\(n)") }
         for n in ["SidebarView", "AlloyScreen", "FilePanelView", "ChatView", "ChatColumn", "CodePanel"] {
-            #expect(after[n] == before[n], "\(n) re-ran \(after[n]! - before[n]!) times")
+            #expect(reruns[n] == 0, "\(n) re-ran \(reruns[n]!) times")
         }
     }
 
@@ -69,4 +71,13 @@ import Testing
             #expect(!shown(), "round \(round)")
         }
     }
+}
+
+/// Counts body runs only while `body` runs. `BodyProbe` is process-wide and other suites' windows tick on the main
+/// actor whenever a test awaits, so counting across an `await` picks up their runs; a synchronous block cannot.
+@MainActor
+private func probed(_ names: [String], _ reruns: inout [String: Int], _ body: () -> Void) {
+    let before = names.map(BodyProbe.count)
+    body()
+    for (i, n) in names.enumerated() { reruns[n, default: 0] += BodyProbe.count(n) - before[i] }
 }
