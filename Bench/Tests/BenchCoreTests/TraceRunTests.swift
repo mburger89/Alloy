@@ -74,4 +74,13 @@ import Foundation
         let both = Runner.attachIdleNotes(cpu: cpu, memory: mem, notes: note, metrics: [.idleCPU, .memoryIdle])
         #expect(both.cpu == cpu.addingNotes(note)); #expect(both.memory == mem)
     }
+
+    @Test func traceSessionGate() {
+        #expect(Preflight.checkTraceSession(kind: .allocations, managerName: "Aqua\n") == nil)
+        let bg = Preflight.checkTraceSession(kind: .allocations, managerName: "Background\n")
+        #expect(bg?.code == 2)
+        #expect(bg?.message.contains("in the \"Background\" session") == true)
+        #expect(Preflight.checkTraceSession(kind: .allocations, managerName: "")?.message.contains("\"unknown\"") == true)
+        #expect(Preflight.checkTraceSession(kind: .time, managerName: "Background") == nil)
+    }
 }

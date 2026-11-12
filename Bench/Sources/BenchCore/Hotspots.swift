@@ -102,9 +102,12 @@ final class XDoc: NSObject, XMLParserDelegate {
         return d
     }
 
-    /// Frame names of a backtrace, leaf first. Accepts the backtrace or a cell that contains one.
+    /// Frame names of a backtrace, leaf first. Accepts a `backtrace` or `tagged-backtrace` (what real
+    /// Time Profiler exports use, frames as direct children), or a cell that contains one.
     func frameNames(_ cell: XNode) -> [String] {
-        guard let bt = find("backtrace", in: cell) else { return [] }
+        let kinds: Set<String> = ["backtrace", "tagged-backtrace"]
+        guard let bt = kinds.contains(cell.name) ? cell
+                : find("backtrace", in: cell) ?? find("tagged-backtrace", in: cell) else { return [] }
         return bt.children.compactMap { c -> String? in
             let f = resolve(c)
             return f.name == "frame" ? f.attrs["name"] : nil
@@ -121,6 +124,7 @@ public enum Hotspots {
     }
 
     public static let noRows = "no rows in "
+    public static let noSamples = "no samples in time-profile: the app was not on the CPU while recording (an idle app records nothing)"
 
     /// Top functions by self samples; `totalValue` counts each distinct frame name once per sample.
     public static func timeProfile(xml: Data, top: Int) -> [HotspotRow] {
@@ -207,7 +211,7 @@ public enum Hotspots {
         var out = "# Hotspots: \(name)\n\n"
         if schemas.contains("time-profile") {
             let rows = timeProfile(xml: try table("time-profile"), top: Int.max)
-            if rows.isEmpty { return out + noRows + "time-profile\n" }
+            if rows.isEmpty { return out + noSamples + "\n" }
             out += "Time Profiler, top \(top) functions. Counts are samples.\n\n"
             out += section("By self samples", rows.prefix(top), ms: true)
             let byTotal = rows.sorted { ($0.totalValue, $1.name) > ($1.totalValue, $0.name) }

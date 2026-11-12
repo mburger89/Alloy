@@ -48,6 +48,7 @@ private func gone(_ pid: pid_t?) async -> Bool {
         let f = try Fake("""
         trap 'mkdir -p "$OUT"; exit 0' INT
         echo "Starting recording with the Time Profiler template."
+        echo "Ctrl-C to stop the recording"
         while true; do sleep 0.05; done
         """)
         defer { f.cleanup() }
@@ -67,6 +68,23 @@ private func gone(_ pid: pid_t?) async -> Bool {
         #expect(await gone(f.childPID))
     }
 
+    @Test func startingLineAloneIsNotReadyAndGivesAuthorizationHint() async throws {
+        let f = try Fake("echo 'Starting recording'\nexec sleep 600")
+        defer { f.cleanup() }
+        let res = await f.recorder(start: .seconds(1)).start()
+        guard case .failed(let why) = res else { Issue.record("expected failure, got \(res)"); return }
+        #expect(why == "xctrace did not start within 1 s; it is probably waiting for macOS to authorize inspecting the app (Allocations needs your password once every 10 hours). See \"Allocations authorization\" in Bench/README.md")
+        #expect(await gone(f.childPID))
+    }
+
+    @Test func readyLineMeansRecording() async throws {
+        let f = try Fake("echo 'Starting recording'\necho 'Ctrl-C to stop the recording'\nexec sleep 600")
+        defer { f.cleanup() }
+        #expect(await f.recorder().start() == .recording)
+        ActiveRecorders.killAll()
+        #expect(await gone(f.childPID))
+    }
+
     @Test func startFailureCarriesFirstErrorLine() async throws {
         let f = try Fake("echo 'Cannot find process for provided pid: 42' >&2\necho 'second line' >&2\nexit 1")
         defer { f.cleanup() }
@@ -77,6 +95,7 @@ private func gone(_ pid: pid_t?) async -> Bool {
         let f = try Fake("""
         trap '' INT
         echo "Starting recording"
+        echo "Ctrl-C to stop the recording"
         while true; do sleep 0.05; done
         """)
         defer { f.cleanup() }
@@ -89,7 +108,7 @@ private func gone(_ pid: pid_t?) async -> Bool {
     }
 
     @Test func stopAfterChildExitedIsPartial() async throws {
-        let f = try Fake("echo 'Starting recording'\nmkdir -p \"$OUT\"\nsleep 0.1\nexit 0")
+        let f = try Fake("echo 'Starting recording'\necho 'Ctrl-C to stop the recording'\nmkdir -p \"$OUT\"\nsleep 0.1\nexit 0")
         defer { f.cleanup() }
         let r = f.recorder()
         #expect(await r.start() == .recording)
@@ -103,7 +122,7 @@ private func gone(_ pid: pid_t?) async -> Bool {
     }
 
     @Test func killAllReapsRegisteredChild() async throws {
-        let f = try Fake("echo 'Starting recording'\nsleep 30")
+        let f = try Fake("echo 'Starting recording'\necho 'Ctrl-C to stop the recording'\nsleep 30")
         defer { f.cleanup() }
         let r = f.recorder()
         #expect(await r.start() == .recording)
@@ -116,7 +135,7 @@ private func gone(_ pid: pid_t?) async -> Bool {
     }
 
     @Test func droppedRecorderKillsItsChild() async throws {
-        let f = try Fake("echo 'Starting recording'\nsleep 30")
+        let f = try Fake("echo 'Starting recording'\necho 'Ctrl-C to stop the recording'\nsleep 30")
         defer { f.cleanup() }
         var r: TraceRecorder? = f.recorder()
         #expect(await r!.start() == .recording)

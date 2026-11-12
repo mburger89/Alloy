@@ -17,12 +17,21 @@ struct RunCommand: AsyncParsableCommand {
     @Flag(help: "Launch Alloy with ALLOY_FRAME_TIMING=1 and add its internal frame phases to its metric notes (attribution only; never a verdict)") var attribute = false
     @Option(help: "Record an Instruments trace of the first run of each measurement: time, allocations, hitches, gpu, concurrency (never publishable)") var trace: TraceKind?
     @Option(help: "Alloy repo root (binary at <dir>/.build/release/Alloy)") var alloyBuild: String?
-    @Option(help: "Output directory") var out: String = "Bench/results"
+    @Option(help: "Output directory (default: Bench/results of the enclosing repo, wherever you run from)") var out: String?
 
     /// Output of `DevToolsSecurity -status` (empty when it cannot run, which counts as not enabled).
     private static func devToolsStatus() -> String {
         let p = Process(); p.executableURL = URL(fileURLWithPath: "/usr/sbin/DevToolsSecurity"); p.arguments = ["-status"]
         let pipe = Pipe(); p.standardOutput = pipe; p.standardError = pipe; p.standardInput = FileHandle.nullDevice
+        guard (try? p.run()) != nil else { return "" }
+        let d = pipe.fileHandleForReading.readDataToEndOfFile(); p.waitUntilExit()
+        return String(decoding: d, as: UTF8.self)
+    }
+
+    /// Output of `launchctl managername` (empty when it cannot run).
+    private static func sessionName() -> String {
+        let p = Process(); p.executableURL = URL(fileURLWithPath: "/bin/launchctl"); p.arguments = ["managername"]
+        let pipe = Pipe(); p.standardOutput = pipe; p.standardError = FileHandle.nullDevice; p.standardInput = FileHandle.nullDevice
         guard (try? p.run()) != nil else { return "" }
         let d = pipe.fileHandleForReading.readDataToEndOfFile(); p.waitUntilExit()
         return String(decoding: d, as: UTF8.self)
@@ -41,6 +50,10 @@ struct RunCommand: AsyncParsableCommand {
                 FileHandle.standardError.write(Data((fail.message + "\n").utf8))
                 throw ExitCode(fail.code)
             }
+            if let kind = trace, let fail = Preflight.checkTraceSession(kind: kind, managerName: Self.sessionName()) {
+                FileHandle.standardError.write(Data((fail.message + "\n").utf8))
+                throw ExitCode(fail.code)
+            }
         }
         if let fail = Preflight.check(apps: targets) {
             FileHandle.standardError.write(Data((fail.message + "\n").utf8))
@@ -54,6 +67,7 @@ struct RunCommand: AsyncParsableCommand {
         } catch let e as Runner.CoverRefused {
             result = e.partial; refusal = e.message   // report what was measured, then exit 4
         }
+        let out = self.out ?? BenchPaths.defaultDirectory("results", cwd: FileManager.default.currentDirectoryPath)
         try FileManager.default.createDirectory(atPath: out, withIntermediateDirectories: true)
         let stem = out + "/" + Report.fileStem(result)
         let enc = JSONEncoder(); enc.outputFormatting = [.prettyPrinted, .sortedKeys]

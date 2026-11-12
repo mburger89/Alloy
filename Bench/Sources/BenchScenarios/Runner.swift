@@ -30,7 +30,7 @@ public enum Runner {
     public static func run(apps: [TargetApp], metrics: [Metric], corpus: Corpus, runsOverride: Int?,
                            cold: Bool = false,
                            attribute: Bool = false,
-                           trace: TraceKind? = nil, traceRoot: String = "Bench/traces",
+                           trace: TraceKind? = nil, traceRoot: String = BenchPaths.defaultDirectory("traces", cwd: FileManager.default.currentDirectoryPath),
                            preflight: (@Sendable (TargetApp) -> String?)? = nil,
                            coverCheck: (@Sendable (TargetApp) -> String?)? = nil) async throws -> RunResult {
         let preflight = preflight ?? { Preflight.check(apps: [$0])?.message }
@@ -225,6 +225,13 @@ public enum Preflight {
     public static func checkDevTools(status: String) -> (code: Int32, message: String)? {
         if status.contains("currently enabled") { return nil }
         return (2, "Instruments needs Developer Tools access to attach. Run once: sudo DevToolsSecurity -enable")
+    }
+
+    /// Allocations needs macOS to prompt for a password, which only works in the logged-in desktop (Aqua) session.
+    public static func checkTraceSession(kind: TraceKind, managerName: String) -> (code: Int32, message: String)? {
+        let name = managerName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard kind == .allocations, name != "Aqua" else { return nil }
+        return (2, "--trace allocations must be run from a Terminal window in your logged-in desktop session (this process is in the \"\(name.isEmpty ? "unknown" : name)\" session, where macOS cannot ask for the password Allocations needs). Time Profiler (--trace time) works from any session.")
     }
 
     /// nil when clear; otherwise the exit code and message. Nothing is launched before this passes.

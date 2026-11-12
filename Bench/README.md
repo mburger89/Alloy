@@ -69,12 +69,25 @@ Run it only on a quiet machine: nothing else may be using the screen, keyboard o
    (`sudo DevToolsSecurity -enable`, once); the attach happens after launch, so launch work is missing from the trace;
    a failed attach becomes a note and never fails the run. Traced runs include profiler overhead and `publish` refuses them.
    `startup` and `largeFileOpen` are not traceable (they measure the launch itself, which happens before the attach);
-   they get a note instead. Zed's hardened runtime is expected to refuse the Allocations attach; the run note then says "trace unavailable".
+   they get a note instead. Zed was not seen to refuse the Allocations attach; it needs the same authorization as any other app (see "Allocations authorization" below). A failed attach is noted as "trace unavailable".
    Without Developer Tools access `--trace` exits with code 2 before launching anything.
    Summarise a recorded trace with `swift run --package-path Bench -c release alloy-bench hotspots <file>.trace [--top 25]`:
    for `time` traces the top functions by self samples and by total samples, for `allocations` traces the top
    responsible callers by bytes still live and by total bytes. Other kinds list the trace's tables and point at
-   Instruments. An empty table prints "no rows in <table>".
+   Instruments. An empty allocations table prints "no rows in <table>"; a time profile with no samples prints "no samples in
+   time-profile: the app was not on the CPU while recording (an idle app records nothing)" and still exits 0.
+   `--out` and the trace directory default to `Bench/results` and `Bench/traces` of the enclosing repo, wherever you run from.
+
+   **Allocations authorization.** Allocations recordings need macOS's permission to inspect another app's memory. macOS asks
+   for an administrator password once and remembers it for 10 hours. Until then `--trace allocations` notes the trace as
+   unavailable (xctrace prints `Starting recording` but never `Ctrl-C to stop the recording`, and the harness gives up) instead of hanging.
+   Time Profiler does not need this authorization.
+
+   To authorize and record, run `swift run --package-path Bench -c release alloy-bench run --apps zed,alloy --metrics memory,typingLatency --trace allocations --alloy-build .`
+   from the repo root, in a Terminal window on the Mac's own desktop. The first run shows the macOS password prompt. Keep the
+   terminal window small or on another display, since the harness refuses when another window covers the area where the apps open.
+   Runs from a background session (SSH, agents) are refused up front with exit code 2.
+
 5. **Where results go.** `Bench/results/<YYYY-MM-DD>-<HHMMSS>-<machine>.json` (schema version 1: summaries, raw samples,
    notes, failures, requested vs completed runs per metric, harness git SHA, environment incl. thermal state) and a
    matching `.md` report with a Note column and a Notes section.

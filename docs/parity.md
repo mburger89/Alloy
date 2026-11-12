@@ -15,6 +15,20 @@ was blank. `CodeViewHighlighter` answered up to the end of the row's text, so th
 unknown and MetalUI asked again every frame. Fixed in Alloy (merge 0496c49: rows are covered through their newline);
 MetalUI gap G32 makes an empty answer unable to loop.
 
+## Profiles - 2026-11-12 (not a parity run; traced timings include profiler overhead)
+
+First real `--trace time` recordings of `typingLatency` and `memory` (harness 0e15b2b, Xcode 27.2 xctrace).
+
+- Alloy typing (37 ms vs Zed 50 ms with the profiler attached): the top self-sample functions are Swift reference
+  counting (`swift_release`, `swift_retain`, `swift_beginAccess`), dictionary lookups (`__RawDictionaryStorage.find`,
+  `Hasher`) and `Rope.lineStart(row:)`. Candidates for a later optimisation pass, not shortfalls.
+- Alloy `memory`: zero samples in a 10.5 s recording. The recorder attaches after launch, by which point Alloy has
+  painted and is idle.
+- Zed's release build is stripped, so its own frames show as bare addresses; only system frames are comparable.
+- `--trace allocations` needs macOS authorization (`system.privilege.taskport`, a password once per 10 h) and works only
+  from the logged-in desktop session; background sessions are refused up front. Zed does not refuse the attach.
+  No allocations recordings yet.
+
 ## memory (large file open) - run 2026-11-11-163850 (resolved)
 
 | | median | p95 |

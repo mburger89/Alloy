@@ -52,6 +52,16 @@ import Testing
         #expect(all.count == 4)
     }
 
+    @Test func realFormatTaggedBacktraceRows() throws {
+        // Trimmed from a real export: <tagged-backtrace> with direct <frame> children, one row that is only
+        // <tagged-backtrace ref>, one <sentinel/> stack, and frames shared by ref.
+        let rows = Hotspots.timeProfile(xml: try Self.data("time-profile-tagged.xml"), top: 10)
+        #expect(rows.map(\.name) == ["Layout.measure(_:)", "HighlightCore.parse(_:)", "CodeBuffer.insert(_:at:)", "main"])
+        #expect(rows.map(\.selfValue) == [3, 1, 0, 0])
+        #expect(rows.map(\.totalValue) == [3, 1, 4, 4])
+        #expect(rows[0].selfMs == 3)
+    }
+
     @Test func allocationsRanksByLiveBytes() throws {
         let rows = Hotspots.allocations(xml: try Self.data("allocations.xml"), top: 3)
         #expect(rows.map(\.name) == ["HighlightCore.parse", "CodeBuffer.insert", "Layout.measure"])
@@ -64,7 +74,8 @@ import Testing
         let fake = try Self.fakeXcrun(toc: "toc-time.xml", table: "time-profile-empty.xml")
         defer { Self.remove(fake) }
         let text = try Hotspots.report(trace: "/home/tester/alloy-time.trace", top: 25, executable: fake)
-        #expect(text.contains("no rows in time-profile"))
+        #expect(text.contains("no samples in time-profile: the app was not on the CPU while recording (an idle app records nothing)"))
+        #expect(!text.contains("no rows"))
     }
 
     @Test func reportRendersTimeAndAllocations() throws {

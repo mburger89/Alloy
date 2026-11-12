@@ -87,6 +87,9 @@ public final class TraceRecorder: @unchecked Sendable {
         ActiveRecorders.remove(p)
     }
 
+    /// xctrace prints `Starting recording` before it starts; this line means it really is recording.
+    static let readyLine = "Ctrl-C to stop the recording"
+
     public func start() async -> TraceStartResult {
         let p = Process()
         p.executableURL = URL(fileURLWithPath: executable)
@@ -109,7 +112,7 @@ public final class TraceRecorder: @unchecked Sendable {
 
         for _ in 0..<Self.ticks(startTimeout) {
             let s = snapshot()
-            if (s.out + s.err).contains("Starting recording"), p.isRunning { return .recording }
+            if (s.out + s.err).contains(Self.readyLine), p.isRunning { return .recording }
             if !p.isRunning {
                 try? await Task.sleep(for: .milliseconds(50))  // let the pipe handlers drain
                 let s = snapshot()
@@ -118,7 +121,12 @@ public final class TraceRecorder: @unchecked Sendable {
             }
             try? await Task.sleep(for: .milliseconds(20))
         }
+        let seen = snapshot()
         await killChild(p)
+        if (seen.out + seen.err).contains("Starting recording") {
+            let secs = Int(startTimeout.components.seconds)
+            return .failed("xctrace did not start within \(secs) s; it is probably waiting for macOS to authorize inspecting the app (Allocations needs your password once every 10 hours). See \"Allocations authorization\" in Bench/README.md")
+        }
         return .failed("xctrace timed out after \(startTimeout) waiting for the recording to start")
     }
 
