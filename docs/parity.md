@@ -52,6 +52,8 @@ First real `--trace time` recordings of `typingLatency` and `memory` (harness 0e
   119-259 samples and per-row line lookups (`Rope.lineStart`) from about 108 to 1, but whole-frame work is within
   run-to-run noise (3,169 before; 3,342 and 3,113 after) and typing latency is unchanged (38.1 and 37.7 ms). Single
   traces vary several-fold for individual layout functions, so compare frame totals across repeated runs.
+- G33 (e) merged in MetalUI e6875f34: rope chunks now fit the 512-byte malloc class (they rounded up to 640 bytes).
+  `memory` with the 2.2 MB file open fell from 54.7 to 54.3 MiB in two runs; `memoryIdle` is unchanged (44.4-44.5 MiB).
 
 ## memory (large file open) - run 2026-11-11-163850 (resolved)
 
