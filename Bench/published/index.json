@@ -19,6 +19,26 @@
         "startup" : "ahead",
         "typingLatency" : "ahead"
       }
+    },
+    {
+      "apps" : {
+        "alloy" : "0496c49",
+        "delta" : "0.1.0",
+        "zed" : "1.28.1"
+      },
+      "date" : "2026-11-11",
+      "harnessSHA" : "0496c49",
+      "partial" : false,
+      "stem" : "2026-11-11-222649-Mac18,5",
+      "verdicts" : {
+        "idleCPU" : "ahead",
+        "largeFileOpen" : "ahead",
+        "memory" : "ahead",
+        "memoryIdle" : "ahead",
+        "scrollFrames" : "par",
+        "startup" : "ahead",
+        "typingLatency" : "ahead"
+      }
     }
   ],
   "schemaVersion" : 1

@@ -52,7 +52,11 @@ import Testing
         try Data([0x41, 0x00, 0x42]).write(to: rig.root.appendingPathComponent("b.bin"))
         rig.workspace.openFilePath = "b.bin"
         let window = try alloyWindow(rig.workspace)
-        try await window.runUntil { (try? window.element(identifier: "file-panel-message")) != nil }
+        // "Loading…" uses the same identifier, so wait for the final message rather than any message.
+        try await window.runUntil {
+            let e = try? window.element(identifier: "file-panel-message")
+            return e?.label?.contains("Loading") == false || e?.value?.contains("Loading") == false
+        }
         #expect(try window.element(identifier: "file-panel-message").label?.contains("Binary") == true
                 || window.element(identifier: "file-panel-message").value?.contains("Binary") == true)
     }

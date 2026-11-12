@@ -48,17 +48,17 @@ a { color: var(--zed); }
 <main>
 <h1>Alloy benchmarks</h1>
 <p class="lead">Alloy (built on MetalUI) measured against Zed and Delta on the same Mac, from outside the apps.</p>
-<h2 class="headline">Alloy is at par or ahead of Zed on 6 of 7 measured metrics</h2>
+<h2 class="headline">Alloy is at par or ahead of Zed on 7 of 7 measured metrics</h2>
 <p class="muted">Newest run: 2026-11-11.</p>
 <div class="scroll"><table>
 <thead><tr><th>Metric</th><th>Zed</th><th>Delta</th><th>Alloy</th><th>Verdict</th></tr></thead>
 <tbody>
-<tr><th scope="row">Startup</th><td>236.6 ms (p95 261.8)</td><td>395.8 ms (p95 439.6)</td><td>136.7 ms (p95 158.4)</td><td><span class="verdict ahead">ahead</span></td></tr>
-<tr><th scope="row">Typing latency</th><td>49.4 ms (p95 57.4)</td><td><span class="muted">n/a — Delta is agent-first with no documented way to open a file in an editor surface; typing target unverified</span></td><td>37.3 ms (p95 48.2)</td><td><span class="verdict ahead">ahead</span></td></tr>
-<tr><th scope="row">Scroll frame time</th><td>17.2 ms (p95 18.4)</td><td><span class="muted">n/a — Delta opens projects, not files; needs a live probe to learn what it displays</span></td><td>17.3 ms (p95 18.3)</td><td><span class="verdict par">par</span></td></tr>
-<tr><th scope="row">Memory</th><td>102.2 MiB (p95 103.7)</td><td><span class="muted">n/a — Delta opens projects, not files; needs a live probe to learn what it displays</span></td><td>181.5 MiB (p95 181.8)</td><td><span class="verdict behind">behind</span> <span class="why">median 181.5 MiB vs Zed 102.2 MiB</span></td></tr>
-<tr><th scope="row">Memory, idle</th><td>93.4 MiB (p95 93.5)</td><td>206.9 MiB (p95 211.3)</td><td>48.7 MiB (p95 48.7)</td><td><span class="verdict ahead">ahead</span></td></tr>
-<tr><th scope="row">Large file open</th><td>239.5 ms (p95 265.2)</td><td><span class="muted">n/a — Delta has no documented open-file-in-editor command (`delta open` takes a path or delta:// link only)</span></td><td>158.6 ms (p95 179.5)</td><td><span class="verdict ahead">ahead</span></td></tr>
+<tr><th scope="row">Startup</th><td>230.7 ms (p95 266.2)</td><td>399.0 ms (p95 421.0)</td><td>135.5 ms (p95 146.6)</td><td><span class="verdict ahead">ahead</span></td></tr>
+<tr><th scope="row">Typing latency</th><td>49.9 ms (p95 57.3)</td><td><span class="muted">n/a — Delta is agent-first with no documented way to open a file in an editor surface; typing target unverified</span></td><td>38.0 ms (p95 49.3)</td><td><span class="verdict ahead">ahead</span></td></tr>
+<tr><th scope="row">Scroll frame time</th><td>17.2 ms (p95 18.3)</td><td><span class="muted">n/a — Delta opens projects, not files; needs a live probe to learn what it displays</span></td><td>17.2 ms (p95 18.3)</td><td><span class="verdict par">par</span></td></tr>
+<tr><th scope="row">Memory</th><td>186.2 MiB (p95 196.5)</td><td><span class="muted">n/a — Delta opens projects, not files; needs a live probe to learn what it displays</span></td><td>56.0 MiB (p95 56.0)</td><td><span class="verdict ahead">ahead</span></td></tr>
+<tr><th scope="row">Memory, idle</th><td>94.6 MiB (p95 95.3)</td><td>205.4 MiB (p95 208.5)</td><td>43.5 MiB (p95 43.6)</td><td><span class="verdict ahead">ahead</span></td></tr>
+<tr><th scope="row">Large file open</th><td>240.5 ms (p95 263.7)</td><td><span class="muted">n/a — Delta has no documented open-file-in-editor command (`delta open` takes a path or delta:// link only)</span></td><td>157.3 ms (p95 182.1)</td><td><span class="verdict ahead">ahead</span></td></tr>
 <tr><th scope="row">Idle CPU</th><td>0.4 % (p95 0.4)</td><td>0.2 % (p95 0.2)</td><td>0.0 % (p95 0.0)</td><td><span class="verdict ahead">ahead</span></td></tr>
 </tbody>
 </table></div>
@@ -69,33 +69,33 @@ a { color: var(--zed); }
 <dt>macOS</dt><dd>27.2.0</dd>
 <dt>Display refresh rate</dt><dd>60.0 Hz</dd>
 <dt>Start</dt><dd>warm</dd>
-<dt>Harness</dt><dd>d42fed4</dd>
+<dt>Harness</dt><dd>0496c49</dd>
 <dt>Zed version</dt><dd>1.28.1</dd>
 <dt>Delta version</dt><dd>0.1.0</dd>
-<dt>Alloy version</dt><dd>d42fed4</dd>
+<dt>Alloy version</dt><dd>0496c49</dd>
 </dl>
 <h2>Run notes</h2>
 <ul>
-<li>Zed Startup: window on screen: median 175 ms after launch (CGWindowList, 5 ms polling)</li>
-<li>Zed Startup: Zed: per-run profile pre-trusts the project (session.trust_all_worktrees) so Zed 1.28's trust prompt does not cover the editor</li>
-<li>Zed Typing latency: Zed: per-run profile pre-trusts the project (session.trust_all_worktrees) so Zed 1.28's trust prompt does not cover the editor</li>
+<li>Zed Startup: window on screen: median 198 ms after launch (CGWindowList, 5 ms polling)</li>
+<li>Zed Startup: Zed: per-run profile pre-trusts the project (session.trust_all_worktrees) and turns language servers off (enable_language_server: false); Alloy runs none</li>
+<li>Zed Typing latency: Zed: per-run profile pre-trusts the project (session.trust_all_worktrees) and turns language servers off (enable_language_server: false); Alloy runs none</li>
 <li>Zed Scroll frame time: captured at 60 Hz (display refresh); dropped frames: 0.3% (3 of 860 intervals &gt; 25.0 ms = 1.5x refresh period); intervals floor at 16.7 ms; intervals trimmed to the first and last scroll post (+1 refresh period)</li>
-<li>Zed Scroll frame time: Zed: per-run profile pre-trusts the project (session.trust_all_worktrees) so Zed 1.28's trust prompt does not cover the editor</li>
-<li>Zed Memory: Zed: per-run profile pre-trusts the project (session.trust_all_worktrees) so Zed 1.28's trust prompt does not cover the editor</li>
-<li>Zed Memory, idle: footprint of the process tree at the end of the idle CPU window, small.swift open</li>
-<li>Zed Memory, idle: Zed: per-run profile pre-trusts the project (session.trust_all_worktrees) so Zed 1.28's trust prompt does not cover the editor</li>
-<li>Zed Large file open: window on screen: median 185 ms after launch (CGWindowList, 5 ms polling)</li>
-<li>Zed Large file open: Zed: per-run profile pre-trusts the project (session.trust_all_worktrees) so Zed 1.28's trust prompt does not cover the editor</li>
-<li>Zed Idle CPU: Zed: per-run profile pre-trusts the project (session.trust_all_worktrees) so Zed 1.28's trust prompt does not cover the editor</li>
-<li>Delta Startup: window on screen: median 378 ms after launch (CGWindowList, 5 ms polling)</li>
+<li>Zed Scroll frame time: Zed: per-run profile pre-trusts the project (session.trust_all_worktrees) and turns language servers off (enable_language_server: false); Alloy runs none</li>
+<li>Zed Memory: Zed: per-run profile pre-trusts the project (session.trust_all_worktrees) and turns language servers off (enable_language_server: false); Alloy runs none</li>
+<li>Zed Memory, idle: footprint of the process tree at the end of the idle CPU window, small.rs open</li>
+<li>Zed Memory, idle: Zed: per-run profile pre-trusts the project (session.trust_all_worktrees) and turns language servers off (enable_language_server: false); Alloy runs none</li>
+<li>Zed Large file open: window on screen: median 180 ms after launch (CGWindowList, 5 ms polling)</li>
+<li>Zed Large file open: Zed: per-run profile pre-trusts the project (session.trust_all_worktrees) and turns language servers off (enable_language_server: false); Alloy runs none</li>
+<li>Zed Idle CPU: Zed: per-run profile pre-trusts the project (session.trust_all_worktrees) and turns language servers off (enable_language_server: false); Alloy runs none</li>
+<li>Delta Startup: window on screen: median 377 ms after launch (CGWindowList, 5 ms polling)</li>
 <li>Delta Startup: Delta has no isolation flag: it ran against the user's real Delta profile and state</li>
-<li>Delta Memory, idle: footprint of the process tree at the end of the idle CPU window, small.swift open</li>
+<li>Delta Memory, idle: footprint of the process tree at the end of the idle CPU window, small.rs open</li>
 <li>Delta Memory, idle: Delta has no isolation flag: it ran against the user's real Delta profile and state</li>
 <li>Delta Idle CPU: Delta has no isolation flag: it ran against the user's real Delta profile and state</li>
-<li>Alloy Startup: window on screen: median 119 ms after launch (CGWindowList, 5 ms polling)</li>
-<li>Alloy Scroll frame time: captured at 60 Hz (display refresh); dropped frames: 0.0% (0 of 857 intervals &gt; 25.0 ms = 1.5x refresh period); intervals floor at 16.7 ms; intervals trimmed to the first and last scroll post (+1 refresh period)</li>
-<li>Alloy Memory, idle: footprint of the process tree at the end of the idle CPU window, small.swift open</li>
-<li>Alloy Large file open: window on screen: median 118 ms after launch (CGWindowList, 5 ms polling)</li>
+<li>Alloy Startup: window on screen: median 114 ms after launch (CGWindowList, 5 ms polling)</li>
+<li>Alloy Scroll frame time: captured at 60 Hz (display refresh); dropped frames: 0.0% (0 of 859 intervals &gt; 25.0 ms = 1.5x refresh period); intervals floor at 16.7 ms; intervals trimmed to the first and last scroll post (+1 refresh period)</li>
+<li>Alloy Memory, idle: footprint of the process tree at the end of the idle CPU window, small.rs open</li>
+<li>Alloy Large file open: window on screen: median 114 ms after launch (CGWindowList, 5 ms polling)</li>
 </ul>
 <h2>How this is measured</h2>
 <ul>
@@ -108,8 +108,20 @@ a { color: var(--zed); }
 <li>Scroll frame times cannot be lower than one display refresh period, so they floor at that value.</li>
 <li>Results come from one machine and one run each time, so treat small differences with caution. Raw samples are in the JSON files linked below.</li>
 </ul>
+<h2>History</h2>
+<p class="legend"><span class="key zed">Zed median</span> <span class="key alloy">Alloy median</span></p>
+<div class="charts">
+<figure><figcaption>Startup</figcaption><svg viewBox="0 0 320 120" role="img" aria-label="Startup median over 2 runs, Zed and Alloy, in ms"><line class="axis" x1="40" y1="96.0" x2="310" y2="96.0"/><line class="axis" x1="40" y1="10" x2="40" y2="96.0"/><text class="tick" x="36" y="14" text-anchor="end">236.6</text><text class="tick" x="36" y="96.0" text-anchor="end">0</text><text class="tick" x="40" y="112">2026-11-11</text><text class="tick" x="310" y="112" text-anchor="end">2026-11-11</text><text class="tick" x="44" y="14">ms</text><polyline class="series zed" points="40.0,10.0 310.0,12.1"/><circle class="dot zed" cx="40.0" cy="10.0" r="3"/><circle class="dot zed" cx="310.0" cy="12.1" r="3"/><polyline class="series alloy" points="40.0,46.3 310.0,46.8"/><circle class="dot alloy" cx="40.0" cy="46.3" r="3"/><circle class="dot alloy" cx="310.0" cy="46.8" r="3"/></svg></figure>
+<figure><figcaption>Typing latency</figcaption><svg viewBox="0 0 320 120" role="img" aria-label="Typing latency median over 2 runs, Zed and Alloy, in ms"><line class="axis" x1="40" y1="96.0" x2="310" y2="96.0"/><line class="axis" x1="40" y1="10" x2="40" y2="96.0"/><text class="tick" x="36" y="14" text-anchor="end">49.9</text><text class="tick" x="36" y="96.0" text-anchor="end">0</text><text class="tick" x="40" y="112">2026-11-11</text><text class="tick" x="310" y="112" text-anchor="end">2026-11-11</text><text class="tick" x="44" y="14">ms</text><polyline class="series zed" points="40.0,10.8 310.0,10.0"/><circle class="dot zed" cx="40.0" cy="10.8" r="3"/><circle class="dot zed" cx="310.0" cy="10.0" r="3"/><polyline class="series alloy" points="40.0,31.8 310.0,30.4"/><circle class="dot alloy" cx="40.0" cy="31.8" r="3"/><circle class="dot alloy" cx="310.0" cy="30.4" r="3"/></svg></figure>
+<figure><figcaption>Scroll frame time</figcaption><svg viewBox="0 0 320 120" role="img" aria-label="Scroll frame time median over 2 runs, Zed and Alloy, in ms"><line class="axis" x1="40" y1="96.0" x2="310" y2="96.0"/><line class="axis" x1="40" y1="10" x2="40" y2="96.0"/><text class="tick" x="36" y="14" text-anchor="end">17.3</text><text class="tick" x="36" y="96.0" text-anchor="end">0</text><text class="tick" x="40" y="112">2026-11-11</text><text class="tick" x="310" y="112" text-anchor="end">2026-11-11</text><text class="tick" x="44" y="14">ms</text><polyline class="series zed" points="40.0,10.3 310.0,10.3"/><circle class="dot zed" cx="40.0" cy="10.3" r="3"/><circle class="dot zed" cx="310.0" cy="10.3" r="3"/><polyline class="series alloy" points="40.0,10.0 310.0,10.4"/><circle class="dot alloy" cx="40.0" cy="10.0" r="3"/><circle class="dot alloy" cx="310.0" cy="10.4" r="3"/></svg></figure>
+<figure><figcaption>Memory</figcaption><svg viewBox="0 0 320 120" role="img" aria-label="Memory median over 2 runs, Zed and Alloy, in MiB"><line class="axis" x1="40" y1="96.0" x2="310" y2="96.0"/><line class="axis" x1="40" y1="10" x2="40" y2="96.0"/><text class="tick" x="36" y="14" text-anchor="end">186.2</text><text class="tick" x="36" y="96.0" text-anchor="end">0</text><text class="tick" x="40" y="112">2026-11-11</text><text class="tick" x="310" y="112" text-anchor="end">2026-11-11</text><text class="tick" x="44" y="14">MiB</text><polyline class="series zed" points="40.0,48.8 310.0,10.0"/><circle class="dot zed" cx="40.0" cy="48.8" r="3"/><circle class="dot zed" cx="310.0" cy="10.0" r="3"/><polyline class="series alloy" points="40.0,12.2 310.0,70.2"/><circle class="dot alloy" cx="40.0" cy="12.2" r="3"/><circle class="dot alloy" cx="310.0" cy="70.2" r="3"/></svg></figure>
+<figure><figcaption>Memory, idle</figcaption><svg viewBox="0 0 320 120" role="img" aria-label="Memory, idle median over 2 runs, Zed and Alloy, in MiB"><line class="axis" x1="40" y1="96.0" x2="310" y2="96.0"/><line class="axis" x1="40" y1="10" x2="40" y2="96.0"/><text class="tick" x="36" y="14" text-anchor="end">94.6</text><text class="tick" x="36" y="96.0" text-anchor="end">0</text><text class="tick" x="40" y="112">2026-11-11</text><text class="tick" x="310" y="112" text-anchor="end">2026-11-11</text><text class="tick" x="44" y="14">MiB</text><polyline class="series zed" points="40.0,11.1 310.0,10.0"/><circle class="dot zed" cx="40.0" cy="11.1" r="3"/><circle class="dot zed" cx="310.0" cy="10.0" r="3"/><polyline class="series alloy" points="40.0,51.7 310.0,56.4"/><circle class="dot alloy" cx="40.0" cy="51.7" r="3"/><circle class="dot alloy" cx="310.0" cy="56.4" r="3"/></svg></figure>
+<figure><figcaption>Large file open</figcaption><svg viewBox="0 0 320 120" role="img" aria-label="Large file open median over 2 runs, Zed and Alloy, in ms"><line class="axis" x1="40" y1="96.0" x2="310" y2="96.0"/><line class="axis" x1="40" y1="10" x2="40" y2="96.0"/><text class="tick" x="36" y="14" text-anchor="end">240.5</text><text class="tick" x="36" y="96.0" text-anchor="end">0</text><text class="tick" x="40" y="112">2026-11-11</text><text class="tick" x="310" y="112" text-anchor="end">2026-11-11</text><text class="tick" x="44" y="14">ms</text><polyline class="series zed" points="40.0,10.4 310.0,10.0"/><circle class="dot zed" cx="40.0" cy="10.4" r="3"/><circle class="dot zed" cx="310.0" cy="10.0" r="3"/><polyline class="series alloy" points="40.0,39.3 310.0,39.8"/><circle class="dot alloy" cx="40.0" cy="39.3" r="3"/><circle class="dot alloy" cx="310.0" cy="39.8" r="3"/></svg></figure>
+<figure><figcaption>Idle CPU</figcaption><svg viewBox="0 0 320 120" role="img" aria-label="Idle CPU median over 2 runs, Zed and Alloy, in %"><line class="axis" x1="40" y1="96.0" x2="310" y2="96.0"/><line class="axis" x1="40" y1="10" x2="40" y2="96.0"/><text class="tick" x="36" y="14" text-anchor="end">0.4</text><text class="tick" x="36" y="96.0" text-anchor="end">0</text><text class="tick" x="40" y="112">2026-11-11</text><text class="tick" x="310" y="112" text-anchor="end">2026-11-11</text><text class="tick" x="44" y="14">%</text><polyline class="series zed" points="40.0,10.8 310.0,10.0"/><circle class="dot zed" cx="40.0" cy="10.8" r="3"/><circle class="dot zed" cx="310.0" cy="10.0" r="3"/><polyline class="series alloy" points="40.0,95.4 310.0,95.4"/><circle class="dot alloy" cx="40.0" cy="95.4" r="3"/><circle class="dot alloy" cx="310.0" cy="95.4" r="3"/></svg></figure>
+</div>
 <h2>Raw results</h2>
 <ul>
+<li><a href="data/2026-11-11-222649-Mac18,5.json">2026-11-11-222649-Mac18,5.json</a></li>
 <li><a href="data/2026-11-11-163850-Mac18,5.json">2026-11-11-163850-Mac18,5.json</a></li>
 </ul>
 </main>

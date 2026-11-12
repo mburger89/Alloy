@@ -71,6 +71,7 @@ import Foundation
         let json = try #require(TargetApp.zed.seededFiles["config/settings.json"])
         let obj = try #require(try JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any])
         #expect((obj["session"] as? [String: Any])?["trust_all_worktrees"] as? Bool == true)
+        #expect(obj["enable_language_server"] as? Bool == false)
         #expect(TargetApp.delta.seededFiles.isEmpty)
         #expect(TargetApp.alloy(buildDir: "/x").seededFiles.isEmpty)
     }
@@ -96,8 +97,8 @@ import Foundation
         defer { a.remove(); b.remove() }
         #expect(a.directory != b.directory)
         #expect(a.file != Corpus.default.small)
-        #expect(!a.file.hasPrefix(Corpus.default.small.replacingOccurrences(of: "/small.swift", with: "")))
-        #expect(try FileManager.default.contentsOfDirectory(atPath: a.directory!) == ["small.swift"])
+        #expect(!a.file.hasPrefix(Corpus.default.small.replacingOccurrences(of: "/small.rs", with: "")))
+        #expect(try FileManager.default.contentsOfDirectory(atPath: a.directory!) == ["small.rs"])
         #expect(try Data(contentsOf: URL(fileURLWithPath: a.file)) == Data(contentsOf: URL(fileURLWithPath: Corpus.default.small)))
         // Editing the copy leaves the committed corpus untouched.
         try "x".write(toFile: a.file, atomically: true, encoding: .utf8)

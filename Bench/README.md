@@ -75,7 +75,7 @@ Run it only on a quiet machine: nothing else may be using the screen, keyboard o
 
 ### What each app is given to open
 
-Each run copies the scenario's corpus file (`Bench/Corpus/small.swift` or `large.swift`) into a fresh temporary directory
+Each run copies the scenario's corpus file (`Bench/Corpus/small.rs` or `large.rs`) into a fresh temporary directory
 that holds only that file, and opens the copy; `Bench/Corpus` itself is never opened, so the committed corpus cannot
 be modified.
 
@@ -89,7 +89,7 @@ be modified.
   list of failures (shown as "N failed").
 - startup and largeFileOpen are strict: any excluded run (window never appeared, screen changed before the window,
   capture dropped frames) makes the whole metric `not measured`; a median of survivors is never published.
-- `memoryIdle` is the process-tree footprint at the end of the idleCPU window with small.swift open, from the same launches.
+- `memoryIdle` is the process-tree footprint at the end of the idleCPU window with small.rs open, from the same launches.
 
 ### Delta isolation caveat
 

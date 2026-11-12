@@ -43,11 +43,14 @@ public enum SyntaxToken: Sendable, Hashable, CaseIterable {
 
 /// The pure part of highlighting: a tree and its text in, flattened `(bytes, token)` runs out.
 enum HighlightCore {
-    static func parse(_ parser: Parser, old: MutableTree?, bytes: [UInt8]) -> MutableTree? {
+    /// Parses `bytes[start..<end]` (default: all of it) as a standalone document, so tree offsets are relative to `start`.
+    static func parse(_ parser: Parser, old: MutableTree?, bytes: [UInt8], start: Int = 0, end: Int? = nil) -> MutableTree? {
+        let limit = min(end ?? bytes.count, bytes.count)
         // Encoding 0 is TSInputEncodingUTF8: every offset tree-sitter reports is a UTF-8 byte.
-        parser.parse(tree: old, encoding: .init(0)) { offset, _ in
-            guard offset < bytes.count else { return nil }
-            return Data(bytes[offset..<min(offset + 8192, bytes.count)])
+        return parser.parse(tree: old, encoding: .init(0)) { offset, _ in
+            let at = start + offset
+            guard at < limit else { return nil }
+            return Data(bytes[at..<min(at + 8192, limit)])
         }
     }
 
@@ -59,33 +62,34 @@ enum HighlightCore {
     }
 
     /// The runs covering `range` of `bytes`. A later pattern in the query wins where captures overlap; runs
-    /// are sorted and disjoint, and adjacent runs of one token are joined.
-    static func runs(tree: MutableTree, query: Query, bytes: [UInt8], range: Range<Int>) -> [(Range<Int>, SyntaxToken)] {
-        let lo = max(0, range.lowerBound), hi = min(bytes.count, range.upperBound)
+    /// are sorted and disjoint, and adjacent runs of one token are joined. `base` is the offset in `bytes` of the
+    /// tree's byte 0 (non-zero for a tree parsed from a window); `range` and the results are in `bytes` coordinates.
+    static func runs(tree: MutableTree, query: Query, bytes: [UInt8], range: Range<Int>, base: Int = 0) -> [(Range<Int>, SyntaxToken)] {
+        let lo = max(base, range.lowerBound), hi = min(bytes.count, range.upperBound)
         guard lo < hi, let root = tree.rootNode else { return [] }
         let cursor = query.execute(node: root, in: tree)
-        cursor.setByteRange(range: UInt32(lo)..<UInt32(hi))
+        cursor.setByteRange(range: UInt32(lo - base)..<UInt32(hi - base))
         var captures: [Capture] = []
         while let match = cursor.next() {
-            if !match.predicates.isEmpty && !allows(match, bytes: bytes) { continue }
+            if !match.predicates.isEmpty && !allows(match, bytes: bytes, base: base) { continue }
             for capture in match.captures {
                 guard let token = SyntaxToken.forCapture(capture.nameComponents) else { continue }
                 let r = capture.node.byteRange
-                let a = max(lo, Int(r.lowerBound)), b = min(hi, Int(r.upperBound))
+                let a = max(lo, Int(r.lowerBound) + base), b = min(hi, Int(r.upperBound) + base)
                 if a < b { captures.append(Capture(lower: a, upper: b, token: token, priority: match.patternIndex)) }
             }
         }
         return flatten(captures)
     }
 
-    private static func allows(_ match: QueryMatch, bytes: [UInt8]) -> Bool {
+    private static func allows(_ match: QueryMatch, bytes: [UInt8], base: Int) -> Bool {
         for predicate in match.predicates {
             switch predicate {
             case .set, .generic, .isNot: continue
             default:
                 for capture in predicate.captures(in: match) {
                     let r = capture.node.byteRange
-                    let text = String(decoding: bytes[Int(r.lowerBound)..<min(bytes.count, Int(r.upperBound))], as: UTF8.self)
+                    let text = String(decoding: bytes[base + Int(r.lowerBound)..<min(bytes.count, base + Int(r.upperBound))], as: UTF8.self)
                     if !predicate.evalulate(with: text) { return false }
                 }
             }
@@ -135,10 +139,22 @@ enum HighlightCore {
 /// Parses documents off the main actor and answers highlight captures for byte ranges. It owns one parser
 /// and tree per document id; edits reparse incrementally.
 public actor HighlightEngine {
+    /// A parse of `bytes[start..<end]` as a standalone document (large documents only); tree offsets are relative to
+    /// `start` and tree rows to `startRow`.
+    private struct Window {
+        var start: Int
+        var end: Int
+        var startRow: Int
+        var tree: MutableTree
+    }
+
     private struct Document {
         var support: LanguageSupport
         var parser: Parser
+        /// The whole-file tree; `nil` for a windowed (large) document.
         var tree: MutableTree?
+        var windowed = false
+        var window: Window?
         var bytes: [UInt8]
         /// The buffer version `bytes` is the text of.
         var version: UInt64
@@ -155,10 +171,22 @@ public actor HighlightEngine {
     private var waiters: [UUID: [Waiter]] = [:]
     private var nextToken: UInt64 = 0
     private let waitTimeout: Duration
+    private let windowedThreshold: Int
+    private let windowMargin: Int
 
     /// `waitTimeout` bounds how long ``captures(id:byteRange:minVersion:)`` waits for the engine to reach a version.
-    public init(waitTimeout: Duration = .seconds(2)) {
+    ///
+    /// Documents of more than `windowedThreshold` bytes are never parsed whole (a whole-file tree costs ~60 bytes
+    /// per source byte): the engine parses one window of the text around the last requested range, `windowMargin`
+    /// bytes each side, and re-parses a new one when a request falls outside it.
+    ///
+    /// Accepted limitation: a window is parsed as a standalone document, so colours at its very top can be wrong
+    /// when it starts inside a multi-line string or comment. Snapping the start to a likely top-level line makes
+    /// that rare.
+    public init(waitTimeout: Duration = .seconds(2), windowedThreshold: Int = 1_048_576, windowMargin: Int = 65_536) {
         self.waitTimeout = waitTimeout
+        self.windowedThreshold = windowedThreshold
+        self.windowMargin = windowMargin
     }
 
     /// How many `captures` calls are suspended waiting for a version (test observability).
@@ -174,8 +202,9 @@ public actor HighlightEngine {
             LanguageSupport.report("grammar for \(language) rejected by the parser: \(error)", key: "set-\(language)")
         }
         let bytes = Array(text.utf8)
-        let tree = HighlightCore.parse(parser, old: nil, bytes: bytes)
-        documents[id] = Document(support: support, parser: parser, tree: tree, bytes: bytes, version: version)
+        let windowed = bytes.count > windowedThreshold
+        let tree = windowed ? nil : HighlightCore.parse(parser, old: nil, bytes: bytes)
+        documents[id] = Document(support: support, parser: parser, tree: tree, windowed: windowed, bytes: bytes, version: version)
         resumeWaiters(id)
     }
 
@@ -183,6 +212,12 @@ public actor HighlightEngine {
     /// incrementally; `newText` is the text after all of them, which is buffer `version`.
     public func edit(id: UUID, edits: [CodeEdit], newText: String, version: UInt64) async {
         guard var doc = documents[id] else { return }
+        if doc.windowed {
+            editWindowed(&doc, edits: edits, newText: newText, version: version)
+            documents[id] = doc
+            resumeWaiters(id)
+            return
+        }
         if let tree = doc.tree {
             for e in edits {
                 tree.edit(InputEdit(
@@ -214,8 +249,80 @@ public actor HighlightEngine {
         async -> (version: UInt64, runs: [(Range<Int>, SyntaxToken)]) {
         if let doc = documents[id], doc.version < minVersion { await waitForVersion(id: id, minVersion: minVersion) }
         guard let doc = documents[id] else { return (Self.unknownVersion, []) }
-        guard let tree = doc.tree, let query = doc.support.highlights else { return (doc.version, []) }
+        guard let query = doc.support.highlights else { return (doc.version, []) }
+        if doc.windowed {
+            let range = max(0, byteRange.lowerBound)..<max(0, min(doc.bytes.count, byteRange.upperBound))
+            guard range.lowerBound < range.upperBound else { return (doc.version, []) }
+            let window: Window
+            if let w = doc.window, w.start <= range.lowerBound, range.upperBound <= w.end {
+                window = w
+            } else {
+                guard let w = makeWindow(doc, around: range) else { return (doc.version, []) }
+                documents[id]?.window = w
+                window = w
+            }
+            return (doc.version, HighlightCore.runs(tree: window.tree, query: query, bytes: doc.bytes, range: range, base: window.start))
+        }
+        guard let tree = doc.tree else { return (doc.version, []) }
         return (doc.version, HighlightCore.runs(tree: tree, query: query, bytes: doc.bytes, range: byteRange))
+    }
+
+    /// A window around `range`: `windowMargin` each side, the start snapped back to a likely top-level line, the end
+    /// forward to a line end.
+    private func makeWindow(_ doc: Document, around range: Range<Int>) -> Window? {
+        let bytes = doc.bytes
+        let newline = UInt8(ascii: "\n")
+        var start = max(0, range.lowerBound - windowMargin)
+        var end = min(bytes.count, range.upperBound + windowMargin)
+        func lineStart(_ i: Int) -> Int {
+            var i = i
+            while i > 0, bytes[i - 1] != newline { i -= 1 }
+            return i
+        }
+        func isTopLevel(_ i: Int) -> Bool {
+            guard i < bytes.count else { return false }
+            switch bytes[i] {
+            case newline, UInt8(ascii: " "), UInt8(ascii: "\t"), UInt8(ascii: "\r"),
+                 UInt8(ascii: "}"), UInt8(ascii: ")"), UInt8(ascii: "]"): return false
+            default: return true
+            }
+        }
+        start = lineStart(start)
+        let floor = max(0, start - windowMargin)
+        var probe = start
+        while probe > floor, !isTopLevel(probe) { probe = lineStart(probe - 1) }
+        if isTopLevel(probe) { start = probe }
+        while end < bytes.count, bytes[end - 1] != newline { end += 1 }
+        var startRow = 0
+        for i in 0..<start where bytes[i] == newline { startRow += 1 }
+        guard let tree = HighlightCore.parse(doc.parser, old: nil, bytes: bytes, start: start, end: end) else { return nil }
+        return Window(start: start, end: end, startRow: startRow, tree: tree)
+    }
+
+    /// Large documents: keeps the window tree in step when every edit lies inside it, otherwise drops the window.
+    private func editWindowed(_ doc: inout Document, edits: [CodeEdit], newText: String, version: UInt64) {
+        doc.bytes = Array(newText.utf8)
+        doc.version = version
+        guard var window = doc.window else { return }
+        for e in edits {
+            guard e.range.lowerBound >= window.start, e.range.upperBound <= window.end else {
+                doc.window = nil
+                return
+            }
+            let added = e.newText.utf8.count
+            window.tree.edit(InputEdit(
+                startByte: e.range.lowerBound - window.start, oldEndByte: e.range.upperBound - window.start,
+                newEndByte: e.range.lowerBound - window.start + added,
+                startPoint: Point(row: e.startPoint.row - window.startRow, column: e.startPoint.column),
+                oldEndPoint: Point(row: e.oldEndPoint.row - window.startRow, column: e.oldEndPoint.column),
+                newEndPoint: Point(row: e.newEndPoint.row - window.startRow, column: e.newEndPoint.column)))
+            window.end += added - (e.range.upperBound - e.range.lowerBound)
+        }
+        guard window.end <= doc.bytes.count,
+              let tree = HighlightCore.parse(doc.parser, old: window.tree, bytes: doc.bytes, start: window.start, end: window.end)
+        else { doc.window = nil; return }
+        window.tree = tree
+        doc.window = window
     }
 
     /// Forgets `id`; its waiting `captures` calls answer ``unknownVersion``.

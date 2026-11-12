@@ -27,6 +27,8 @@ public final class CodeViewHighlighter: CodeHighlightProvider {
 
     /// Versions highlights were applied as of, in order (test observability).
     private(set) var appliedVersions: [UInt64] = []
+    /// The byte range most recently asked of the engine (test observability).
+    private(set) var lastRequestedBytes: Range<Int>?
     /// Results dropped because a newer request existed.
     private(set) var supersededCount = 0
     /// Results dropped because the engine's text version differed from the snapshot's.
@@ -56,7 +58,12 @@ public final class CodeViewHighlighter: CodeHighlightProvider {
     private func start(_ request: Request) {
         let first = max(0, request.rows.lowerBound), last = min(request.snapshot.lineCount, request.rows.upperBound)
         guard first < last else { return }
-        let lower = request.snapshot.lineRange(first).lowerBound, upper = request.snapshot.lineRange(last - 1).upperBound
+        // Cover every requested row through its newline: `lineRange` excludes it, and MetalUI probes a blank row
+        // through that byte, so leaving it out keeps the row "missing" and re-requested on every frame.
+        let snapshot = request.snapshot
+        let lower = snapshot.lineRange(first).lowerBound
+        let upper = last < snapshot.lineCount ? snapshot.lineRange(last).lowerBound : snapshot.utf8Count
+        lastRequestedBytes = lower..<upper
         inFlight = true
         let mine = generation
         Task { [engine, documentID] in

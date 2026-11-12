@@ -20,7 +20,7 @@ import Foundation
         let s = Self.scrubber
         #expect(s.scrub("leftover process: Alloy pid 9 (/home/tester/dev/Alloy/.build/release/Alloy) x")
                 == "leftover process: Alloy pid 9 (~/dev/Alloy/.build/release/Alloy) x")
-        #expect(s.scrub("run 2: cannot read /private/var/folders/ab/xyz/T/bench-1/small.swift")
+        #expect(s.scrub("run 2: cannot read /private/var/folders/ab/xyz/T/bench-1/small.rs")
                 == "run 2: cannot read <tmp>")
         #expect(s.scrub("in /tmp/bench-2/a.swift and /var/folders/q/T/z, /private/tmp/y") == "in <tmp> and <tmp>, <tmp>")
     }

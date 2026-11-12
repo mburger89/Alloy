@@ -240,14 +240,14 @@ func emitEdit(_ rig: Rig, old: String, new: String, toolUseID: String) async thr
     @Test func largeFileKeystrokeShapesFewLines() async throws {
         let rig = Rig()
         let corpus = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
-            .deletingLastPathComponent().appendingPathComponent("Bench/Corpus/large.swift")
-        try FileManager.default.copyItem(at: corpus, to: rig.root.appendingPathComponent("large.swift"))
-        let window = try await opened(rig, "large.swift")
+            .deletingLastPathComponent().appendingPathComponent("Bench/Corpus/large.rs")
+        try FileManager.default.copyItem(at: corpus, to: rig.root.appendingPathComponent("large.rs"))
+        let window = try await opened(rig, "large.rs")
         try window.click(window.element(identifier: "code-view"))
         window.tick()
         window.typeText("a")
         window.tick()
-        let doc = try #require(rig.workspace.document("large.swift"))
+        let doc = try #require(rig.workspace.document("large.rs"))
         #expect(doc.isDirty)
         #expect(window.lastFrameWork.codeLinesShaped <= 2, "\(window.lastFrameWork.codeLinesShaped)")
     }

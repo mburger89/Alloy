@@ -36,8 +36,20 @@ private let corpusDir = URL(fileURLWithPath: #filePath)
     }
 
     @Test func largeCorpusIs100kLines() throws {
-        let text = try String(contentsOf: corpusDir.appendingPathComponent("large.swift"), encoding: .utf8)
+        let text = try String(contentsOf: corpusDir.appendingPathComponent("large.rs"), encoding: .utf8)
         #expect(text.split(separator: "\n", omittingEmptySubsequences: false).count - 1 == 100_000)
+    }
+
+    @Test func corpusIsRustAndLineCountsMatchSpec() throws {
+        let c = Corpus.default
+        for p in [c.small, c.medium, c.large] { #expect(p.hasSuffix(".rs")) }
+        let names = try FileManager.default.contentsOfDirectory(atPath: corpusDir.path).sorted()
+        #expect(names == ["MANIFEST.sha256", "generate.swift", "large.rs", "medium.rs", "small.rs"])
+        for (p, n) in [(c.small, 200), (c.medium, 5_000), (c.large, 100_000)] {
+            let text = try String(contentsOfFile: p, encoding: .utf8)
+            #expect(text.split(separator: "\n", omittingEmptySubsequences: false).count - 1 == n)
+            #expect(text.filter { $0 == "{" }.count == text.filter { $0 == "}" }.count, "braces unbalanced in \(p)")
+        }
     }
 
     @Test func corpusDefaultsPointAtFiles() {

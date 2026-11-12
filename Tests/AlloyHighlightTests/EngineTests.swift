@@ -167,6 +167,24 @@ private func same(_ a: [(Range<Int>, SyntaxToken)], _ b: [(Range<Int>, SyntaxTok
     }
 
 
+    /// A request whose last row is blank must cover that row's newline byte, or MetalUI keeps the row "missing"
+    /// and asks again on every frame.
+    @Test @MainActor func requestCoversBlankLastRowNewline() async throws {
+        let text = "let x = 1\n\n\nlet y = 2\n"
+        let buffer = CodeBuffer(text)
+        let decorations = CodeDecorations(buffer: buffer)
+        let engine = HighlightEngine()
+        let id = UUID()
+        await engine.open(id: id, language: .swift, text: text, version: buffer.version)
+        let highlighter = CodeViewHighlighter(engine: engine, documentID: id, decorations: decorations, palette: SyntaxPalette())
+        let snapshot = buffer.snapshot()
+        highlighter.decorations(decorations, needHighlightsForRows: 0..<2, in: snapshot)
+        try await settle(highlighter)
+        let newline = snapshot.lineRange(1).lowerBound
+        let asked = try #require(highlighter.lastRequestedBytes)
+        #expect(asked.contains(newline), "asked \(asked), blank row's newline is byte \(newline)")
+    }
+
     /// The engine is ahead of the snapshot that asked (an edit landed between the request and the response): the
     /// runs of the newer text must not be stamped onto the older snapshot; the rows are asked again on the
     /// buffer's newest snapshot.
@@ -306,7 +324,7 @@ private func same(_ a: [(Range<Int>, SyntaxToken)], _ b: [(Range<Int>, SyntaxTok
 
     @Test func largeFileParsesOffMain() async throws {
         let url = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
-            .deletingLastPathComponent().appendingPathComponent("Bench/Corpus/large.swift")
+            .deletingLastPathComponent().appendingPathComponent("Bench/Corpus/large.rs")
         let data = try Data(contentsOf: url)
         let text = String(decoding: data, as: UTF8.self)
         #expect(data.count > 1_000_000)
@@ -317,9 +335,9 @@ private func same(_ a: [(Range<Int>, SyntaxToken)], _ b: [(Range<Int>, SyntaxTok
                 try? await Task.sleep(nanoseconds: 1_000_000)
             }
         }
-        let engine = HighlightEngine()
+        let engine = HighlightEngine(windowedThreshold: .max)   // the whole-file parse is what must stay off main
         let id = UUID()
-        await engine.open(id: id, language: .swift, text: text, version: 0)
+        await engine.open(id: id, language: .rust, text: text, version: 0)
         let runs = await engine.captures(id: id, byteRange: 0..<4096).runs
         ticker.cancel()
         let seen = await MainActor.run { ticks.count }

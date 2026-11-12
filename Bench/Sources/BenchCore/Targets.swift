@@ -34,6 +34,7 @@ public struct TargetApp: Sendable {
     /// Files written into the per-run user-data directory before launch (relative path -> contents). Zed gets
     /// `config/settings.json` with `session.trust_all_worktrees`, which skips Zed 1.28's first-open trust prompt
     /// (it would otherwise cover the editor and swallow keystrokes); it is the state of a user who has trusted the project.
+    /// `enable_language_server: false` keeps Zed from starting (or downloading) rust-analyzer for the Rust corpus; Alloy has none.
     public var seededFiles: [String: String]
 
     public init(id: String, displayName: String, bundlePath: String?, executablePath: String,
@@ -58,8 +59,8 @@ public struct TargetApp: Sendable {
         // The app binary takes `paths_or_urls`, `--diff`, `--user-data-dir`, ...; `-n` belongs to the CLI shim only.
         launchArguments: { file in file.map { [$0] } ?? [] },
         bundleID: "dev.zed.Zed", userDataDirFlag: "--user-data-dir",
-        caveats: ["Zed: per-run profile pre-trusts the project (session.trust_all_worktrees) so Zed 1.28's trust prompt does not cover the editor"],
-        seededFiles: ["config/settings.json": "{\"session\":{\"trust_all_worktrees\":true}}\n"])
+        caveats: ["Zed: per-run profile pre-trusts the project (session.trust_all_worktrees) and turns language servers off (enable_language_server: false); Alloy runs none"],
+        seededFiles: ["config/settings.json": "{\"session\":{\"trust_all_worktrees\":true},\"enable_language_server\":false}\n"])
 
     public static let delta = TargetApp(
         id: "delta", displayName: "Delta", bundlePath: "/Applications/Delta.app",

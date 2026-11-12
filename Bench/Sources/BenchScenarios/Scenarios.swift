@@ -46,7 +46,7 @@ func windowOnScreenNote(_ v: [Double]) -> [String] {
     return [String(format: "window on screen: median %.0f ms after launch (CGWindowList, 5 ms polling)", s.median)]
 }
 
-/// Launch with large.swift; time until text rows cover >= 30 % of the app window's height (display capture
+/// Launch with large.rs; time until text rows cover >= 30 % of the app window's height (display capture
 /// started before the launch).
 public struct LargeFileOpenScenario: Scenario {
     public var metric: Metric { .largeFileOpen }
@@ -65,7 +65,7 @@ public struct LargeFileOpenScenario: Scenario {
     }
 }
 
-/// Types `keystrokes` letters `interval` apart into small.swift (caret at end); each sample is
+/// Types `keystrokes` letters `interval` apart into small.rs (caret at end); each sample is
 /// post time to the first content-change frame.
 public struct TypingLatencyScenario: Scenario {
     public var metric: Metric { .typingLatency }
@@ -139,7 +139,7 @@ public struct TypingLatencyScenario: Scenario {
     }
 }
 
-/// Posts 3-line scrolls every 8 ms at the app's scroll point (`TargetApp.scrollPoint`; window centre by default) for `duration` on large.swift; samples are
+/// Posts 3-line scrolls every 8 ms at the app's scroll point (`TargetApp.scrollPoint`; window centre by default) for `duration` on large.rs; samples are
 /// intervals between changed frames. Capture runs at the display's real refresh rate (recorded in the notes),
 /// so intervals cannot be shorter than one capture period.
 public struct ScrollFramesScenario: Scenario {
@@ -218,7 +218,7 @@ public struct ScrollFramesScenario: Scenario {
     }
 }
 
-/// Physical footprint (MiB) of the process tree `delay` after large.swift text is painted.
+/// Physical footprint (MiB) of the process tree `delay` after large.rs text is painted.
 public struct MemoryScenario: Scenario {
     public var metric: Metric { .memory }
     public var delay: Duration
@@ -241,7 +241,7 @@ public struct MemoryScenario: Scenario {
     }
 }
 
-/// CPU % (of one core) over `window` after `settle` with small.swift open. The same launch also yields the
+/// CPU % (of one core) over `window` after `settle` with small.rs open. The same launch also yields the
 /// `memoryIdle` metric: the process-tree footprint (MiB) sampled at the end of the window.
 public struct IdleCPUScenario: Scenario {
     public var metric: Metric { .idleCPU }
@@ -282,7 +282,7 @@ public struct IdleCPUScenario: Scenario {
         }
         var failures: [String] = []
         if case .measured(_, _, _, let f) = cpu { failures = f }
-        return .measured(s, samples: samples, notes: ["footprint of the process tree at the end of the idle CPU window, small.swift open"],
+        return .measured(s, samples: samples, notes: ["footprint of the process tree at the end of the idle CPU window, small.rs open"],
                          failures: failures)
     }
 }

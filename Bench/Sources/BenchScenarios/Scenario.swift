@@ -7,7 +7,7 @@ public struct Corpus: Sendable {
         self.small = small; self.medium = medium; self.large = large
     }
     public init(directory: String) {
-        self.init(small: directory + "/small.swift", medium: directory + "/medium.swift", large: directory + "/large.swift")
+        self.init(small: directory + "/small.rs", medium: directory + "/medium.rs", large: directory + "/large.rs")
     }
     /// `Bench/Corpus` located relative to this source file (works for `swift run` / `swift test` from a checkout).
     public static var `default`: Corpus {
