@@ -25,10 +25,9 @@ First real `--trace time` recordings of `typingLatency` and `memory` (harness 0e
 - Alloy `memory`: zero samples in a 10.5 s recording. The recorder attaches after launch, by which point Alloy has
   painted and is idle.
 - Zed's release build is stripped, so its own frames show as bare addresses; only system frames are comparable.
-- `--trace allocations` needs macOS authorization (`system.privilege.taskport`, a password once per 10 h) and works only
-  from a Terminal the user started (runs started by agents hang at authorization and are given up after 120 s). Zed
-  does not refuse the attach.
-  No allocations recordings yet.
+- `--trace allocations` could not be automated: xctrace waits for macOS authorization (`system.privilege.taskport`) that a
+  harness-started recorder never gets, even after the password was entered in the user's Terminal. Memory allocations
+  are profiled in Instruments by hand instead. Zed did not refuse the attach.
 
 ## memory (large file open) - run 2026-11-11-163850 (resolved)
 
