@@ -176,6 +176,10 @@ extension Harness {
     /// Pre-launch display capture: start capturing the main display, grab a baseline, launch, poll CGWindowList
     /// for the window, and scan frames. Returns (milliseconds from launch to hit, milliseconds from launch to window on screen).
     static func measureOnDisplay(_ app: TargetApp, file: String, mode: ScanMode, timeout: Duration) async throws -> (hitMs: Double, windowMs: Double) {
+        if let session = TraceSession.current, let metric = TraceSession.metric,
+           session.shouldTrace(app: app.id, metric: metric) {
+            session.addNote(TraceSession.unsupportedNote(app: app.displayName, metric: metric), app: app.id, metric: metric)
+        }
         let staged = try Staging.stage(file)
         defer { staged.remove() }
         let cap = WindowCapture(mainDisplayFps: 60)

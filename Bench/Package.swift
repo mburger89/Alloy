@@ -19,6 +19,7 @@ let package = Package(
                 .product(name: "ArgumentParser", package: "swift-argument-parser"),
             ]),
         .testTarget(name: "BenchCoreTests",
-                    dependencies: ["BenchCore", "BenchDrivers", "BenchScenarios"]),
+                    dependencies: ["BenchCore", "BenchDrivers", "BenchScenarios"],
+                    resources: [.copy("Fixtures")]),
     ]
 )

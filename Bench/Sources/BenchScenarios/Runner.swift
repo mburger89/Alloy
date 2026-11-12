@@ -30,6 +30,7 @@ public enum Runner {
     public static func run(apps: [TargetApp], metrics: [Metric], corpus: Corpus, runsOverride: Int?,
                            cold: Bool = false,
                            attribute: Bool = false,
+                           trace: TraceKind? = nil, traceRoot: String = "Bench/traces",
                            preflight: (@Sendable (TargetApp) -> String?)? = nil,
                            coverCheck: (@Sendable (TargetApp) -> String?)? = nil) async throws -> RunResult {
         let preflight = preflight ?? { Preflight.check(apps: [$0])?.message }
@@ -41,6 +42,11 @@ public enum Runner {
         let harnessStart = Launcher.nowMicroseconds()
         let coldApplies = cold && metrics.contains(.startup)   // --cold only affects startup
         var coldOK = false
+        // --trace: traces go to <traceRoot>/<result stem>/, so the stem is fixed now and reused for the result.
+        let startEnv = trace == nil ? nil : Environment.current(cold: false)
+        let session = trace.map { kind in
+            TraceSession(kind: kind, directory: traceRoot + "/" + Report.fileStem(RunResult(environment: startEnv!, apps: [:], outcomes: [:])))
+        }
         if coldApplies { coldOK = Purge.run() }
         if runsOverride != nil, metrics.contains(.typingLatency) {
             FileHandle.standardError.write(Data("note: --runs does not apply to typingLatency (one launch, 200 keystrokes)\n".utf8))
@@ -71,35 +77,53 @@ public enum Runner {
             // --attribute: Alloy's own frame phases are appended as notes; they never affect a verdict.
             let collector = attribute && app.id == "alloy" ? AttributionCollector() : nil
             if metric == .idleCPU || metric == .memoryIdle {   // one launch yields both
+                let traceMetric = idleTraceMetric(metrics)
                 if idle[app.id] == nil {
-                    let both = await run(with: collector) { await IdleCPUScenario().runBoth(app, corpus: corpus, runs: runs) }
-                    let notes = collector?.notes ?? []
-                    idle[app.id] = (both.cpu.addingNotes(notes), both.memory)   // one launch: attach to idleCPU only
+                    let both = await run(with: collector, trace: session, metric: traceMetric) { await IdleCPUScenario().runBoth(app, corpus: corpus, runs: runs) }
+                    let notes = (collector?.notes ?? []) + (session?.notes(app: app.id, metric: traceMetric) ?? [])
+                    idle[app.id] = attachIdleNotes(cpu: both.cpu, memory: both.memory, notes: notes, metrics: metrics)
                 }
                 o = metric == .idleCPU ? idle[app.id]!.cpu : idle[app.id]!.memory
             } else {
-                let measured = await run(with: collector) {
+                let measured = await run(with: collector, trace: session, metric: metric) {
                     await scenario(for: metric, cold: coldApplies && coldOK).run(app, corpus: corpus, runs: runs)
                 }
-                o = measured.addingNotes(collector?.notes ?? [])
+                o = measured.addingNotes((collector?.notes ?? []) + (session?.notes(app: app.id, metric: metric) ?? []))
             }
             requested[app.id, default: [:]][metric] = runs
             outcomes[app.id, default: [:]][metric] = o.addingNotes(app.caveats)
         }
         var versions: [String: String] = [:]
         for a in apps { versions[a.id] = a.version() }
-        let result = RunResult(environment: Environment.current(cold: coldApplies && coldOK), apps: versions, outcomes: outcomes,
+        var env = Environment.current(cold: coldApplies && coldOK)
+        if let startEnv { env.date = startEnv.date; env.time = startEnv.time }   // matches the trace directory's stem
+        let result = RunResult(environment: env, apps: versions, outcomes: outcomes,
                          harnessSHA: harnessSHA(),
                          runCounts: runCounts(outcomes: outcomes, requested: { requested[$0.app]?[$0.metric] ?? 0 }),
                          notes: Leftovers.warnings(apps: apps, since: harnessStart),
-                         attributed: attribute && apps.contains { $0.id == "alloy" })
+                         attributed: attribute && apps.contains { $0.id == "alloy" },
+                         traced: session != nil, traceKind: trace)
         if let why = coverRefused { throw CoverRefused(message: why, partial: result) }
         return result
+    }
+
+    /// The one trace of the shared idle launch is keyed idleCPU, or memoryIdle when idleCPU was not requested.
+    static func idleTraceMetric(_ metrics: [Metric]) -> Metric { metrics.contains(.idleCPU) ? .idleCPU : .memoryIdle }
+
+    /// One launch yields both idle outcomes; the launch's notes go on the one that is reported.
+    static func attachIdleNotes(cpu: Outcome, memory: Outcome, notes: [String], metrics: [Metric]) -> (cpu: Outcome, memory: Outcome) {
+        idleTraceMetric(metrics) == .idleCPU ? (cpu.addingNotes(notes), memory) : (cpu, memory.addingNotes(notes))
     }
 
     private static func run<T>(with collector: AttributionCollector?, _ body: () async -> T) async -> T {
         guard let collector else { return await body() }
         return await collector.collecting(body)
+    }
+
+    private static func run<T>(with collector: AttributionCollector?, trace: TraceSession?, metric: Metric,
+                               _ body: () async -> T) async -> T {
+        guard let trace else { return await run(with: collector, body) }
+        return await trace.within(metric: metric) { await run(with: collector, body) }
     }
 
     /// Another app's window covers where the target's windows open. Nothing was launched for the refused app;
@@ -196,6 +220,13 @@ public enum Preflight {
         WindowCover.refusalMessage(WindowCover.current(launchedPids: ActiveLaunches.current.map(\.pid)), targetName: app.displayName)
     }
 
+    /// Pure check of `DevToolsSecurity -status` output; Instruments cannot attach without Developer Tools access.
+    /// "currently disabled" must not count as enabled.
+    public static func checkDevTools(status: String) -> (code: Int32, message: String)? {
+        if status.contains("currently enabled") { return nil }
+        return (2, "Instruments needs Developer Tools access to attach. Run once: sudo DevToolsSecurity -enable")
+    }
+
     /// nil when clear; otherwise the exit code and message. Nothing is launched before this passes.
     public static func check(apps: [TargetApp]) -> (code: Int32, message: String)? {
         for app in apps {
@@ -256,6 +287,7 @@ public enum SignalGuard {
             src.setEventHandler {
                 Task {
                     FileHandle.standardError.write(Data("\nsignal \(sig): terminating launched apps\n".utf8))
+                    ActiveRecorders.killAll()
                     await ActiveLaunches.terminateAll()
                     exit(128 + sig)
                 }

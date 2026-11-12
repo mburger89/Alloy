@@ -1,0 +1,2 @@
+<?xml version="1.0"?>
+<trace-toc><run number="1"><info><target><process name="Alloy"/></target></info><data><table schema="time-profile" target-pid="ALL"/><table schema="time-sample"/></data></run></trace-toc>

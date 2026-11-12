@@ -152,6 +152,30 @@ for Alloy against Zed and Delta. It only drives apps it launched itself, refuses
 open, and never edits their settings. It needs Screen Recording and Accessibility permission and a quiet machine; see
 [Bench/README.md](Bench/README.md). Unit tests: `swift test --package-path Bench`.
 
+## Profiling
+
+Three commands, from the repository root:
+
+```
+# 1. Record an Instruments trace of one benchmark measurement (first run of each app and metric)
+swift run --package-path Bench -c release alloy-bench run --apps alloy --metrics memory --trace allocations \
+    --alloy-build .
+# 2. Turn a trace into a short text list of the top functions or allocators
+swift run --package-path Bench -c release alloy-bench hotspots Bench/traces/<run>/alloy-memory.trace --top 25
+# 3. Time Alloy's hot paths headlessly and fail on a slowdown (package-benchmark, in Benchmarks/)
+tools/microbench.sh update   # record this machine's baseline once (git-ignored)
+tools/microbench.sh check    # exit non-zero when a p50 time or peak memory is more than 10% worse
+```
+
+`--trace` takes `time`, `allocations`, `hitches`, `gpu` or `concurrency`. It attaches after launch, so it cannot
+trace `startup` or `largeFileOpen`; Zed's hardened runtime is expected to refuse Allocations attach (the run note then says "trace unavailable"); traced runs are never
+publishable. Instruments needs Developer Tools access to attach; without it `--trace` refuses with exit code 2. Enable
+it once with `sudo DevToolsSecurity -enable`.
+
+The micro-benchmarks cover highlighting, buffer typing, the edit ledger, the overlap index, wire decoding and
+transcript replay. A check that is more than 10% faster passes with a note to run `update`; extra arguments go to
+package-benchmark (`tools/microbench.sh check --filter "Wire decode"`).
+
 ## Privacy and permissions
 
 - Alloy never writes to `~/.claude` or to the project's `.claude/` directory. It reads the CLI's own transcript

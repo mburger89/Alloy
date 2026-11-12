@@ -105,13 +105,14 @@ public struct PublishedIndex: Codable, Sendable, Equatable {
 
 public enum Publisher {
     public enum Refusal: Error, Equatable, CustomStringConvertible {
-        case partial(String), leak([String]), schema(Int), encoding(String), attributed
+        case partial(String), leak([String]), schema(Int), encoding(String), attributed, traced
 
         public var description: String {
             switch self {
             case .partial(let why): return "refusing partial run: \(why) (use --allow-partial to publish anyway)"
             case .leak(let hits): return "refusing to publish, remaining private text: " + hits.joined(separator: ", ")
             case .attributed: return "runs made with --attribute are for triage only; rerun without it to publish"
+            case .traced: return "runs made with --trace include profiler overhead; rerun without it to publish"
             case .encoding(let why): return "cannot encode result: \(why)"
             case .schema(let v): return "unsupported result schemaVersion \(v) (expected \(RunResult.currentSchemaVersion))"
             }
@@ -163,6 +164,7 @@ public enum Publisher {
                                allowPartial: Bool) throws(Refusal) -> (json: Data, entry: PublishedEntry) {
         guard result.schemaVersion == RunResult.currentSchemaVersion else { throw .schema(result.schemaVersion) }
         guard !result.attributed else { throw .attributed }
+        guard !result.traced else { throw .traced }
         var clean = scrubber.scrub(result)
         clean.outcomes = clean.outcomes.mapValues { $0.mapValues(stripAttribution) }
         let enc = JSONEncoder(); enc.outputFormatting = [.prettyPrinted, .sortedKeys]

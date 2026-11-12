@@ -93,8 +93,29 @@ enum Harness {
         } catch { staged?.remove(); throw error }
         ActiveLaunches.add(l)
         let probe = AppProbe(launched: l)
+        // --trace: attach right after launch for the first run of this (app, metric). A failed attach never fails the run.
+        var recorder: TraceRecorder?
+        var tracePlan: (session: TraceSession, metric: Metric)?
+        if let session = TraceSession.current, let metric = TraceSession.metric,
+           session.shouldTrace(app: app.id, metric: metric) {
+            try? FileManager.default.createDirectory(atPath: session.directory, withIntermediateDirectories: true)
+            let r = TraceRecorder(kind: session.kind, pid: l.pid, output: session.path(app: app.id, metric: metric))
+            switch await r.start() {
+            case .recording: recorder = r; tracePlan = (session, metric)
+            case .failed(let why):
+                session.addNote(TraceSession.unavailableNote(app: app.displayName, metric: metric, reason: why), app: app.id, metric: metric)
+            }
+        }
         func cleanup() async {
             await probe.finish()
+            if let recorder, let (session, metric) = tracePlan {
+                switch await recorder.stop() {
+                case .saved: session.addNote(session.savedNote(app: app.id, metric: metric), app: app.id, metric: metric)
+                case .partial(_, let why): session.addNote(session.savedNote(app: app.id, metric: metric, partialReason: why), app: app.id, metric: metric)
+                case .failed(let why):
+                    session.addNote(TraceSession.unavailableNote(app: app.displayName, metric: metric, reason: why), app: app.id, metric: metric)
+                }
+            }
             let timing = await Launcher.terminate(l, collecting: collector == nil ? nil : FrameTimingSummary.fileName)
             if let timing { collector?.add(timing) }
             ActiveLaunches.remove(l)

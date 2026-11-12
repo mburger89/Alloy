@@ -1,0 +1,41 @@
+<?xml version="1.0"?>
+<trace-query-result>
+<node xpath='/trace-toc[1]/run[1]/data[1]/table[2]'>
+<schema name="time-profile">
+<col><mnemonic>time</mnemonic><name>Sample Time</name><engineering-type>sample-time</engineering-type></col>
+<col><mnemonic>thread</mnemonic><name>Thread</name><engineering-type>thread</engineering-type></col>
+<col><mnemonic>process</mnemonic><name>Process</name><engineering-type>process</engineering-type></col>
+<col><mnemonic>core</mnemonic><name>CPU Core</name><engineering-type>core</engineering-type></col>
+<col><mnemonic>thread-state</mnemonic><name>State</name><engineering-type>thread-state</engineering-type></col>
+<col><mnemonic>weight</mnemonic><name>Weight</name><engineering-type>weight</engineering-type></col>
+<col><mnemonic>stack</mnemonic><name>Stack</name><engineering-type>tagged-backtrace</engineering-type></col>
+<col><mnemonic>extra-unknown</mnemonic><name>Unknown</name><engineering-type>string</engineering-type></col>
+</schema>
+<row><sample-time id="107" fmt="00:00.001.000">1000000</sample-time><thread id="2" fmt="Main Thread 0x1a2b (Alloy, pid: 123)"><tid id="3">6699</tid></thread><process id="4" fmt="Alloy (123)"/><core id="5" fmt="CPU 0"/><thread-state id="6" fmt="Running"/><weight id="7" fmt="1.00 ms">1000000</weight><backtrace id="101"><frame id="102" name="HighlightCore.parse" addr="0x100"><binary id="103" name="Alloy" path="/home/tester/Alloy"/></frame><frame id="104" name="CodeBuffer.insert" addr="0x150"><binary id="105" name="Alloy" path="/home/tester/Alloy"/></frame><frame id="106" name="main" addr="0x200"/></backtrace><unknown-thing/></row>
+<row><sample-time id="108" fmt="00:00.002.000">2000000</sample-time><thread ref="2"/><process ref="4"/><core ref="5"/><thread-state ref="6"/><weight ref="7"/><backtrace ref="101"/><unknown-thing/></row>
+<row><sample-time id="109" fmt="00:00.003.000">3000000</sample-time><thread ref="2"/><process ref="4"/><core ref="5"/><thread-state ref="6"/><weight ref="7"/><backtrace ref="101"/><unknown-thing/></row>
+<row><sample-time id="110" fmt="00:00.004.000">4000000</sample-time><thread ref="2"/><process ref="4"/><core ref="5"/><thread-state ref="6"/><weight ref="7"/><backtrace ref="101"/><unknown-thing/></row>
+<row><sample-time id="111" fmt="00:00.005.000">5000000</sample-time><thread ref="2"/><process ref="4"/><core ref="5"/><thread-state ref="6"/><weight ref="7"/><backtrace ref="101"/><unknown-thing/></row>
+<row><sample-time id="112" fmt="00:00.006.000">6000000</sample-time><thread ref="2"/><process ref="4"/><core ref="5"/><thread-state ref="6"/><weight ref="7"/><backtrace ref="101"/><unknown-thing/></row>
+<row><sample-time id="113" fmt="00:00.007.000">7000000</sample-time><thread ref="2"/><process ref="4"/><core ref="5"/><thread-state ref="6"/><weight ref="7"/><backtrace ref="101"/><unknown-thing/></row>
+<row><sample-time id="114" fmt="00:00.008.000">8000000</sample-time><thread ref="2"/><process ref="4"/><core ref="5"/><thread-state ref="6"/><weight ref="7"/><backtrace ref="101"/><unknown-thing/></row>
+<row><sample-time id="115" fmt="00:00.009.000">9000000</sample-time><thread ref="2"/><process ref="4"/><core ref="5"/><thread-state ref="6"/><weight ref="7"/><backtrace ref="101"/><unknown-thing/></row>
+<row><sample-time id="116" fmt="00:00.010.000">10000000</sample-time><thread ref="2"/><process ref="4"/><core ref="5"/><thread-state ref="6"/><weight ref="7"/><backtrace ref="101"/><unknown-thing/></row>
+<row><sample-time id="118" fmt="00:00.011.000">11000000</sample-time><thread ref="2"/><process ref="4"/><core ref="5"/><thread-state ref="6"/><weight ref="7"/><backtrace id="117"><frame ref="104"/><frame ref="106"/></backtrace><unknown-thing/></row>
+<row><sample-time id="119" fmt="00:00.012.000">12000000</sample-time><thread ref="2"/><process ref="4"/><core ref="5"/><thread-state ref="6"/><weight ref="7"/><backtrace ref="117"/><unknown-thing/></row>
+<row><sample-time id="120" fmt="00:00.013.000">13000000</sample-time><thread ref="2"/><process ref="4"/><core ref="5"/><thread-state ref="6"/><weight ref="7"/><backtrace ref="117"/><unknown-thing/></row>
+<row><sample-time id="121" fmt="00:00.014.000">14000000</sample-time><thread ref="2"/><process ref="4"/><core ref="5"/><thread-state ref="6"/><weight ref="7"/><backtrace ref="117"/><unknown-thing/></row>
+<row><sample-time id="122" fmt="00:00.015.000">15000000</sample-time><thread ref="2"/><process ref="4"/><core ref="5"/><thread-state ref="6"/><weight ref="7"/><backtrace ref="117"/><unknown-thing/></row>
+<row><sample-time id="123" fmt="00:00.016.000">16000000</sample-time><thread ref="2"/><process ref="4"/><core ref="5"/><thread-state ref="6"/><weight ref="7"/><backtrace ref="117"/><unknown-thing/></row>
+<row><sample-time id="127" fmt="00:00.017.000">17000000</sample-time><thread ref="2"/><process ref="4"/><core ref="5"/><thread-state ref="6"/><weight ref="7"/><backtrace id="124"><frame id="125" name="Layout.measure" addr="0x180"><binary id="126" name="Alloy" path="/home/tester/Alloy"/></frame><frame ref="104"/><frame ref="106"/></backtrace><unknown-thing/></row>
+<row><sample-time id="128" fmt="00:00.018.000">18000000</sample-time><thread ref="2"/><process ref="4"/><core ref="5"/><thread-state ref="6"/><weight ref="7"/><backtrace ref="124"/><unknown-thing/></row>
+<row><sample-time id="129" fmt="00:00.019.000">19000000</sample-time><thread ref="2"/><process ref="4"/><core ref="5"/><thread-state ref="6"/><weight ref="7"/><backtrace ref="124"/><unknown-thing/></row>
+<row><sample-time id="130" fmt="00:00.020.000">20000000</sample-time><thread ref="2"/><process ref="4"/><core ref="5"/><thread-state ref="6"/><weight ref="7"/><backtrace ref="124"/><unknown-thing/></row>
+<row><sample-time id="132" fmt="00:00.021.000">21000000</sample-time><thread ref="2"/><process ref="4"/><core ref="5"/><thread-state ref="6"/><weight ref="7"/><backtrace id="131"><frame ref="106"/></backtrace><unknown-thing/></row>
+<row><sample-time id="133" fmt="00:00.022.000">22000000</sample-time><thread ref="2"/><process ref="4"/><core ref="5"/><thread-state ref="6"/><weight ref="7"/><backtrace ref="131"/><unknown-thing/></row>
+<row><sample-time id="135" fmt="00:00.023.000">23000000</sample-time><thread ref="2"/><process ref="4"/><core ref="5"/><thread-state ref="6"/><weight ref="7"/><backtrace id="134"><frame ref="102"/><frame ref="102"/><frame ref="106"/></backtrace><unknown-thing/></row>
+<row><sample-time id="136" fmt="00:00.024.000">24000000</sample-time><thread ref="2"/><process ref="4"/><core ref="5"/><thread-state ref="6"/><weight ref="7"/><sentinel/><unknown-thing/></row>
+<row><sample-time id="137" fmt="00:00.025.000">25000000</sample-time><thread ref="2"/><process ref="4"/><core ref="5"/><thread-state ref="6"/><weight ref="7"/><sentinel/><unknown-thing/></row>
+<row><sample-time id="138" fmt="00:00.026.000">26000000</sample-time><thread ref="2"/><process ref="4"/><core ref="5"/><thread-state ref="6"/><weight ref="7"/><unknown-thing/></row>
+</node>
+</trace-query-result>

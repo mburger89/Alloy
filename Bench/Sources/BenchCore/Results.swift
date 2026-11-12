@@ -114,18 +114,24 @@ public struct RunResult: Codable, Sendable, Equatable {
     public var notes: [String]
     /// True when the run was made with `--attribute` (triage only; never published). Absent in older JSON.
     public var attributed: Bool
+    /// True when the run recorded Instruments traces (`--trace`; timings include profiler overhead, never published).
+    public var traced: Bool
+    /// The kind of trace recorded, when `traced`.
+    public var traceKind: TraceKind?
 
     public init(environment: Environment, apps: [String: String], outcomes: [String: [Metric: Outcome]],
                 harnessSHA: String = "unknown", runCounts: [String: [Metric: RunCount]] = [:], notes: [String] = [], attributed: Bool = false,
+                traced: Bool = false, traceKind: TraceKind? = nil,
                 schemaVersion: Int = RunResult.currentSchemaVersion) {
         self.schemaVersion = schemaVersion; self.harnessSHA = harnessSHA
         self.environment = environment; self.apps = apps; self.outcomes = outcomes
         self.runCounts = runCounts; self.notes = notes; self.attributed = attributed
+        self.traced = traced; self.traceKind = traceKind
     }
 
     // Swift encodes dictionaries with non-String/Int keys as flat arrays; use string keys for a readable JSON object.
     private enum CodingKeys: String, CodingKey {
-        case schemaVersion, harnessSHA, environment, apps, runCounts, outcomes, notes, attributed
+        case schemaVersion, harnessSHA, environment, apps, runCounts, outcomes, notes, attributed, traced, traceKind
     }
 
     private static func metricKeyed<T>(_ raw: [String: T], _ c: KeyedDecodingContainer<CodingKeys>,
@@ -148,6 +154,8 @@ public struct RunResult: Codable, Sendable, Equatable {
         apps = try c.decode([String: String].self, forKey: .apps)
         notes = try c.decode([String].self, forKey: .notes)
         attributed = try c.decodeIfPresent(Bool.self, forKey: .attributed) ?? false
+        traced = try c.decodeIfPresent(Bool.self, forKey: .traced) ?? false
+        traceKind = try c.decodeIfPresent(TraceKind.self, forKey: .traceKind)
         outcomes = try c.decode([String: [String: Outcome]].self, forKey: .outcomes)
             .mapValues { try Self.metricKeyed($0, c, .outcomes) }
         runCounts = try c.decode([String: [String: RunCount]].self, forKey: .runCounts)
@@ -162,6 +170,8 @@ public struct RunResult: Codable, Sendable, Equatable {
         try c.encode(apps, forKey: .apps)
         try c.encode(notes, forKey: .notes)
         if attributed { try c.encode(true, forKey: .attributed) }
+        if traced { try c.encode(true, forKey: .traced) }
+        try c.encodeIfPresent(traceKind, forKey: .traceKind)
         try c.encode(outcomes.mapValues { inner in Dictionary(uniqueKeysWithValues: inner.map { ($0.key.rawValue, $0.value) }) },
                      forKey: .outcomes)
         try c.encode(runCounts.mapValues { inner in Dictionary(uniqueKeysWithValues: inner.map { ($0.key.rawValue, $0.value) }) },
@@ -187,6 +197,9 @@ public enum Report {
         lines.append("- Harness: \(r.harnessSHA), schema \(r.schemaVersion)")
         let versions = columns.compactMap { c in r.apps[c.id].map { "\(c.name) \($0)" } }
         if !versions.isEmpty { lines.append("- Versions: " + versions.joined(separator: ", ")) }
+        if r.traced {
+            lines.append("- Traced (\(r.traceKind?.rawValue ?? "unknown")): timings include profiler overhead; not publishable")
+        }
         lines.append("")
         lines.append("| Metric | " + columns.map(\.name).joined(separator: " | ") + " | Note |")
         lines.append("|---|" + columns.map { _ in "---|" }.joined() + "---|")

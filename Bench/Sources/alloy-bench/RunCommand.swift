@@ -1,7 +1,10 @@
 import ArgumentParser
 import Foundation
 import BenchCore
+import BenchDrivers
 import BenchScenarios
+
+extension TraceKind: ExpressibleByArgument {}
 
 struct RunCommand: AsyncParsableCommand {
     static let configuration = CommandConfiguration(commandName: "run",
@@ -12,8 +15,18 @@ struct RunCommand: AsyncParsableCommand {
     @Option(help: "Override the number of runs per metric") var runs: Int?
     @Flag(help: "Purge disk caches before each startup run (needs passwordless sudo)") var cold = false
     @Flag(help: "Launch Alloy with ALLOY_FRAME_TIMING=1 and add its internal frame phases to its metric notes (attribution only; never a verdict)") var attribute = false
+    @Option(help: "Record an Instruments trace of the first run of each measurement: time, allocations, hitches, gpu, concurrency (never publishable)") var trace: TraceKind?
     @Option(help: "Alloy repo root (binary at <dir>/.build/release/Alloy)") var alloyBuild: String?
     @Option(help: "Output directory") var out: String = "Bench/results"
+
+    /// Output of `DevToolsSecurity -status` (empty when it cannot run, which counts as not enabled).
+    private static func devToolsStatus() -> String {
+        let p = Process(); p.executableURL = URL(fileURLWithPath: "/usr/sbin/DevToolsSecurity"); p.arguments = ["-status"]
+        let pipe = Pipe(); p.standardOutput = pipe; p.standardError = pipe; p.standardInput = FileHandle.nullDevice
+        guard (try? p.run()) != nil else { return "" }
+        let d = pipe.fileHandleForReading.readDataToEndOfFile(); p.waitUntilExit()
+        return String(decoding: d, as: UTF8.self)
+    }
 
     func run() async throws {
         let targets: [TargetApp]
@@ -22,6 +35,13 @@ struct RunCommand: AsyncParsableCommand {
             targets = try CLIArguments.resolveApps(apps, alloyBuild: alloyBuild)
             selected = try CLIArguments.resolveMetrics(metrics)
         } catch { throw ValidationError("\(error)") }
+        if trace != nil {
+            let status = Self.devToolsStatus()
+            if let fail = Preflight.checkDevTools(status: status) {
+                FileHandle.standardError.write(Data((fail.message + "\n").utf8))
+                throw ExitCode(fail.code)
+            }
+        }
         if let fail = Preflight.check(apps: targets) {
             FileHandle.standardError.write(Data((fail.message + "\n").utf8))
             throw ExitCode(fail.code)
@@ -30,7 +50,7 @@ struct RunCommand: AsyncParsableCommand {
         var refusal: String?
         let result: RunResult
         do {
-            result = try await Runner.run(apps: targets, metrics: selected, corpus: .default, runsOverride: runs, cold: cold, attribute: attribute)
+            result = try await Runner.run(apps: targets, metrics: selected, corpus: .default, runsOverride: runs, cold: cold, attribute: attribute, trace: trace)
         } catch let e as Runner.CoverRefused {
             result = e.partial; refusal = e.message   // report what was measured, then exit 4
         }

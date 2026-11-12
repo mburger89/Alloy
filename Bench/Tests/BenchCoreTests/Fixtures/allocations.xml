@@ -1,0 +1,21 @@
+<?xml version="1.0"?>
+<trace-query-result>
+<node xpath='/trace-toc[1]/run[1]/data[1]/table[2]'>
+<schema name="allocations">
+<col><mnemonic>time</mnemonic><name>Time</name><engineering-type>event-time</engineering-type></col>
+<col><mnemonic>size</mnemonic><name>Size</name><engineering-type>size-in-bytes</engineering-type></col>
+<col><mnemonic>live</mnemonic><name>Live</name><engineering-type>boolean</engineering-type></col>
+<col><mnemonic>responsible-caller</mnemonic><name>Responsible Caller</name><engineering-type>frame</engineering-type></col>
+<col><mnemonic>category</mnemonic><name>Category</name><engineering-type>string</engineering-type></col>
+</schema>
+<row><event-time id="201" fmt="00:00.001.000">1000000</event-time><size id="202" fmt="100 bytes">100</size><live id="203" fmt="Yes">1</live><frame id="204" name="CodeBuffer.insert" addr="0xcc"/><string id="205">Malloc</string></row>
+<row><event-time id="206" fmt="00:00.002.000">2000000</event-time><size id="207" fmt="100 bytes">100</size><live id="208" fmt="Yes">1</live><frame ref="204"/><string id="209">Malloc</string></row>
+<row><event-time id="210" fmt="00:00.003.000">3000000</event-time><size id="211" fmt="100 bytes">100</size><live id="212" fmt="Yes">1</live><frame ref="204"/><string id="213">Malloc</string></row>
+<row><event-time id="214" fmt="00:00.004.000">4000000</event-time><size id="215" fmt="50 bytes">50</size><live id="216" fmt="No">0</live><frame ref="204"/><string id="217">Malloc</string></row>
+<row><event-time id="218" fmt="00:00.005.000">5000000</event-time><size id="219" fmt="50 bytes">50</size><live id="220" fmt="No">0</live><frame ref="204"/><string id="221">Malloc</string></row>
+<row><event-time id="222" fmt="00:00.006.000">6000000</event-time><size id="223" fmt="1000 bytes">1000</size><live id="224" fmt="Yes">1</live><frame id="225" name="HighlightCore.parse" addr="0xe1"/><string id="226">Malloc</string></row>
+<row><event-time id="227" fmt="00:00.007.000">7000000</event-time><size id="228" fmt="4000 bytes">4000</size><live id="229" fmt="No">0</live><frame ref="225"/><string id="230">Malloc</string></row>
+<row><event-time id="231" fmt="00:00.008.000">8000000</event-time><size id="232" fmt="8000 bytes">8000</size><live id="233" fmt="No">0</live><frame id="234" name="Layout.measure" addr="0xea"/><string id="235">Malloc</string></row>
+<row><event-time id="900">9000000</event-time><size>7</size><live fmt="Yes">1</live><sentinel/><string>Malloc</string></row>
+</node>
+</trace-query-result>

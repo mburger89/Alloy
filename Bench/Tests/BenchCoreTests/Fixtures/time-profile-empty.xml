@@ -1,0 +1,8 @@
+<?xml version="1.0"?>
+<trace-query-result>
+<node xpath='/trace-toc[1]/run[1]/data[1]/table[2]'>
+<schema name="time-profile">
+<col><mnemonic>weight</mnemonic><name>Weight</name><engineering-type>weight</engineering-type></col><col><mnemonic>stack</mnemonic><name>Stack</name><engineering-type>tagged-backtrace</engineering-type></col>
+</schema>
+</node>
+</trace-query-result>

@@ -7,6 +7,8 @@ let package = Package(
     products: [
         .executable(name: "Alloy", targets: ["Alloy"]),
         .library(name: "AlloyKit", targets: ["AlloyKit"]),
+        .library(name: "AlloyCore", targets: ["AlloyCore"]),
+        .library(name: "AlloyHighlight", targets: ["AlloyHighlight"]),
     ],
     dependencies: [
         .package(name: "MetalUI", path: "../MetalUI"),

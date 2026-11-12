@@ -64,6 +64,17 @@ Run it only on a quiet machine: nothing else may be using the screen, keyboard o
    `--attribute` (launches Alloy, only Alloy, with `ALLOY_FRAME_TIMING=1` and appends its internal per-input-kind frame
    phases, medians of queue / build / encode / input-to-present, to Alloy's metric notes; attribution only, it never
    feeds a verdict, and a missing or unreadable `frame-timing.json` just means no extra notes), `--out DIR`.
+   `--trace <time|allocations|hitches|gpu|concurrency>` attaches `xctrace` to the first run of each (app, metric) and
+   saves `Bench/traces/<result stem>/<app>-<metric>.trace` (git-ignored). It needs Developer Tools access
+   (`sudo DevToolsSecurity -enable`, once); the attach happens after launch, so launch work is missing from the trace;
+   a failed attach becomes a note and never fails the run. Traced runs include profiler overhead and `publish` refuses them.
+   `startup` and `largeFileOpen` are not traceable (they measure the launch itself, which happens before the attach);
+   they get a note instead. Zed's hardened runtime is expected to refuse the Allocations attach; the run note then says "trace unavailable".
+   Without Developer Tools access `--trace` exits with code 2 before launching anything.
+   Summarise a recorded trace with `swift run --package-path Bench -c release alloy-bench hotspots <file>.trace [--top 25]`:
+   for `time` traces the top functions by self samples and by total samples, for `allocations` traces the top
+   responsible callers by bytes still live and by total bytes. Other kinds list the trace's tables and point at
+   Instruments. An empty table prints "no rows in <table>".
 5. **Where results go.** `Bench/results/<YYYY-MM-DD>-<HHMMSS>-<machine>.json` (schema version 1: summaries, raw samples,
    notes, failures, requested vs completed runs per metric, harness git SHA, environment incl. thermal state) and a
    matching `.md` report with a Note column and a Notes section.
