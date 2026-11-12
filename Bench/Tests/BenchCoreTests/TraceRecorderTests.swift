@@ -34,7 +34,16 @@ private func gone(_ pid: pid_t?) async -> Bool {
 @Suite(.serialized) struct TraceRecorderTests {
     @Test func argumentsMatchXctrace() {
         #expect(TraceRecorder.arguments(kind: .allocations, pid: 42, output: "/home/tester/t.trace") ==
-                ["xctrace", "record", "--template", "Allocations", "--attach", "42", "--output", "/home/tester/t.trace", "--no-prompt"])
+                ["xctrace", "record", "--template", "Allocations", "--attach", "42", "--output", "/home/tester/t.trace"])
+        #expect(TraceRecorder.arguments(kind: .time, pid: 42, output: "/home/tester/t.trace") ==
+                ["xctrace", "record", "--template", "Time Profiler", "--attach", "42", "--output", "/home/tester/t.trace", "--no-prompt"])
+    }
+
+    @Test func allocationsGetsLongStartTimeout() {
+        let a = TraceRecorder(kind: .allocations, pid: 1, output: "/home/tester/a.trace")
+        let t = TraceRecorder(kind: .time, pid: 1, output: "/home/tester/t.trace")
+        #expect(a.effectiveStartTimeout == .seconds(120))
+        #expect(t.effectiveStartTimeout == .seconds(15))
     }
 
     @Test func templatesMatchDecision1() {
@@ -73,7 +82,7 @@ private func gone(_ pid: pid_t?) async -> Bool {
         defer { f.cleanup() }
         let res = await f.recorder(start: .seconds(1)).start()
         guard case .failed(let why) = res else { Issue.record("expected failure, got \(res)"); return }
-        #expect(why == "xctrace did not start within 1 s; it is probably waiting for macOS to authorize inspecting the app (Allocations needs your password once every 10 hours). See \"Allocations authorization\" in Bench/README.md")
+        #expect(why == "xctrace did not start within 1 s; it is probably waiting for macOS to authorize inspecting the app (Allocations asks for your password once every 10 hours, and only from a Terminal you started yourself). See \"Allocations authorization\" in Bench/README.md")
         #expect(await gone(f.childPID))
     }
 

@@ -26,7 +26,8 @@ First real `--trace time` recordings of `typingLatency` and `memory` (harness 0e
   painted and is idle.
 - Zed's release build is stripped, so its own frames show as bare addresses; only system frames are comparable.
 - `--trace allocations` needs macOS authorization (`system.privilege.taskport`, a password once per 10 h) and works only
-  from the logged-in desktop session; background sessions are refused up front. Zed does not refuse the attach.
+  from a Terminal the user started (runs started by agents hang at authorization and are given up after 120 s). Zed
+  does not refuse the attach.
   No allocations recordings yet.
 
 ## memory (large file open) - run 2026-11-11-163850 (resolved)

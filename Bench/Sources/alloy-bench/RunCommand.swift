@@ -28,15 +28,6 @@ struct RunCommand: AsyncParsableCommand {
         return String(decoding: d, as: UTF8.self)
     }
 
-    /// Output of `launchctl managername` (empty when it cannot run).
-    private static func sessionName() -> String {
-        let p = Process(); p.executableURL = URL(fileURLWithPath: "/bin/launchctl"); p.arguments = ["managername"]
-        let pipe = Pipe(); p.standardOutput = pipe; p.standardError = FileHandle.nullDevice; p.standardInput = FileHandle.nullDevice
-        guard (try? p.run()) != nil else { return "" }
-        let d = pipe.fileHandleForReading.readDataToEndOfFile(); p.waitUntilExit()
-        return String(decoding: d, as: UTF8.self)
-    }
-
     func run() async throws {
         let targets: [TargetApp]
         let selected: [Metric]
@@ -47,10 +38,6 @@ struct RunCommand: AsyncParsableCommand {
         if trace != nil {
             let status = Self.devToolsStatus()
             if let fail = Preflight.checkDevTools(status: status) {
-                FileHandle.standardError.write(Data((fail.message + "\n").utf8))
-                throw ExitCode(fail.code)
-            }
-            if let kind = trace, let fail = Preflight.checkTraceSession(kind: kind, managerName: Self.sessionName()) {
                 FileHandle.standardError.write(Data((fail.message + "\n").utf8))
                 throw ExitCode(fail.code)
             }

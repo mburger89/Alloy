@@ -86,7 +86,8 @@ Run it only on a quiet machine: nothing else may be using the screen, keyboard o
    To authorize and record, run `swift run --package-path Bench -c release alloy-bench run --apps zed,alloy --metrics memory,typingLatency --trace allocations --alloy-build .`
    from the repo root, in a Terminal window on the Mac's own desktop. The first run shows the macOS password prompt. Keep the
    terminal window small or on another display, since the harness refuses when another window covers the area where the apps open.
-   Runs from a background session (SSH, agents) are refused up front with exit code 2.
+   Runs started by agents or other tools may hang at the authorization step; the harness gives up after 120 s and notes the
+   trace as unavailable with that explanation. The first run from your own Terminal shows the password prompt: enter it within 2 minutes.
 
 5. **Where results go.** `Bench/results/<YYYY-MM-DD>-<HHMMSS>-<machine>.json` (schema version 1: summaries, raw samples,
    notes, failures, requested vs completed runs per metric, harness git SHA, environment incl. thermal state) and a

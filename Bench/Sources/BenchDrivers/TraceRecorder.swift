@@ -32,8 +32,14 @@ public enum ActiveRecorders {
 /// timeout followed by SIGKILL of the xctrace child only. Never signals anything but its own child.
 public final class TraceRecorder: @unchecked Sendable {
     public static func arguments(kind: TraceKind, pid: pid_t, output: String) -> [String] {
-        ["xctrace", "record", "--template", kind.template, "--attach", "\(pid)", "--output", output, "--no-prompt"]
+        // Allocations needs macOS to authorize inspecting the app, which may prompt for a password; --no-prompt would hang it.
+        ["xctrace", "record", "--template", kind.template, "--attach", "\(pid)", "--output", output]
+            + (kind == .allocations ? [] : ["--no-prompt"])
     }
+
+    /// Allocations gets time to type the password; everything else starts quickly.
+    static func defaultStartTimeout(kind: TraceKind) -> Duration { kind == .allocations ? .seconds(120) : .seconds(15) }
+    var effectiveStartTimeout: Duration { startTimeout }
 
     private let kind: TraceKind
     private let pid: pid_t
@@ -48,9 +54,9 @@ public final class TraceRecorder: @unchecked Sendable {
     private var stderrText = ""
 
     public init(kind: TraceKind, pid: pid_t, output: String, executable: String = "/usr/bin/xcrun",
-                startTimeout: Duration = .seconds(15), stopTimeout: Duration = .seconds(30)) {
+                startTimeout: Duration? = nil, stopTimeout: Duration = .seconds(30)) {
         self.kind = kind; self.pid = pid; self.output = output; self.executable = executable
-        self.startTimeout = startTimeout; self.stopTimeout = stopTimeout
+        self.startTimeout = startTimeout ?? Self.defaultStartTimeout(kind: kind); self.stopTimeout = stopTimeout
     }
 
     deinit {
@@ -125,7 +131,7 @@ public final class TraceRecorder: @unchecked Sendable {
         await killChild(p)
         if (seen.out + seen.err).contains("Starting recording") {
             let secs = Int(startTimeout.components.seconds)
-            return .failed("xctrace did not start within \(secs) s; it is probably waiting for macOS to authorize inspecting the app (Allocations needs your password once every 10 hours). See \"Allocations authorization\" in Bench/README.md")
+            return .failed("xctrace did not start within \(secs) s; it is probably waiting for macOS to authorize inspecting the app (Allocations asks for your password once every 10 hours, and only from a Terminal you started yourself). See \"Allocations authorization\" in Bench/README.md")
         }
         return .failed("xctrace timed out after \(startTimeout) waiting for the recording to start")
     }

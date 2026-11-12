@@ -227,13 +227,6 @@ public enum Preflight {
         return (2, "Instruments needs Developer Tools access to attach. Run once: sudo DevToolsSecurity -enable")
     }
 
-    /// Allocations needs macOS to prompt for a password, which only works in the logged-in desktop (Aqua) session.
-    public static func checkTraceSession(kind: TraceKind, managerName: String) -> (code: Int32, message: String)? {
-        let name = managerName.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard kind == .allocations, name != "Aqua" else { return nil }
-        return (2, "--trace allocations must be run from a Terminal window in your logged-in desktop session (this process is in the \"\(name.isEmpty ? "unknown" : name)\" session, where macOS cannot ask for the password Allocations needs). Time Profiler (--trace time) works from any session.")
-    }
-
     /// nil when clear; otherwise the exit code and message. Nothing is launched before this passes.
     public static func check(apps: [TargetApp]) -> (code: Int32, message: String)? {
         for app in apps {
