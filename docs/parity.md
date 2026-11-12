@@ -28,6 +28,13 @@ First real `--trace time` recordings of `typingLatency` and `memory` (harness 0e
 - `--trace allocations` could not be automated: xctrace waits for macOS authorization (`system.privilege.taskport`) that a
   harness-started recorder never gets, even after the password was entered in the user's Terminal. Memory allocations
   are profiled in Instruments by hand instead. Zed did not refuse the attach.
+- Alloy heap without Instruments (`MallocStackLogging=1`, then `heap`, `vmmap --summary`, `malloc_history`; no
+  authorization needed for an app you launched). `large.rs` (2.2 MB) open, idle: footprint 72.7 MB with stack logging
+  on (the benchmark measures about 55 MiB without it; the logging zone itself is overhead). Malloc holds 23.2 MB live
+  with 9.8 MB (30 %) fragmentation; window surfaces (IOSurface) 11.2 MB. Largest live types: `[UInt8]` storage 6.2 MB in
+  4,472 arrays (about 2.7x the file; worth checking for duplicate copies of the file bytes), tree-sitter allocations
+  2.8 MB in 27,216 blocks, glyph arrays (`PlacedGlyph`, `TextGlyph`, `StyledGlyph`) about 1.5 MB. The file itself is
+  one 2.2 MB malloc block. Zed cannot be inspected this way (hardened runtime).
 
 ## memory (large file open) - run 2026-11-11-163850 (resolved)
 

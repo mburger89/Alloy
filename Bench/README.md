@@ -84,6 +84,10 @@ Run it only on a quiet machine: nothing else may be using the screen, keyboard o
    pick the app as the target (for Alloy, `.build/release/Alloy` with a file argument), record, and save the `.trace`.
    `alloy-bench hotspots` can try to summarise a saved Allocations trace, but its Allocations reader has not yet been
    checked against a real recording. `--trace time` (Time Profiler) needs no authorization and works from any session.
+   For Alloy alone there is a password-free alternative: launch it with `MallocStackLogging=1` (and `ALLOY_DATA_DIR` set to a
+   scratch folder), then run `heap <pid>` (live objects by type), `vmmap --summary <pid>` (footprint by region and malloc
+   fragmentation) and `malloc_history <pid> -allBySize` (allocation call stacks; its largest entries are virtual
+   reservations, not resident memory). Stack logging adds its own memory, so compare footprints with it off.
 
 5. **Where results go.** `Bench/results/<YYYY-MM-DD>-<HHMMSS>-<machine>.json` (schema version 1: summaries, raw samples,
    notes, failures, requested vs completed runs per metric, harness git SHA, environment incl. thermal state) and a
