@@ -8,6 +8,7 @@ struct SidebarView: Component {
     @Binding var showSettings: Bool
 
     var content: some ElementGroup {
+        let _ = BodyProbe.hit("SidebarView")
         // Once per body, for every row below.
         let warnings = workspace.coordinationWarnings
         VStack(alignment: .leading, spacing: 0) {

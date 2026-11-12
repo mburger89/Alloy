@@ -14,6 +14,12 @@ struct Fragment: Codable, Equatable, Sendable {
     /// `text` length in Unicode scalars.
     var length: Int
     var deletedBy: Set<UUID>
+    /// Derived cache of "inserted by a non-reverted edit and not deleted by a non-reverted edit". Not persisted
+    /// and not part of equality; `EditHistory` keeps it current (`refreshVisibility`) so scans do not look
+    /// up `metas` for every fragment.
+    fileprivate(set) var visible = true
+
+    private enum CodingKeys: String, CodingKey { case id, text, length, deletedBy }
 
     init(id: InsertionID, text: String, deletedBy: Set<UUID> = []) {
         self.id = id
@@ -22,13 +28,23 @@ struct Fragment: Codable, Equatable, Sendable {
         self.deletedBy = deletedBy
     }
 
+    static func == (a: Fragment, b: Fragment) -> Bool {
+        a.id == b.id && a.text == b.text && a.length == b.length && a.deletedBy == b.deletedBy
+    }
+
     /// Splits at `k` scalars (0 < k < length); the right half keeps the insertion with an advanced offset.
     func split(at k: Int) -> (Fragment, Fragment) {
         let scalars = text.unicodeScalars
-        let mid = scalars.index(scalars.startIndex, offsetBy: k)
-        return (Fragment(id: id, text: String(scalars[..<mid]), deletedBy: deletedBy),
-                Fragment(id: InsertionID(edit: id.edit, offset: id.offset + k),
-                         text: String(scalars[mid...]), deletedBy: deletedBy))
+        // ASCII (one byte per scalar) cuts in O(1); other text walks scalars.
+        let mid = text.utf8.count == length
+            ? text.utf8.index(text.utf8.startIndex, offsetBy: k)
+            : scalars.index(scalars.startIndex, offsetBy: k)
+        let ascii = text.utf8.count == length
+        var l = Fragment(id: id, text: ascii ? String(Substring(text.utf8[..<mid])) : String(scalars[..<mid]), deletedBy: deletedBy)
+        var r = Fragment(id: InsertionID(edit: id.edit, offset: id.offset + k),
+                         text: ascii ? String(Substring(text.utf8[mid...])) : String(scalars[mid...]), deletedBy: deletedBy)
+        l.visible = visible; r.visible = visible
+        return (l, r)
     }
 }
 
@@ -76,7 +92,10 @@ struct EditHistory: Codable, Equatable, Sendable {
         fragments = try c.decode([Fragment].self, forKey: .fragments)
         metas = try c.decodeIfPresent([UUID: Meta].self, forKey: .metas) ?? [:]
         removals = try c.decodeIfPresent([Removal].self, forKey: .removals) ?? []
+        refreshVisibility()
     }
+
+    private enum CodingKeys: String, CodingKey { case fragments, metas, removals }
 
     init(baseline: String) {
         fragments = baseline.isEmpty ? [] : [Fragment(id: InsertionID(edit: nil, offset: 0), text: baseline)]
@@ -97,7 +116,15 @@ struct EditHistory: Codable, Equatable, Sendable {
         f.deletedBy.contains { metas[$0]?.state != .reverted }
     }
 
-    private func isVisible(_ f: Fragment) -> Bool { isInserted(f) && !isDeleted(f) }
+    private func isVisible(_ f: Fragment) -> Bool { f.visible }
+
+    /// Recomputes every fragment's cached visibility from `metas`; call after any change to edit states.
+    private mutating func refreshVisibility() {
+        for i in fragments.indices {
+            let v = isInserted(fragments[i]) && !isDeleted(fragments[i])
+            if fragments[i].visible != v { fragments[i].visible = v }
+        }
+    }
 
     /// Kept edits count as baseline for attribution.
     private func owner(_ f: Fragment) -> UUID? {
@@ -119,22 +146,25 @@ struct EditHistory: Codable, Equatable, Sendable {
         metas[edit] = Meta(state: .live, seq: metas.count, nextOffset: 0, ranges: [])
     }
 
-    mutating func setState(_ edit: UUID, _ state: EditRecord.State) { metas[edit]?.state = state }
+    mutating func setState(_ edit: UUID, _ state: EditRecord.State) {
+        metas[edit]?.state = state
+        refreshVisibility()
+    }
 
     /// Index of the visible fragment starting at visible offset `p` (splitting one if `p` falls inside it),
     /// or `fragments.count` when `p` is the end of the text.
     private mutating func split(atVisible p: Int) -> Int {
         var cum = 0
         for i in fragments.indices {
-            let f = fragments[i]
-            guard isVisible(f) else { continue }
+            guard fragments[i].visible else { continue }   // no Fragment copy: that retains its String and Set
             if cum == p { return i }
-            if p < cum + f.length {
-                let (l, r) = f.split(at: p - cum)
+            let length = fragments[i].length
+            if p < cum + length {
+                let (l, r) = fragments[i].split(at: p - cum)
                 fragments.replaceSubrange(i...i, with: [l, r])
                 return i + 1
             }
-            cum += f.length
+            cum += length
         }
         return fragments.count
     }
@@ -145,16 +175,19 @@ struct EditHistory: Codable, Equatable, Sendable {
             if op.deleteCount > 0 {
                 let i = split(atVisible: op.start)
                 let j = split(atVisible: op.start + op.deleteCount)
-                for k in i..<j where isVisible(fragments[k]) { fragments[k].deletedBy.insert(edit) }
+                for k in i..<j where fragments[k].visible {
+                    fragments[k].deletedBy.insert(edit)
+                    fragments[k].visible = false   // `edit` is live
+                }
             }
             if !op.insert.isEmpty {
                 // Right after the previous visible fragment, i.e. before any tombstones at this point.
                 var at = op.start == 0 ? 0 : split(atVisible: op.start)
                 while at > 0, !isVisible(fragments[at - 1]) { at -= 1 }
-                let meta = metas[edit]!
-                let frag = Fragment(id: InsertionID(edit: edit, offset: meta.nextOffset), text: op.insert)
+                let nextOffset = metas[edit]!.nextOffset   // not a whole-Meta copy: that would copy `ranges` on append
+                let frag = Fragment(id: InsertionID(edit: edit, offset: nextOffset), text: op.insert)
                 fragments.insert(frag, at: at)
-                metas[edit]!.ranges.append(InsertRange(start: meta.nextOffset, length: frag.length))
+                metas[edit]!.ranges.append(InsertRange(start: nextOffset, length: frag.length))
                 metas[edit]!.nextOffset += frag.length + 1   // gap keeps separate operations non-contiguous
             }
         }

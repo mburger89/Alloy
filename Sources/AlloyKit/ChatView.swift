@@ -8,8 +8,10 @@ struct ChatView: Component {
     let store: SessionUIStore
 
     var content: some ElementGroup {
+        let _ = BodyProbe.hit("ChatView")
         if let session = workspace.sessions.first(where: { $0.id == workspace.selectedSessionID }) {
             ChatColumn(workspace: workspace, session: session, ui: store.entry(for: session, workspace: workspace))
+                .equatable()
                 .id(session.id.uuidString)
         } else {
             Text("Start a session with ⌘N").foregroundColor(.mutedInk)
@@ -26,6 +28,7 @@ struct ChatColumn: Component {
     let ui: SessionUIStore.Entry
 
     var content: some ElementGroup {
+        let _ = BodyProbe.hit("ChatColumn")
         HStack(spacing: 0) {
             Rectangle().fill(Color.sessionColor(session.colorIndex))
                 .frame(width: Pixels(4))

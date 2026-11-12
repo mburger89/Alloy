@@ -84,10 +84,10 @@ final class OpenDocumentView {
             for await item in stream {
                 switch item {
                 case .open(let snapshot):
-                    await engine.open(id: id, language: language, text: snapshot.text, version: snapshot.version)
+                    await engine.open(id: id, language: language, snapshot: snapshot, version: snapshot.version)
                     await self?.engineOpened()
                 case .edits(let edits, let snapshot):
-                    await engine.edit(id: id, edits: edits, newText: snapshot.text, version: snapshot.version)
+                    await engine.edit(id: id, edits: edits, snapshot: snapshot, version: snapshot.version)
                 }
             }
             await engine.close(id: id)
@@ -326,6 +326,7 @@ struct CodePanel: Component {
     @FocusState var codeFocused: Bool
 
     var content: some ElementGroup {
+        let _ = BodyProbe.hit("CodePanel")
         let workspace = workspace, document = document, view = view, path = document.path
         let editable = document.state == .editable
         VStack(alignment: .leading, spacing: 0) {

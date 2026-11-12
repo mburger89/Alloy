@@ -12,13 +12,14 @@ struct FilePanelView: Component {
     let quickOpen: QuickOpenModel
 
     var content: some ElementGroup {
+        let _ = BodyProbe.hit("FilePanelView")
         VStack(alignment: .leading, spacing: 0) {
-            if !workspace.tabs.isEmpty { FileTabStrip(workspace: workspace) }
+            if !workspace.tabs.isEmpty { FileTabStrip(workspace: workspace).equatable() }
             if quickOpen.isShowing { QuickOpenField(workspace: workspace, model: quickOpen) }
             if let path = workspace.activeTab {
                 let document = workspace.document(path)
                 let view = document.flatMap { panel.view(for: $0) }
-                FilePanelHeader(workspace: workspace, path: path, document: document, view: view)
+                FilePanelHeader(workspace: workspace, path: path, document: document, view: view).equatable()
                 if let notice = workspace.notices.last(where: { $0.path == path }) {
                     FilePanelNotice(workspace: workspace, notice: notice)
                 }
@@ -26,7 +27,7 @@ struct FilePanelView: Component {
                 if let message = workspace.tabMessages[path] {
                     FilePanelMessage(text: message)
                 } else if let document, let view {
-                    CodePanel(workspace: workspace, store: store, document: document, view: view)
+                    CodePanel(workspace: workspace, store: store, document: document, view: view).equatable()
                         .id(document.id.uuidString)
                 } else {
                     FilePanelMessage(text: "Loading\u{2026}")
@@ -62,6 +63,7 @@ struct FileTabStrip: Component {
     let workspace: Workspace
 
     var content: some ElementGroup {
+        let _ = BodyProbe.hit("FileTabStrip")
         let workspace = workspace
         let tabs = workspace.tabs
         let titles = Self.titles(tabs)
@@ -111,9 +113,10 @@ struct FilePanelHeader: Component {
     let view: OpenDocumentView?
 
     var content: some ElementGroup {
+        let _ = BodyProbe.hit("FilePanelHeader")
         HStack(spacing: Pixels(8)) {
             Text(verbatim: path).font(size: 12).accessibilityIdentifier("file-panel-path")
-            if document?.isDirty == true {
+            if document?.tabDirty == true {
                 Circle().fill(Color.mutedInk).frame(width: Pixels(7), height: Pixels(7))
                     .accessibilityIdentifier("file-panel-dirty")
             }

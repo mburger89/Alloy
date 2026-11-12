@@ -36,6 +36,19 @@ First real `--trace time` recordings of `typingLatency` and `memory` (harness 0e
   2.8 MB in 27,216 blocks, glyph arrays (`PlacedGlyph`, `TextGlyph`, `StyledGlyph`) about 1.5 MB. The file itself is
   one 2.2 MB malloc block. Zed cannot be inspected this way (hardened runtime).
 
+### Fixes from these profiles (2026-11-12)
+
+- Panes are retained while typing: AlloyScreen, sidebar, chat, file panel, tab strip and header are `.equatable()`
+  (MetalUI retention is opt-in). Main-thread frame work in the 200-keystroke typing test fell from 9,018 to 3,169
+  samples (about 65 % less CPU). Typing latency is unchanged (old 37.4-38.4 ms vs new 37.8-38.3 ms, alternated
+  back to back): it is bound by the 60 Hz frame cadence, not CPU.
+- The open file is no longer held twice: the read goes straight into one array, and the windowed highlighter reads
+  the buffer's rope snapshot and keeps only its window's bytes (about 4.3 MiB less for a 2.2 MB file).
+- Recording an edit trims the common prefix and suffix before diffing, and fragment visibility is cached:
+  "EditHistory apply" (500 edits) 1,347 ms to 532 ms. Texts containing "\r" still take the untrimmed path.
+- MetalUI follow-ups are gap G33: (b) per-frame map capacity, (d) Rope.lineStart and per-row styling caches,
+  (e) rope chunk overhead; (a) automatic retention and (c) interned element IDs await a design.
+
 ## memory (large file open) - run 2026-11-11-163850 (resolved)
 
 | | median | p95 |

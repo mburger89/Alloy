@@ -1702,22 +1702,53 @@ public final class Workspace {
         let size = (attrs[.size] as? Int) ?? -1
         // From the open handle, not the path: a file replaced after the open must not give the old bytes the new stamp.
         let stamp = FileStamp.read(descriptor: handle.fileDescriptor) ?? FileStamp(modified: attrs[.modificationDate] as? Date, size: size)
-        guard var data = try? handle.read(upToCount: previewLimit + 1) else { return .unreadable }
+        // Read straight into the array that becomes the buffer's input. `FileHandle.read` returns an autoreleased
+        // `Data`, which a pool-less background thread keeps alive (a second 2 MB copy of a large file), and
+        // `[UInt8](data)` would then copy it again.
+        guard var data = readBytes(descriptor: handle.fileDescriptor, upTo: previewLimit + 1, sizeHint: size) else { return .unreadable }
         if data.prefix(8192).contains(0) { return .binary }
         let truncated = data.count > previewLimit
         if truncated {
-            data = data.prefix(previewLimit)
+            data.removeSubrange(previewLimit...)
             // Cut back to a scalar boundary so the cut does not read as invalid UTF-8.
             var end = data.count, back = 0
-            while end > 0, back < 4, data[data.startIndex + end - 1] & 0xC0 == 0x80 { end -= 1; back += 1 }
+            while end > 0, back < 4, data[end - 1] & 0xC0 == 0x80 { end -= 1; back += 1 }
             if end > 0, back < 4 {
-                let lead = data[data.startIndex + end - 1]
+                let lead = data[end - 1]
                 let need = lead >= 0xF0 ? 4 : lead >= 0xE0 ? 3 : lead >= 0xC0 ? 2 : 1
                 if need > back + 1 { end -= 1 }
             }
-            data = data.prefix(end)
+            data.removeSubrange(end...)
         }
-        return .text([UInt8](data), stamp, truncated: truncated)
+        return .text(data, stamp, truncated: truncated)
+    }
+
+    /// Up to `limit` bytes from the current position of `descriptor`, in one allocation sized from `sizeHint`
+    /// (the file size, when known); nil when a read fails.
+    nonisolated private static func readBytes(descriptor: Int32, upTo limit: Int, sizeHint: Int) -> [UInt8]? {
+        let first = max(1, min(limit, sizeHint >= 0 ? sizeHint + 1 : 65_536))
+        var failed = false
+        var out = [UInt8](unsafeUninitializedCapacity: first) { buffer, count in
+            count = 0
+            while count < first {
+                let r = read(descriptor, buffer.baseAddress! + count, first - count)
+                if r < 0 { if errno == EINTR { continue }; failed = true; return }
+                if r == 0 { return }
+                count += r
+            }
+        }
+        if failed { return nil }
+        // The file grew past its size hint: take the rest in chunks.
+        if out.count == first, first < limit {
+            var chunk = [UInt8](repeating: 0, count: 65_536)
+            while out.count < limit {
+                let r = read(descriptor, &chunk, min(chunk.count, limit - out.count))
+                if r < 0 { if errno == EINTR { continue }; return nil }
+                if r == 0 { break }
+                out.append(contentsOf: chunk[0..<r])
+            }
+        }
+        return out
     }
 
     // MARK: File panel content

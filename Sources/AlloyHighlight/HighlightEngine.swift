@@ -1,5 +1,6 @@
 import Foundation
 import MetalUI
+import MetalUICodeBuffer
 import SwiftTreeSitter
 
 /// What a highlight run is, independent of colour.
@@ -146,6 +147,8 @@ public actor HighlightEngine {
         var end: Int
         var startRow: Int
         var tree: MutableTree
+        /// The text of `start..<end`: all the bytes a windowed document keeps of itself.
+        var bytes: [UInt8]
     }
 
     private struct Document {
@@ -155,7 +158,10 @@ public actor HighlightEngine {
         var tree: MutableTree?
         var windowed = false
         var window: Window?
+        /// The whole text; empty for a windowed document, which reads `snapshot` and keeps only its window's bytes.
         var bytes: [UInt8]
+        /// The text of a windowed document (a rope shared with the buffer, so it costs no second copy of the file).
+        var snapshot: CodeSnapshot?
         /// The buffer version `bytes` is the text of.
         var version: UInt64
     }
@@ -194,6 +200,12 @@ public actor HighlightEngine {
 
     /// Starts tracking `id`, parsing `text` (the text of buffer `version`) as `language`.
     public func open(id: UUID, language: Language, text: String, version: UInt64) async {
+        await open(id: id, language: language, snapshot: CodeBuffer(text).snapshot(), version: version)
+    }
+
+    /// Starts tracking `id`, parsing `snapshot` (the text of buffer `version`) as `language`. A document above the
+    /// windowed threshold keeps `snapshot` itself, not a copy of its bytes.
+    public func open(id: UUID, language: Language, snapshot: CodeSnapshot, version: UInt64) async {
         let support = LanguageSupport.of(language)
         let parser = Parser()
         do {
@@ -201,19 +213,25 @@ public actor HighlightEngine {
         } catch {
             LanguageSupport.report("grammar for \(language) rejected by the parser: \(error)", key: "set-\(language)")
         }
-        let bytes = Array(text.utf8)
-        let windowed = bytes.count > windowedThreshold
+        let windowed = snapshot.utf8Count > windowedThreshold
+        let bytes = windowed ? [] : snapshot.utf8(in: 0..<snapshot.utf8Count)
         let tree = windowed ? nil : HighlightCore.parse(parser, old: nil, bytes: bytes)
-        documents[id] = Document(support: support, parser: parser, tree: tree, windowed: windowed, bytes: bytes, version: version)
+        documents[id] = Document(support: support, parser: parser, tree: tree, windowed: windowed, bytes: bytes,
+                                 snapshot: windowed ? snapshot : nil, version: version)
         resumeWaiters(id)
     }
 
     /// Applies `edits` (in order, each in the coordinates of the text just before it) and reparses
     /// incrementally; `newText` is the text after all of them, which is buffer `version`.
     public func edit(id: UUID, edits: [CodeEdit], newText: String, version: UInt64) async {
+        await edit(id: id, edits: edits, snapshot: CodeBuffer(newText).snapshot(), version: version)
+    }
+
+    /// Like ``edit(id:edits:newText:version:)``, with the text after the edits as a snapshot.
+    public func edit(id: UUID, edits: [CodeEdit], snapshot: CodeSnapshot, version: UInt64) async {
         guard var doc = documents[id] else { return }
         if doc.windowed {
-            editWindowed(&doc, edits: edits, newText: newText, version: version)
+            editWindowed(&doc, edits: edits, snapshot: snapshot, version: version)
             documents[id] = doc
             resumeWaiters(id)
             return
@@ -228,7 +246,7 @@ public actor HighlightEngine {
                     newEndPoint: Point(row: e.newEndPoint.row, column: e.newEndPoint.column)))
             }
         }
-        doc.bytes = Array(newText.utf8)
+        doc.bytes = snapshot.utf8(in: 0..<snapshot.utf8Count)
         doc.version = version
         doc.tree = HighlightCore.parse(doc.parser, old: doc.tree, bytes: doc.bytes)
         documents[id] = doc
@@ -251,17 +269,20 @@ public actor HighlightEngine {
         guard let doc = documents[id] else { return (Self.unknownVersion, []) }
         guard let query = doc.support.highlights else { return (doc.version, []) }
         if doc.windowed {
-            let range = max(0, byteRange.lowerBound)..<max(0, min(doc.bytes.count, byteRange.upperBound))
+            guard let snapshot = doc.snapshot else { return (doc.version, []) }
+            let range = max(0, byteRange.lowerBound)..<max(0, min(snapshot.utf8Count, byteRange.upperBound))
             guard range.lowerBound < range.upperBound else { return (doc.version, []) }
             let window: Window
             if let w = doc.window, w.start <= range.lowerBound, range.upperBound <= w.end {
                 window = w
             } else {
-                guard let w = makeWindow(doc, around: range) else { return (doc.version, []) }
+                guard let w = makeWindow(doc, snapshot: snapshot, around: range) else { return (doc.version, []) }
                 documents[id]?.window = w
                 window = w
             }
-            return (doc.version, HighlightCore.runs(tree: window.tree, query: query, bytes: doc.bytes, range: range, base: window.start))
+            let local = (range.lowerBound - window.start)..<(range.upperBound - window.start)
+            let runs = HighlightCore.runs(tree: window.tree, query: query, bytes: window.bytes, range: local)
+            return (doc.version, runs.map { (($0.0.lowerBound + window.start)..<($0.0.upperBound + window.start), $0.1) })
         }
         guard let tree = doc.tree else { return (doc.version, []) }
         return (doc.version, HighlightCore.runs(tree: tree, query: query, bytes: doc.bytes, range: byteRange))
@@ -269,19 +290,15 @@ public actor HighlightEngine {
 
     /// A window around `range`: `windowMargin` each side, the start snapped back to a likely top-level line, the end
     /// forward to a line end.
-    private func makeWindow(_ doc: Document, around range: Range<Int>) -> Window? {
-        let bytes = doc.bytes
+    private func makeWindow(_ doc: Document, snapshot: CodeSnapshot, around range: Range<Int>) -> Window? {
+        let count = snapshot.utf8Count
         let newline = UInt8(ascii: "\n")
         var start = max(0, range.lowerBound - windowMargin)
-        var end = min(bytes.count, range.upperBound + windowMargin)
-        func lineStart(_ i: Int) -> Int {
-            var i = i
-            while i > 0, bytes[i - 1] != newline { i -= 1 }
-            return i
-        }
+        var end = min(count, range.upperBound + windowMargin)
+        func lineStart(_ i: Int) -> Int { i - snapshot.point(at: i).column }
         func isTopLevel(_ i: Int) -> Bool {
-            guard i < bytes.count else { return false }
-            switch bytes[i] {
+            guard i < count else { return false }
+            switch snapshot.byte(at: i) {
             case newline, UInt8(ascii: " "), UInt8(ascii: "\t"), UInt8(ascii: "\r"),
                  UInt8(ascii: "}"), UInt8(ascii: ")"), UInt8(ascii: "]"): return false
             default: return true
@@ -292,16 +309,19 @@ public actor HighlightEngine {
         var probe = start
         while probe > floor, !isTopLevel(probe) { probe = lineStart(probe - 1) }
         if isTopLevel(probe) { start = probe }
-        while end < bytes.count, bytes[end - 1] != newline { end += 1 }
-        var startRow = 0
-        for i in 0..<start where bytes[i] == newline { startRow += 1 }
-        guard let tree = HighlightCore.parse(doc.parser, old: nil, bytes: bytes, start: start, end: end) else { return nil }
-        return Window(start: start, end: end, startRow: startRow, tree: tree)
+        // Forward to the end of the line holding the last byte (the start of the next row).
+        if end < count, end > 0, snapshot.byte(at: end - 1) != newline {
+            end = snapshot.offset(of: CodePoint(row: snapshot.point(at: end - 1).row + 1, column: 0))
+        }
+        let startRow = snapshot.point(at: start).row
+        let bytes = snapshot.utf8(in: start..<end)
+        guard let tree = HighlightCore.parse(doc.parser, old: nil, bytes: bytes) else { return nil }
+        return Window(start: start, end: end, startRow: startRow, tree: tree, bytes: bytes)
     }
 
     /// Large documents: keeps the window tree in step when every edit lies inside it, otherwise drops the window.
-    private func editWindowed(_ doc: inout Document, edits: [CodeEdit], newText: String, version: UInt64) {
-        doc.bytes = Array(newText.utf8)
+    private func editWindowed(_ doc: inout Document, edits: [CodeEdit], snapshot: CodeSnapshot, version: UInt64) {
+        doc.snapshot = snapshot
         doc.version = version
         guard var window = doc.window else { return }
         for e in edits {
@@ -318,10 +338,11 @@ public actor HighlightEngine {
                 newEndPoint: Point(row: e.newEndPoint.row - window.startRow, column: e.newEndPoint.column)))
             window.end += added - (e.range.upperBound - e.range.lowerBound)
         }
-        guard window.end <= doc.bytes.count,
-              let tree = HighlightCore.parse(doc.parser, old: window.tree, bytes: doc.bytes, start: window.start, end: window.end)
-        else { doc.window = nil; return }
+        guard window.end <= snapshot.utf8Count else { doc.window = nil; return }
+        let bytes = snapshot.utf8(in: window.start..<window.end)
+        guard let tree = HighlightCore.parse(doc.parser, old: window.tree, bytes: bytes) else { doc.window = nil; return }
         window.tree = tree
+        window.bytes = bytes
         doc.window = window
     }
 

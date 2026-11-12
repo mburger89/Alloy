@@ -373,8 +373,53 @@ enum TextDiff {
         }
     }
 
-    /// Character-level operations turning `old` into `new`, at scalar offsets in `old`.
+    /// Byte-level common prefix / suffix trim shared by `ops` and `hunks`. Returns the middle slices of
+    /// `old` and `new` plus the count of cut leading bytes and lines, or nil when the fast path does not apply
+    /// (a "\r" anywhere makes line-ending detection depend on the first line, so those texts take the full path).
+    /// The cuts fall right after a "\n" in the common prefix and common suffix, so both texts stay split on
+    /// the same line boundaries; `keepAfter` is how many whole common lines to keep after the changed region.
+    private static func trimmed(old: String, new: String, keepBefore: Int, keepAfter: Int)
+        -> (old: String, new: String, bytes: Int, lines: Int, scalars: Int)? {
+        let a = Array(old.utf8), b = Array(new.utf8)
+        if a.contains(0x0D) || b.contains(0x0D) { return nil }
+        var p = 0
+        let minLen = min(a.count, b.count)
+        while p < minLen, a[p] == b[p] { p += 1 }
+        // Prefix: cut after the (newlines in prefix - keepBefore)-th newline.
+        var newlines = 0
+        for i in 0..<p where a[i] == 0x0A { newlines += 1 }
+        let cutLines = max(0, newlines - keepBefore)
+        var cut = 0, seen = 0
+        if cutLines > 0 {
+            for i in 0..<p where a[i] == 0x0A {
+                seen += 1
+                if seen == cutLines { cut = i + 1; break }
+            }
+        }
+        // Suffix zone: bytes common at the end that do not overlap the common prefix.
+        var s = 0
+        while s < minLen - p, a[a.count - 1 - s] == b[b.count - 1 - s] { s += 1 }
+        var drop = 0
+        var count = 0
+        for i in (a.count - s)..<a.count where a[i] == 0x0A {
+            count += 1
+            if count == keepAfter + 1 { drop = a.count - (i + 1); break }
+        }
+        var scalars = 0
+        for i in 0..<cut where a[i] & 0xC0 != 0x80 { scalars += 1 }
+        func slice(_ x: [UInt8]) -> String { String(decoding: x[cut..<(x.count - drop)], as: UTF8.self) }
+        return (slice(a), slice(b), cut, cutLines, scalars)
+    }
+
+    /// Character-level operations turning `old` into `new`, at scalar offsets in `old`. Trims the common
+    /// prefix and suffix (at line boundaries) before diffing; equal to `opsReference`.
     static func ops(old: String, new: String) -> [TextOp] {
+        guard let t = trimmed(old: old, new: new, keepBefore: 0, keepAfter: 0) else { return opsReference(old: old, new: new) }
+        return opsReference(old: t.old, new: t.new).map { TextOp(start: $0.start + t.scalars, deleteCount: $0.deleteCount, insert: $0.insert) }
+    }
+
+    /// The untrimmed algorithm behind `ops`, kept callable so tests can check the trimmed path against it.
+    static func opsReference(old: String, new: String) -> [TextOp] {
         let ou = lineUnits(old), nu = lineUnits(new)
         var ops: [TextOp] = []
         var line = 0, offset = 0   // offset = scalars before ou[line]
@@ -433,6 +478,18 @@ enum TextDiff {
 
     /// Line hunks (context 3) as stored on records; trims common lines first so huge files stay cheap.
     static func hunks(old: String, new: String, context: Int = 3) -> [PatchHunk] {
+        guard let t = trimmed(old: old, new: new, keepBefore: context + 1, keepAfter: context + 1) else {
+            return hunksReference(old: old, new: new, context: context)
+        }
+        return hunksReference(old: t.old, new: t.new, context: context).map {
+            var h = $0
+            h.oldStart += t.lines; h.newStart += t.lines
+            return h
+        }
+    }
+
+    /// The untrimmed algorithm behind `hunks` (it only trims whole common lines), for equivalence tests.
+    static func hunksReference(old: String, new: String, context: Int = 3) -> [PatchHunk] {
         let a = TextLines(old).lines, b = TextLines(new).lines
         var p = 0
         while p < a.count, p < b.count, same(a[p], b[p]) { p += 1 }

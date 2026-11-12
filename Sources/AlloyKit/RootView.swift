@@ -12,7 +12,7 @@ public let alloyFilePanelIdealWidth = Pixels(360)
 @MainActor
 public func rootView(workspace: Workspace, themes: ThemeController? = nil) -> some Element {
     VStack(spacing: 0) {
-        AlloyScreen(workspace: workspace, themes: themes)
+        AlloyScreen(workspace: workspace, themes: themes).equatable()
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity)
     .background(.chatFill)
@@ -47,23 +47,24 @@ struct AlloyScreen: Component {
     }
 
     var content: some ElementGroup {
+        let _ = BodyProbe.hit("AlloyScreen")
         let workspace = workspace, quickOpen = quickOpen
         let settingsShown = settingsBinding
         ZStack {
             HSplitView {
-                SidebarView(workspace: workspace, showSettings: settingsShown)
+                SidebarView(workspace: workspace, showSettings: settingsShown).equatable()
                     .frame(minWidth: Pixels(200), idealWidth: Pixels(250), maxWidth: Pixels(380))
                 VStack(spacing: 0) {
                     if let themes { ThemeBar(themes: themes) }
                     CoordinationNotice(workspace: workspace)
                     ZStack {
-                        ChatView(workspace: workspace, store: store)
+                        ChatView(workspace: workspace, store: store).equatable()
                         if showSettings { SettingsView(workspace: workspace, themes: themes, close: { settingsShown.wrappedValue = false }) }
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
                 .frame(minWidth: Pixels(320), maxWidth: .infinity)
-                FilePanelView(workspace: workspace, store: store, panel: panel, quickOpen: quickOpen)
+                FilePanelView(workspace: workspace, store: store, panel: panel, quickOpen: quickOpen).equatable()
                     .frame(minWidth: Pixels(240), idealWidth: alloyFilePanelIdealWidth, maxWidth: Pixels(800))
             }
             .splitViewAutosaveName("alloy-main")
