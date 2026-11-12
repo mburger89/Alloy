@@ -18,9 +18,11 @@ public struct LaunchedApp: Sendable {
 public enum LauncherError: Error, CustomStringConvertible {
     case missingExecutable(String)
     case untracked(pid_t)
+    case seedFailed(String, String)
     public var description: String {
         switch self {
         case .missingExecutable(let p): return "executable not found: \(p)"
+        case .seedFailed(let rel, let why): return "could not seed \(rel) into the per-run user-data directory: \(why)"
         case .untracked(let pid): return "could not read the start time of launched pid \(pid); it was killed so no app is left untracked"
         }
     }
@@ -73,7 +75,7 @@ public enum Launcher {
 
     /// Executes the app binary directly so the PID is the app and a new instance starts.
     /// Alloy gets its project dir as the working directory.
-    public static func launch(_ app: TargetApp, file: String?) throws -> LaunchedApp {
+    public static func launch(_ app: TargetApp, file: String?, extraEnvironment: [String: String] = [:]) throws -> LaunchedApp {
         guard FileManager.default.isExecutableFile(atPath: app.executablePath) else {
             throw LauncherError.missingExecutable(app.executablePath)
         }
@@ -82,11 +84,15 @@ public enum Launcher {
             let d = NSTemporaryDirectory() + "bench-userdata-\(getpid())-\(UUID().uuidString)"
             try FileManager.default.createDirectory(atPath: d, withIntermediateDirectories: true)
             userDataDir = d
+            do { try seed(app.seededFiles, into: d) } catch {
+                try? FileManager.default.removeItem(atPath: d)
+                throw error
+            }
         }
         let p = Process()
         p.executableURL = URL(fileURLWithPath: app.executablePath)
         p.arguments = arguments(for: app, file: file, userDataDir: userDataDir)
-        if let env = environment(for: app, userDataDir: userDataDir) { p.environment = env }
+        if let env = environment(for: app, userDataDir: userDataDir, extra: extraEnvironment) { p.environment = env }
         if app.id == "alloy" {
             let dir = file.map { ($0 as NSString).deletingLastPathComponent } ?? FileManager.default.currentDirectoryPath
             p.currentDirectoryURL = URL(fileURLWithPath: dir.isEmpty ? "." : dir)
@@ -111,12 +117,25 @@ public enum Launcher {
         return LaunchedApp(pid: pid, launchedAt: t, startTime: st, userDataDir: userDataDir)
     }
 
+    /// Writes each seeded file (relative path -> contents) under `dir`, creating intermediate directories.
+    public static func seed(_ files: [String: String], into dir: String) throws {
+        for (rel, contents) in files.sorted(by: { $0.key < $1.key }) {
+            let url = URL(fileURLWithPath: dir).appendingPathComponent(rel)
+            do {
+                try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+                try Data(contents.utf8).write(to: url)
+            } catch { throw LauncherError.seedFailed(rel, error.localizedDescription) }
+        }
+    }
+
     /// The launch environment when the app takes its data directory from a variable (Alloy's `ALLOY_DATA_DIR`);
-    /// nil when the app inherits ours unchanged.
-    public static func environment(for app: TargetApp, userDataDir: String?,
+    /// nil when the app inherits ours unchanged. `extra` is added only in that same case, so apps without the key
+    /// (Zed, Delta) never see it.
+    public static func environment(for app: TargetApp, userDataDir: String?, extra: [String: String] = [:],
                                    base: [String: String] = ProcessInfo.processInfo.environment) -> [String: String]? {
         guard let key = app.dataDirEnvironmentKey, let dir = userDataDir else { return nil }
         var env = base
+        for (k, v) in extra { env[k] = v }
         env[key] = dir
         return env
     }
@@ -154,9 +173,16 @@ public enum Launcher {
 
     /// SIGTERM the launched pid and its descendants, SIGKILL survivors after 5 s. Never by name,
     /// and never a pid whose start time no longer matches what we recorded (PID reuse).
-    public static func terminate(_ launched: LaunchedApp) async {
-        defer { if let d = launched.userDataDir { try? FileManager.default.removeItem(atPath: d) } }
-        guard isStillLaunched(launched) else { return }
+    /// With `collecting`, returns the contents of `<userDataDir>/<fileName>` read after the process tree has exited
+    /// and before the directory is removed (nil when absent).
+    @discardableResult
+    public static func terminate(_ launched: LaunchedApp, collecting fileName: String? = nil) async -> Data? {
+        func collect() -> Data? {
+            defer { if let d = launched.userDataDir { try? FileManager.default.removeItem(atPath: d) } }
+            guard let fileName, let d = launched.userDataDir else { return nil }
+            return try? Data(contentsOf: URL(fileURLWithPath: d + "/" + fileName))
+        }
+        guard isStillLaunched(launched) else { return collect() }
         // pid -> start time, captured together so each later signal is checked against it.
         var tree: [(pid: pid_t, start: UInt64)] = []
         for p in ProcessTree.descendants(of: launched.pid) {
@@ -178,6 +204,7 @@ public enum Launcher {
             if waitpid(launched.pid, &status, WNOHANG) != 0 { break }
             try? await Task.sleep(for: .milliseconds(25))
         }
+        return collect()
     }
 
     private static func isAlive(_ pid: pid_t) -> Bool {

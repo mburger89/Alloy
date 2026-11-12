@@ -77,13 +77,20 @@ import Foundation
         }
     }
 
-    @Test func markdownFlagsAlloySlowerThanZedInNoteColumn() {
+    @Test func noteColumnShowsVerdict() {
         let r = RunResult(environment: Self.env, apps: [:],
-            outcomes: ["zed": [.startup: Self.measured(10, p95: 11), .memory: Self.measured(10, p95: 11)],
-                       "alloy": [.startup: Self.measured(20, p95: 25), .memory: Self.measured(5, p95: 6)]])
+            outcomes: ["zed": [.startup: Self.measured(10, p95: 11), .memory: Self.measured(10, p95: 11),
+                               .typingLatency: Self.measured(10, p95: 11), .scrollFrames: Self.measured(10, p95: 11)],
+                       "alloy": [.startup: Self.measured(20, p95: 25), .memory: Self.measured(5, p95: 6),
+                                 .typingLatency: Self.measured(10, p95: 11), .scrollFrames: .notMeasured("all runs failed")]])
         let lines = Report.markdown(r).split(separator: "\n").map(String.init)
-        #expect(lines.first { $0.hasPrefix("| startup |") }!.hasSuffix("| ⚠ behind Zed |"))
-        #expect(!lines.first { $0.hasPrefix("| memory |") }!.contains("⚠"))
+        let startup = lines.first { $0.hasPrefix("| startup |") }!
+        #expect(startup.contains("⚠ behind Zed"))
+        #expect(startup.contains("median 20.0 ms vs Zed 10.0 ms"))
+        #expect(lines.first { $0.hasPrefix("| memory |") }!.contains("ahead"))
+        #expect(lines.first { $0.hasPrefix("| typingLatency |") }!.contains("par"))
+        #expect(lines.first { $0.hasPrefix("| scrollFrames |") }!.contains("⚠ missing"))
+        #expect(lines.first { $0.hasPrefix("| largeFileOpen |") }!.hasSuffix("|  |"))
     }
 
     @Test func notesAreNotCountedAsFailures() {

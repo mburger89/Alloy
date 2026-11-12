@@ -43,7 +43,7 @@ Gaps G1-G7 come from spec section 5. Each was sent to the MetalUI session. Stopg
 - Adopted as: `TranscriptView` puts `.defaultScrollAnchor(.bottom)` on its `ScrollView`; the `ScrollViewReader`/`TailKey` stopgap is removed.
 
 ## G7 Perf instrumentation
-- Status: landed in MetalUI PR #219 (4d4c59db); wiring into Alloy deferred until the local checkout includes it
+- Status: adopted (Plan 6 Task 5): benchmark attribution only
 - Use case: signposts and frame-time hooks for the benchmark harness (Plan 2).
 - Stopgap: wall-clock measurement from outside the process; no per-frame attribution.
 - Wanted API: signposts / frame-time hooks.

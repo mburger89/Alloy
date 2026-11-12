@@ -31,18 +31,22 @@ public struct TargetApp: Sendable {
     public var typingClickPoint: (@Sendable (_ windowFrame: CGRect) -> CGPoint)?
     /// Isolation or measurement caveats recorded in the notes of every measured result for this app.
     public var caveats: [String]
+    /// Files written into the per-run user-data directory before launch (relative path -> contents). Zed gets
+    /// `config/settings.json` with `session.trust_all_worktrees`, which skips Zed 1.28's first-open trust prompt
+    /// (it would otherwise cover the editor and swallow keystrokes); it is the state of a user who has trusted the project.
+    public var seededFiles: [String: String]
 
     public init(id: String, displayName: String, bundlePath: String?, executablePath: String,
                 launchArguments: @escaping @Sendable (String?) -> [String],
                 unsupported: [Metric: String] = [:], repoPath: String? = nil,
                 bundleID: String? = nil, userDataDirFlag: String? = nil, dataDirEnvironmentKey: String? = nil,
-                caveats: [String] = [],
+                caveats: [String] = [], seededFiles: [String: String] = [:],
                 scrollPoint: @escaping @Sendable (CGRect) -> CGPoint = { CGPoint(x: $0.midX, y: $0.midY) },
                 typingClickPoint: (@Sendable (CGRect) -> CGPoint)? = nil) {
         self.id = id; self.displayName = displayName; self.bundlePath = bundlePath
         self.executablePath = executablePath; self.launchArguments = launchArguments
         self.unsupported = unsupported; self.repoPath = repoPath
-        self.bundleID = bundleID; self.userDataDirFlag = userDataDirFlag; self.caveats = caveats
+        self.bundleID = bundleID; self.userDataDirFlag = userDataDirFlag; self.caveats = caveats; self.seededFiles = seededFiles
         self.dataDirEnvironmentKey = dataDirEnvironmentKey
         self.scrollPoint = scrollPoint; self.typingClickPoint = typingClickPoint
     }
@@ -53,7 +57,9 @@ public struct TargetApp: Sendable {
         executablePath: "/Applications/Zed.app/Contents/MacOS/zed",
         // The app binary takes `paths_or_urls`, `--diff`, `--user-data-dir`, ...; `-n` belongs to the CLI shim only.
         launchArguments: { file in file.map { [$0] } ?? [] },
-        bundleID: "dev.zed.Zed", userDataDirFlag: "--user-data-dir")
+        bundleID: "dev.zed.Zed", userDataDirFlag: "--user-data-dir",
+        caveats: ["Zed: per-run profile pre-trusts the project (session.trust_all_worktrees) so Zed 1.28's trust prompt does not cover the editor"],
+        seededFiles: ["config/settings.json": "{\"session\":{\"trust_all_worktrees\":true}}\n"])
 
     public static let delta = TargetApp(
         id: "delta", displayName: "Delta", bundlePath: "/Applications/Delta.app",

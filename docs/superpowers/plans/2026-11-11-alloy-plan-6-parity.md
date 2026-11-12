@@ -321,8 +321,8 @@ No subagent runs this task. No code changes.
 
 - [ ] **Step 1: Prepare without launching anything:** on master with Tasks 1–6 merged, `swift build -c release` (Alloy) and `swift build --package-path Bench -c release`. Check (read-only) that Zed and Delta are not running and list on-screen windows of other apps; tell the user what to move, minimise or quit themselves (the harness and the controller never touch them), and to turn on Do Not Disturb, keep AC power and a single display.
 - [ ] **Step 2: Wait for the user's "go".**
-- [ ] **Step 3: Run** `swift run --package-path Bench -c release alloy-bench run --apps zed,delta,alloy --alloy-build <Alloy repo root> --attribute` in the background (about 40 minutes). Exit codes 2–5 mean nothing unsafe happened; report the message to the user and stop.
-- [ ] **Step 4: Read the `.md`.** The run is publishable when it exited 0, the thermal state is nominal, power is AC, and no metric failed for a setup reason ("covered by", "screen region changed before window existed"). Otherwise fix the setup with the user and rerun the affected metrics with `--metrics`.
+- [ ] **Step 3: Run** `swift run --package-path Bench -c release alloy-bench run --apps zed,delta,alloy --alloy-build <Alloy repo root>` in the background (about 40 minutes). No `--attribute`: recording adds overhead to Alloy, and `publish` refuses attributed runs; `--attribute` is for Task 8 triage runs only. Exit codes 2–5 mean nothing unsafe happened; report the message to the user and stop.
+- [ ] **Step 4: Read the `.md`.** The run is publishable when it exited 0, the thermal state is nominal, power is AC, and no metric failed for a setup reason ("covered by", "screen region changed before window existed"), there is no leftover-process warning, and the Alloy version and harness SHA carry no `-dirty`. Otherwise fix the setup with the user and rerun the affected metrics with `--metrics`.
 - [ ] **Step 5: Publish** with `alloy-bench publish Bench/results/<stem>.json`, then `alloy-bench site`; run `swift test --package-path Bench`; commit `Bench/published` and `Bench/site` as `bench: publish <stem> checkpoint (after Plans 3 and 4)`.
 
 ### Task 8: Triage every shortfall
@@ -332,7 +332,8 @@ No subagent runs this task. No code changes.
 - Modify: `docs/metalui-gaps.md` (one entry per MetalUI cause), this plan (append one fix task per Alloy cause)
 
 - [ ] **Step 1: List shortfalls** (`Parity.isShortfall`) from the published run into `docs/parity.md`: one section per metric with Zed and Alloy median/p95, the verdict text, and the attribution notes.
-- [ ] **Step 2: Investigate each** (implementer subagents may read code and write headless `MetalUITesting` reproductions; no GUI launches). Apply Ruling 10. Record cause, owner (Alloy / MetalUI / harness), evidence (test name, numbers) and next action.
+- [ ] **Step 2: Collect attribution** for the shortfalls with a separate run, `alloy-bench run --apps alloy --metrics <shortfalls> --attribute` (user "go" first); it is never published.
+- [ ] **Step 2b: Investigate each** (implementer subagents may read code and write headless `MetalUITesting` reproductions; no GUI launches). Apply Ruling 10. Record cause, owner (Alloy / MetalUI / harness), evidence (test name, numbers) and next action.
 - [ ] **Step 3: MetalUI causes:** add a `docs/metalui-gaps.md` entry (next free G number) with use case, measured numbers, the headless repro and the expected result; the controller forwards it to the MetalUI session. Never edit `../MetalUI`.
 - [ ] **Step 4: Alloy or harness causes:** append a task to this plan per cause, in this plan's step style (failing test, fix, verify), then execute it like Tasks 1–6.
 - [ ] **Step 5: Re-measure** only the affected metrics (`--metrics`), via Task 7's Steps 1–5 (user "go" each time), and update `docs/parity.md` with the new verdicts.
@@ -341,6 +342,6 @@ No subagent runs this task. No code changes.
 ### Task 9: Publish and keep it current
 
 - [ ] **Step 1:** Update roadmap row 6 status ("checkpoint <date> published; N of M at par or ahead; open shortfalls in `docs/parity.md`") and commit.
-- [ ] **Step 2:** Push master to the private origin and run `tools/publish-public.sh` per the standing public-sync rule (privacy gate must pass; never force-push).
+- [ ] **Step 2 (first time: do Step 3's Pages-source setting before this push, or the first deploy fails and needs a manual rerun):** Push master to the private origin and run `tools/publish-public.sh` per the standing public-sync rule (privacy gate must pass; never force-push).
 - [ ] **Step 3 (Decision 1; first time only after the controller confirms the first real published results look right):** set the public repo's Pages source to "GitHub Actions"; confirm the `deploy` run succeeded and the page loads.
 - [ ] **Step 4:** After every later plan that touches the editor or chat merges, repeat Task 7 (new checkpoint), Task 8 for new shortfalls, and Steps 1–2 here.

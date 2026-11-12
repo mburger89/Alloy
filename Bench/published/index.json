@@ -1,0 +1,25 @@
+{
+  "runs" : [
+    {
+      "apps" : {
+        "alloy" : "d42fed4",
+        "delta" : "0.1.0",
+        "zed" : "1.28.1"
+      },
+      "date" : "2026-11-11",
+      "harnessSHA" : "d42fed4",
+      "partial" : false,
+      "stem" : "2026-11-11-163850-Mac18,5",
+      "verdicts" : {
+        "idleCPU" : "ahead",
+        "largeFileOpen" : "ahead",
+        "memory" : "behind",
+        "memoryIdle" : "ahead",
+        "scrollFrames" : "par",
+        "startup" : "ahead",
+        "typingLatency" : "ahead"
+      }
+    }
+  ],
+  "schemaVersion" : 1
+}

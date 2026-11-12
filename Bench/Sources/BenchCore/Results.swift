@@ -77,6 +77,24 @@ public struct Environment: Codable, Sendable, Equatable {
         self.refreshHz = refreshHz; self.scale = scale; self.onBattery = onBattery; self.cold = cold
         self.time = time; self.thermalState = thermalState
     }
+
+    private enum CodingKeys: String, CodingKey {
+        case date, time, machine, macOS, refreshHz, scale, onBattery, cold, thermalState
+    }
+
+    /// Published copies omit scale, battery, cold and thermal state; they decode to neutral defaults.
+    public init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        date = try c.decode(String.self, forKey: .date)
+        time = try c.decodeIfPresent(String.self, forKey: .time) ?? "000000"
+        machine = try c.decode(String.self, forKey: .machine)
+        macOS = try c.decode(String.self, forKey: .macOS)
+        refreshHz = try c.decode(Double.self, forKey: .refreshHz)
+        scale = try c.decodeIfPresent(Double.self, forKey: .scale) ?? 0
+        onBattery = try c.decodeIfPresent(Bool.self, forKey: .onBattery) ?? false
+        cold = try c.decodeIfPresent(Bool.self, forKey: .cold) ?? false
+        thermalState = try c.decodeIfPresent(String.self, forKey: .thermalState) ?? "unknown"
+    }
 }
 
 public struct RunResult: Codable, Sendable, Equatable {
@@ -94,18 +112,20 @@ public struct RunResult: Codable, Sendable, Equatable {
     public var runCounts: [String: [Metric: RunCount]]
     /// Run-level notes, e.g. leftover-process warnings.
     public var notes: [String]
+    /// True when the run was made with `--attribute` (triage only; never published). Absent in older JSON.
+    public var attributed: Bool
 
     public init(environment: Environment, apps: [String: String], outcomes: [String: [Metric: Outcome]],
-                harnessSHA: String = "unknown", runCounts: [String: [Metric: RunCount]] = [:], notes: [String] = [],
+                harnessSHA: String = "unknown", runCounts: [String: [Metric: RunCount]] = [:], notes: [String] = [], attributed: Bool = false,
                 schemaVersion: Int = RunResult.currentSchemaVersion) {
         self.schemaVersion = schemaVersion; self.harnessSHA = harnessSHA
         self.environment = environment; self.apps = apps; self.outcomes = outcomes
-        self.runCounts = runCounts; self.notes = notes
+        self.runCounts = runCounts; self.notes = notes; self.attributed = attributed
     }
 
     // Swift encodes dictionaries with non-String/Int keys as flat arrays; use string keys for a readable JSON object.
     private enum CodingKeys: String, CodingKey {
-        case schemaVersion, harnessSHA, environment, apps, runCounts, outcomes, notes
+        case schemaVersion, harnessSHA, environment, apps, runCounts, outcomes, notes, attributed
     }
 
     private static func metricKeyed<T>(_ raw: [String: T], _ c: KeyedDecodingContainer<CodingKeys>,
@@ -127,6 +147,7 @@ public struct RunResult: Codable, Sendable, Equatable {
         environment = try c.decode(Environment.self, forKey: .environment)
         apps = try c.decode([String: String].self, forKey: .apps)
         notes = try c.decode([String].self, forKey: .notes)
+        attributed = try c.decodeIfPresent(Bool.self, forKey: .attributed) ?? false
         outcomes = try c.decode([String: [String: Outcome]].self, forKey: .outcomes)
             .mapValues { try Self.metricKeyed($0, c, .outcomes) }
         runCounts = try c.decode([String: [String: RunCount]].self, forKey: .runCounts)
@@ -140,6 +161,7 @@ public struct RunResult: Codable, Sendable, Equatable {
         try c.encode(environment, forKey: .environment)
         try c.encode(apps, forKey: .apps)
         try c.encode(notes, forKey: .notes)
+        if attributed { try c.encode(true, forKey: .attributed) }
         try c.encode(outcomes.mapValues { inner in Dictionary(uniqueKeysWithValues: inner.map { ($0.key.rawValue, $0.value) }) },
                      forKey: .outcomes)
         try c.encode(runCounts.mapValues { inner in Dictionary(uniqueKeysWithValues: inner.map { ($0.key.rawValue, $0.value) }) },
@@ -168,12 +190,9 @@ public enum Report {
         lines.append("")
         lines.append("| Metric | " + columns.map(\.name).joined(separator: " | ") + " | Note |")
         lines.append("|---|" + columns.map { _ in "---|" }.joined() + "---|")
+        let verdicts = Parity.judgeAll(r)
         for m in Metric.allCases {
-            var note = ""
-            if case .measured(let z, _, _, _)? = r.outcomes["zed"]?[m],
-               case .measured(let a, _, _, _)? = r.outcomes["alloy"]?[m], a.median > z.median {
-                note = "⚠ behind Zed"
-            }
+            let note = verdicts[m].map(noteText) ?? ""
             lines.append("| \(m.rawValue) | " + columns.map { cell(r.outcomes[$0.id]?[m]) }.joined(separator: " | ") + " | \(note) |")
         }
         var detail: [String] = []
@@ -193,6 +212,16 @@ public enum Report {
         if !detail.isEmpty { lines.append(""); lines.append("## Notes"); lines.append(""); lines += detail }
         lines.append("")
         return lines.joined(separator: "\n")
+    }
+
+    private static func noteText(_ v: Verdict) -> String {
+        switch v {
+        case .ahead: return "ahead"
+        case .par: return "par"
+        case .behind(let why): return escape("⚠ behind Zed: \(why)")
+        case .missing(let why): return escape("⚠ missing: \(why)")
+        case .unjudged(let why): return escape("unjudged: \(why)")
+        }
     }
 
     /// Cell text must not contain a raw `|` or a newline, or GFM breaks the row.

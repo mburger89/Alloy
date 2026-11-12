@@ -64,6 +64,23 @@ let window = try app.openWindow(title: "Alloy", size: alloyWindowSize, minSize: 
     launcherRoot(model: model, themes: themeController)
 }
 
+// The benchmark (ALLOY_FRAME_TIMING=1 with ALLOY_DATA_DIR) reads MetalUI's frame timing: it is written on SIGTERM.
+// Without the flag nothing is installed and SIGTERM keeps its default behaviour.
+// The handler runs on the main queue: if the main thread stays blocked past the harness's 5 s SIGTERM grace period,
+// the harness SIGKILLs Alloy and the dump is lost; the harness then simply has no attribution for that run.
+var frameTimingTerm: DispatchSourceSignal?
+if let dumpURL = FrameTimingRecorder.install(on: window, environment: ProcessInfo.processInfo.environment),
+   let timing = window.frameTiming {
+    signal(SIGTERM, SIG_IGN)
+    let source = DispatchSource.makeSignalSource(signal: SIGTERM, queue: .main)
+    source.setEventHandler {
+        MainActor.assumeIsolated { try? FrameTimingRecorder.write(timing, to: dumpURL) }
+        exit(0)
+    }
+    source.resume()
+    frameTimingTerm = source
+}
+
 // Closing the window or quitting stops every claude process first.
 installWindowShutdown(on: window, model: model)
 app.onTerminateRequest = { model.shutdownRequested { app.replyToTerminateRequest($0) } }

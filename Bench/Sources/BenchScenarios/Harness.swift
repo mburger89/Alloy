@@ -28,6 +28,21 @@ public enum ActiveLaunches {
     }
 }
 
+/// Collects the `frame-timing.json` files of the Alloy launches made while `--attribute` is on. Carried to
+/// `Harness.withApp` as a task-local so no scenario signature changes; absent means nothing about a launch changes.
+public final class AttributionCollector: @unchecked Sendable {
+    @TaskLocal static var current: AttributionCollector?
+    private let files = Box<[Data]>([])
+    public init() {}
+    func add(_ d: Data) { files.update { $0.append(d) } }
+    /// Notes over every launch collected so far; empty when nothing decoded.
+    public var notes: [String] { files.value.flatMap { FrameTimingSummary.notes(from: $0) } }
+    /// Runs `body` with this collector active for Alloy launches inside it.
+    public func collecting<T>(_ body: () async -> T) async -> T {
+        await Self.$current.withValue(self) { await body() }
+    }
+}
+
 enum CaptureMode {
     case none
     /// Window capture, started once the main window is found.
@@ -71,12 +86,17 @@ enum Harness {
                            _ body: (AppProbe) async throws -> T) async throws -> T {
         let staged = try file.map { try Staging.stage($0) }
         let l: LaunchedApp
-        do { l = try Launcher.launch(app, file: staged?.file) } catch { staged?.remove(); throw error }
+        let collector = app.id == "alloy" ? AttributionCollector.current : nil
+        do {
+            l = try Launcher.launch(app, file: staged?.file,
+                                    extraEnvironment: collector == nil ? [:] : FrameTimingSummary.environment)
+        } catch { staged?.remove(); throw error }
         ActiveLaunches.add(l)
         let probe = AppProbe(launched: l)
         func cleanup() async {
             await probe.finish()
-            await Launcher.terminate(l)
+            let timing = await Launcher.terminate(l, collecting: collector == nil ? nil : FrameTimingSummary.fileName)
+            if let timing { collector?.add(timing) }
             ActiveLaunches.remove(l)
             staged?.remove()
         }

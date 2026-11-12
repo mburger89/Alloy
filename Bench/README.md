@@ -61,7 +61,9 @@ Run it only on a quiet machine: nothing else may be using the screen, keyboard o
 
    `--alloy-build` points at the Alloy repo root (build it first with `swift build -c release`; the binary is
    `<root>/.build/release/Alloy`). Other flags: `--metrics a,b`, `--runs N`, `--cold` (needs passwordless `sudo -n purge`),
-   `--out DIR`.
+   `--attribute` (launches Alloy, only Alloy, with `ALLOY_FRAME_TIMING=1` and appends its internal per-input-kind frame
+   phases, medians of queue / build / encode / input-to-present, to Alloy's metric notes; attribution only, it never
+   feeds a verdict, and a missing or unreadable `frame-timing.json` just means no extra notes), `--out DIR`.
 5. **Where results go.** `Bench/results/<YYYY-MM-DD>-<HHMMSS>-<machine>.json` (schema version 1: summaries, raw samples,
    notes, failures, requested vs completed runs per metric, harness git SHA, environment incl. thermal state) and a
    matching `.md` report with a Note column and a Notes section.
@@ -98,6 +100,19 @@ This caveat is recorded in the notes of every Delta result.
 
 At exit the harness lists, and only reports, any process matching a target app that started after the harness did
 (stderr warning, and in the result's `notes`). It never kills them.
+
+## Publishing
+
+1. `swift run --package-path Bench alloy-bench run` and check the generated `.md` report.
+2. `swift run --package-path Bench alloy-bench publish <result.json>` scrubs the result and adds it to `Bench/published`
+   (partial runs are refused unless `--allow-partial`).
+3. `swift run --package-path Bench alloy-bench site` renders `Bench/site/index.html` and copies each published JSON to
+   `Bench/site/data/`. The page is static: inline CSS and SVG, no JavaScript, no external resources.
+4. Commit `Bench/published` and `Bench/site`. `SitePageTests.committedSiteIsCurrent` fails when the page is stale.
+
+The page is hosted on GitHub Pages from the public repository: `.github/workflows/pages.yml` deploys `Bench/site` when
+it changes on `main` (or on a manual run), with no build step. It runs only in the public repository, whose Pages source
+must be set to "GitHub Actions" in its settings.
 
 ## Corpus
 

@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Alloy benchmarks</title>
+<style>
+:root { color-scheme: light dark; --bg: #ffffff; --fg: #1a1a1f; --muted: #5c5c66; --line: #d8d8de; --panel: #f5f5f8;
+  --zed: #1f5fd1; --alloy: #c2410c; --good: #17692f; --bad: #b3261e; --warn: #8a5a00; }
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #111114; --fg: #e8e8ec; --muted: #a0a0ab; --line: #34343c; --panel: #1b1b20;
+    --zed: #6cb0ff; --alloy: #ff9a5c; --good: #6fd08c; --bad: #ff8a80; --warn: #e6b84d; } }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--fg); font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+main { max-width: 60rem; margin: 0 auto; padding: 24px 16px 48px; }
+h1 { font-size: 1.8rem; margin: 0 0 4px; }
+h2 { font-size: 1.2rem; margin: 32px 0 8px; }
+h2.headline { font-size: 1.35rem; margin-top: 24px; }
+.lead { color: var(--muted); margin: 0; }
+.muted, .why { color: var(--muted); }
+.empty { font-size: 1.2rem; margin-top: 32px; }
+.badge { display: inline-block; font-size: 0.8rem; font-weight: 600; padding: 1px 8px; border: 1px solid var(--warn); color: var(--warn); border-radius: 999px; vertical-align: middle; }
+.scroll { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; min-width: 40rem; }
+th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+thead th { background: var(--panel); }
+.verdict { font-weight: 600; }
+.verdict.ahead, .verdict.par { color: var(--good); }
+.verdict.behind, .verdict.missing { color: var(--bad); }
+.verdict.unjudged { color: var(--muted); }
+dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 16px; margin: 0; }
+dt { color: var(--muted); } dd { margin: 0; overflow-wrap: anywhere; }
+li { margin: 4px 0; overflow-wrap: anywhere; }
+.charts { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 16px; }
+figure { margin: 0; padding: 8px; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; }
+figcaption { font-weight: 600; font-size: 0.9rem; }
+svg { width: 100%; height: auto; display: block; }
+.axis { stroke: var(--line); stroke-width: 1; }
+.tick { fill: var(--muted); font-size: 9px; }
+.series { fill: none; stroke-width: 2; }
+.series.zed { stroke: var(--zed); } .dot.zed { fill: var(--zed); }
+.series.alloy { stroke: var(--alloy); stroke-dasharray: 5 3; } .dot.alloy { fill: var(--alloy); }
+.key { font-weight: 600; margin-right: 16px; } .key.zed { color: var(--zed); } .key.alloy { color: var(--alloy); }
+a { color: var(--zed); }
+</style>
+</head>
+<body>
+<main>
+<h1>Alloy benchmarks</h1>
+<p class="lead">Alloy (built on MetalUI) measured against Zed and Delta on the same Mac, from outside the apps.</p>
+<h2 class="headline">Alloy is at par or ahead of Zed on 6 of 7 measured metrics</h2>
+<p class="muted">Newest run: 2026-11-11.</p>
+<div class="scroll"><table>
+<thead><tr><th>Metric</th><th>Zed</th><th>Delta</th><th>Alloy</th><th>Verdict</th></tr></thead>
+<tbody>
+<tr><th scope="row">Startup</th><td>236.6 ms (p95 261.8)</td><td>395.8 ms (p95 439.6)</td><td>136.7 ms (p95 158.4)</td><td><span class="verdict ahead">ahead</span></td></tr>
+<tr><th scope="row">Typing latency</th><td>49.4 ms (p95 57.4)</td><td><span class="muted">n/a — Delta is agent-first with no documented way to open a file in an editor surface; typing target unverified</span></td><td>37.3 ms (p95 48.2)</td><td><span class="verdict ahead">ahead</span></td></tr>
+<tr><th scope="row">Scroll frame time</th><td>17.2 ms (p95 18.4)</td><td><span class="muted">n/a — Delta opens projects, not files; needs a live probe to learn what it displays</span></td><td>17.3 ms (p95 18.3)</td><td><span class="verdict par">par</span></td></tr>
+<tr><th scope="row">Memory</th><td>102.2 MiB (p95 103.7)</td><td><span class="muted">n/a — Delta opens projects, not files; needs a live probe to learn what it displays</span></td><td>181.5 MiB (p95 181.8)</td><td><span class="verdict behind">behind</span> <span class="why">median 181.5 MiB vs Zed 102.2 MiB</span></td></tr>
+<tr><th scope="row">Memory, idle</th><td>93.4 MiB (p95 93.5)</td><td>206.9 MiB (p95 211.3)</td><td>48.7 MiB (p95 48.7)</td><td><span class="verdict ahead">ahead</span></td></tr>
+<tr><th scope="row">Large file open</th><td>239.5 ms (p95 265.2)</td><td><span class="muted">n/a — Delta has no documented open-file-in-editor command (`delta open` takes a path or delta:// link only)</span></td><td>158.6 ms (p95 179.5)</td><td><span class="verdict ahead">ahead</span></td></tr>
+<tr><th scope="row">Idle CPU</th><td>0.4 % (p95 0.4)</td><td>0.2 % (p95 0.2)</td><td>0.0 % (p95 0.0)</td><td><span class="verdict ahead">ahead</span></td></tr>
+</tbody>
+</table></div>
+<h2>Environment and versions</h2>
+<dl>
+<dt>Date</dt><dd>2026-11-11</dd>
+<dt>Machine</dt><dd>Mac18,5</dd>
+<dt>macOS</dt><dd>27.2.0</dd>
+<dt>Display refresh rate</dt><dd>60.0 Hz</dd>
+<dt>Start</dt><dd>warm</dd>
+<dt>Harness</dt><dd>d42fed4</dd>
+<dt>Zed version</dt><dd>1.28.1</dd>
+<dt>Delta version</dt><dd>0.1.0</dd>
+<dt>Alloy version</dt><dd>d42fed4</dd>
+</dl>
+<h2>Run notes</h2>
+<ul>
+<li>Zed Startup: window on screen: median 175 ms after launch (CGWindowList, 5 ms polling)</li>
+<li>Zed Startup: Zed: per-run profile pre-trusts the project (session.trust_all_worktrees) so Zed 1.28's trust prompt does not cover the editor</li>
+<li>Zed Typing latency: Zed: per-run profile pre-trusts the project (session.trust_all_worktrees) so Zed 1.28's trust prompt does not cover the editor</li>
+<li>Zed Scroll frame time: captured at 60 Hz (display refresh); dropped frames: 0.3% (3 of 860 intervals &gt; 25.0 ms = 1.5x refresh period); intervals floor at 16.7 ms; intervals trimmed to the first and last scroll post (+1 refresh period)</li>
+<li>Zed Scroll frame time: Zed: per-run profile pre-trusts the project (session.trust_all_worktrees) so Zed 1.28's trust prompt does not cover the editor</li>
+<li>Zed Memory: Zed: per-run profile pre-trusts the project (session.trust_all_worktrees) so Zed 1.28's trust prompt does not cover the editor</li>
+<li>Zed Memory, idle: footprint of the process tree at the end of the idle CPU window, small.swift open</li>
+<li>Zed Memory, idle: Zed: per-run profile pre-trusts the project (session.trust_all_worktrees) so Zed 1.28's trust prompt does not cover the editor</li>
+<li>Zed Large file open: window on screen: median 185 ms after launch (CGWindowList, 5 ms polling)</li>
+<li>Zed Large file open: Zed: per-run profile pre-trusts the project (session.trust_all_worktrees) so Zed 1.28's trust prompt does not cover the editor</li>
+<li>Zed Idle CPU: Zed: per-run profile pre-trusts the project (session.trust_all_worktrees) so Zed 1.28's trust prompt does not cover the editor</li>
+<li>Delta Startup: window on screen: median 378 ms after launch (CGWindowList, 5 ms polling)</li>
+<li>Delta Startup: Delta has no isolation flag: it ran against the user's real Delta profile and state</li>
+<li>Delta Memory, idle: footprint of the process tree at the end of the idle CPU window, small.swift open</li>
+<li>Delta Memory, idle: Delta has no isolation flag: it ran against the user's real Delta profile and state</li>
+<li>Delta Idle CPU: Delta has no isolation flag: it ran against the user's real Delta profile and state</li>
+<li>Alloy Startup: window on screen: median 119 ms after launch (CGWindowList, 5 ms polling)</li>
+<li>Alloy Scroll frame time: captured at 60 Hz (display refresh); dropped frames: 0.0% (0 of 857 intervals &gt; 25.0 ms = 1.5x refresh period); intervals floor at 16.7 ms; intervals trimmed to the first and last scroll post (+1 refresh period)</li>
+<li>Alloy Memory, idle: footprint of the process tree at the end of the idle CPU window, small.swift open</li>
+<li>Alloy Large file open: window on screen: median 118 ms after launch (CGWindowList, 5 ms polling)</li>
+</ul>
+<h2>How this is measured</h2>
+<ul>
+<li>The harness drives each app from outside, with synthetic input, and detects changes by comparing screen captures. It does not rely on anything the apps report about themselves.</li>
+<li>Every metric is repeated and the page shows the median and the 95th percentile (p95) of the runs that survived. A run is dropped when its window never appeared, the screen changed before the window, or capture dropped frames; failures are listed in the run notes.</li>
+<li>Startup and large-file open are strict: if any run is excluded the whole metric shows as not measured, never a median of survivors.</li>
+<li>Pass bar: Alloy is at par with Zed when both its median and its p95 are within the larger of 5.0 % of Zed's value or an absolute floor (1.0 ms, 2.0 MiB, 0.1 %) of Zed's. It is ahead when both are lower than Zed's by more than that margin, and behind when either is higher by more than that margin. The headline counts at par and ahead.</li>
+<li>A row is missing when Zed was measured but Alloy was not, and unjudged when Zed was not measured. Parity is judged against Zed only; Delta is shown for context.</li>
+<li>Delta has no isolated profile option, so it runs against a normal Delta profile and state.</li>
+<li>Scroll frame times cannot be lower than one display refresh period, so they floor at that value.</li>
+<li>Results come from one machine and one run each time, so treat small differences with caution. Raw samples are in the JSON files linked below.</li>
+</ul>
+<h2>Raw results</h2>
+<ul>
+<li><a href="data/2026-11-11-163850-Mac18,5.json">2026-11-11-163850-Mac18,5.json</a></li>
+</ul>
+</main>
+</body>
+</html>

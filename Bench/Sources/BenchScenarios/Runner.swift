@@ -29,6 +29,7 @@ public enum Runner {
     /// mid-run); a non-nil message marks that app's metrics not measured without launching anything.
     public static func run(apps: [TargetApp], metrics: [Metric], corpus: Corpus, runsOverride: Int?,
                            cold: Bool = false,
+                           attribute: Bool = false,
                            preflight: (@Sendable (TargetApp) -> String?)? = nil,
                            coverCheck: (@Sendable (TargetApp) -> String?)? = nil) async throws -> RunResult {
         let preflight = preflight ?? { Preflight.check(apps: [$0])?.message }
@@ -53,25 +54,34 @@ public enum Runner {
             if refusal[app.id] == nil { refusal[app.id] = .some(preflight(app)) }
             if let why = refusal[app.id] ?? nil {
                 FileHandle.standardError.write(Data("[\(app.displayName)] \(metric.rawValue) skipped: \(why)\n".utf8))
-                outcomes[app.id, default: [:]][metric] = .notMeasured("preflight refused: " + why); continue
+                outcomes[app.id, default: [:]][metric] = .notMeasured(RunMarkers.refusedPrefix + why); continue
             }
             if refusal[app.id] == .some(nil), coverRefused == nil, let why = coverCheck(app) {
                 coverRefused = why
                 FileHandle.standardError.write(Data("[\(app.displayName)] \(metric.rawValue) refused: \(why)\n".utf8))
-                outcomes[app.id, default: [:]][metric] = .notMeasured("preflight refused: " + why)
+                outcomes[app.id, default: [:]][metric] = .notMeasured(RunMarkers.refusedPrefix + why)
                 continue
             }
             if let why = coverRefused {   // the run is aborted: later metrics and apps are not attempted
-                outcomes[app.id, default: [:]][metric] = .notMeasured("not run, aborted: " + why); continue
+                outcomes[app.id, default: [:]][metric] = .notMeasured(RunMarkers.abortedPrefix + why); continue
             }
             FileHandle.standardError.write(Data("[\(app.displayName)] \(metric.rawValue)...\n".utf8))
             let runs = runsOverride ?? defaultRuns[metric] ?? 1
             let o: Outcome
+            // --attribute: Alloy's own frame phases are appended as notes; they never affect a verdict.
+            let collector = attribute && app.id == "alloy" ? AttributionCollector() : nil
             if metric == .idleCPU || metric == .memoryIdle {   // one launch yields both
-                if idle[app.id] == nil { idle[app.id] = await IdleCPUScenario().runBoth(app, corpus: corpus, runs: runs) }
+                if idle[app.id] == nil {
+                    let both = await run(with: collector) { await IdleCPUScenario().runBoth(app, corpus: corpus, runs: runs) }
+                    let notes = collector?.notes ?? []
+                    idle[app.id] = (both.cpu.addingNotes(notes), both.memory)   // one launch: attach to idleCPU only
+                }
                 o = metric == .idleCPU ? idle[app.id]!.cpu : idle[app.id]!.memory
             } else {
-                o = await scenario(for: metric, cold: coldApplies && coldOK).run(app, corpus: corpus, runs: runs)
+                let measured = await run(with: collector) {
+                    await scenario(for: metric, cold: coldApplies && coldOK).run(app, corpus: corpus, runs: runs)
+                }
+                o = measured.addingNotes(collector?.notes ?? [])
             }
             requested[app.id, default: [:]][metric] = runs
             outcomes[app.id, default: [:]][metric] = o.addingNotes(app.caveats)
@@ -81,9 +91,15 @@ public enum Runner {
         let result = RunResult(environment: Environment.current(cold: coldApplies && coldOK), apps: versions, outcomes: outcomes,
                          harnessSHA: harnessSHA(),
                          runCounts: runCounts(outcomes: outcomes, requested: { requested[$0.app]?[$0.metric] ?? 0 }),
-                         notes: Leftovers.warnings(apps: apps, since: harnessStart))
+                         notes: Leftovers.warnings(apps: apps, since: harnessStart),
+                         attributed: attribute && apps.contains { $0.id == "alloy" })
         if let why = coverRefused { throw CoverRefused(message: why, partial: result) }
         return result
+    }
+
+    private static func run<T>(with collector: AttributionCollector?, _ body: () async -> T) async -> T {
+        guard let collector else { return await body() }
+        return await collector.collecting(body)
     }
 
     /// Another app's window covers where the target's windows open. Nothing was launched for the refused app;
