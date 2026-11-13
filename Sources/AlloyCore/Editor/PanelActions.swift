@@ -56,6 +56,21 @@ extension Workspace {
         }
     }
 
+    /// Shows a session's fresh edit in the code panel when "Follow edits" is on. The selected session's edit opens its
+    /// file at the first changed line, unless the user is busy in the editor (unsaved typing in the active tab, or the
+    /// code panel holds focus); another session's edit opens only into an empty pane. Never takes keyboard focus;
+    /// `requestOpen`'s ticket makes the newest edit of a burst win.
+    func followEdit(_ edit: EditRecord, by session: Session) {
+        guard settings.followEdits else { return }
+        if session.id == selectedSessionID {
+            if codePanelFocused { return }
+            if let active = activeTab, documents[active]?.isDirty == true { return }
+        } else if activeTab != nil {
+            return
+        }
+        requestOpen(edit.path, edit: edit.id)
+    }
+
     /// Closes the active tab (saving first, as `close` does).
     public func closeActiveTab() {
         guard let path = activeTab else { return }

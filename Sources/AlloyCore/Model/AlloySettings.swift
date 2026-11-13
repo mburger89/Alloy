@@ -21,6 +21,9 @@ public struct AlloySettings: Codable, Equatable, Sendable {
     /// original name so an older settings file still loads.
     public var askBeforeSharedNotes: Bool
 
+    /// Show a session's edits in the right pane as they happen.
+    public var followEdits: Bool
+
     public var themeMode: ThemeMode
     /// The theme id used in `.single` mode.
     public var theme: String
@@ -33,7 +36,7 @@ public struct AlloySettings: Codable, Equatable, Sendable {
     public var languageServers: [String: ServerConfigOverride]
 
     public init(claudePath: String? = nil, lastProjectPath: String? = nil,
-                shareKnowledge: Bool = true, shareAcrossProjects: Bool = true, askBeforeSharedNotes: Bool = false,
+                shareKnowledge: Bool = true, shareAcrossProjects: Bool = true, askBeforeSharedNotes: Bool = false, followEdits: Bool = true,
                 themeMode: ThemeMode = .single, theme: String = "dracula",
                 lightTheme: String = "alloy-light", darkTheme: String = "dracula",
                 languageServers: [String: ServerConfigOverride] = [:]) {
@@ -47,10 +50,11 @@ public struct AlloySettings: Codable, Equatable, Sendable {
         self.shareKnowledge = shareKnowledge
         self.shareAcrossProjects = shareAcrossProjects
         self.askBeforeSharedNotes = askBeforeSharedNotes
+        self.followEdits = followEdits
     }
 
     private enum CodingKeys: String, CodingKey {
-        case claudePath, lastProjectPath, shareKnowledge, shareAcrossProjects, askBeforeSharedNotes, themeMode, theme, lightTheme, darkTheme, languageServers
+        case claudePath, lastProjectPath, shareKnowledge, shareAcrossProjects, askBeforeSharedNotes, followEdits, themeMode, theme, lightTheme, darkTheme, languageServers
     }
 
     /// Every key is optional, so a file written by an older Alloy still loads with its values intact.
@@ -61,6 +65,7 @@ public struct AlloySettings: Codable, Equatable, Sendable {
         shareKnowledge = try c.decodeIfPresent(Bool.self, forKey: .shareKnowledge) ?? true
         shareAcrossProjects = try c.decodeIfPresent(Bool.self, forKey: .shareAcrossProjects) ?? true
         askBeforeSharedNotes = try c.decodeIfPresent(Bool.self, forKey: .askBeforeSharedNotes) ?? false
+        followEdits = try c.decodeIfPresent(Bool.self, forKey: .followEdits) ?? true
         // The theme keys are lenient: a hand-edited bad value falls back to the default instead of failing the whole file
         // (which would make `load` return defaults and the next save wipe every other setting).
         themeMode = (try? c.decodeIfPresent(ThemeMode.self, forKey: .themeMode)) ?? .single

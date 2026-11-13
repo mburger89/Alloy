@@ -186,6 +186,28 @@ private func rawPost(port: Int, token: String, body: String = pingBody, extra: S
         await h.stop()
     }
 
+    @Test func readOnlyToolsAreAnnotatedInTheList() async throws {
+        struct ReadTool: MCPTool {
+            let name = "peek"
+            let description = "reads"
+            let inputSchema: JSONValue = .object(["type": .string("object")])
+            var readOnly: Bool { true }
+            func call(_ arguments: JSONValue, caller: MCPCaller) async -> MCPToolResult { MCPToolResult(text: "") }
+        }
+        let h = try await Harness.make(tools: [EchoTool(), ReadTool()])
+        let (list, _) = try await h.rpc(#"{"jsonrpc":"2.0","id":1,"method":"tools/list"}"#, headers: ["mcp-protocol-version": "2025-11-25"])
+        let tools = list?["result"]?["tools"]?.arrayValue ?? []
+        #expect(tools.first { $0["name"]?.stringValue == "peek" }?["annotations"]?["readOnlyHint"]?.boolValue == true)
+        #expect(tools.first { $0["name"]?.stringValue == "echo" }?["annotations"] == nil)
+    }
+
+    @Test @MainActor func alloysReadOnlyToolsDeclareIt() {
+        let e = Env(); defer { e.cleanup() }
+        let all = NotesTools.make(workspace: e.ws) + CoordinationTools.make(workspace: e.ws)
+        let readOnly = Set(all.filter(\.readOnly).map(\.name))
+        #expect(readOnly == ["notes_lookup", "notes_read", "sessions_changes"])
+    }
+
     private func listedNames(_ h: Harness, token: String? = nil) async throws -> [String] {
         let (data, _) = try await h.post(Data(#"{"jsonrpc":"2.0","id":1,"method":"tools/list"}"#.utf8), token: token)
         let list = JSONValue.parse(data)

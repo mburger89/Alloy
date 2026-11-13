@@ -58,6 +58,13 @@ struct SettingsView: Component {
             }
             Divider()
             VStack(alignment: .leading, spacing: Pixels(8)) {
+                Text("Editor").font(size: 12).foregroundColor(.mutedInk)
+                Toggle(isOn: flag(\.followEdits)) { Text("Follow edits").font(size: 13) }
+                    .accessibilityIdentifier("settings-follow-edits")
+                Text("Show a session's edits in the right pane as they happen.").font(size: 11).foregroundColor(.mutedInk)
+            }
+            Divider()
+            VStack(alignment: .leading, spacing: Pixels(8)) {
                 Text("Shared knowledge").font(size: 12).foregroundColor(.mutedInk)
                 Toggle(isOn: flag(\.shareKnowledge)) { Text("Share knowledge between sessions").font(size: 13) }
                     .accessibilityIdentifier("settings-share-knowledge")

@@ -78,6 +78,27 @@ import Testing
         #expect(inField.contains { near($0.border, accent) }, "the focus ring is the accent")
     }
 
+    @Test func singleClickOnTheNameSelectsTheSession() async throws {
+        let rig = Rig()
+        let a = await rig.workspace.newSession(name: "A")
+        let b = await rig.workspace.newSession(name: "B")
+        #expect(rig.workspace.selectedSessionID == a.id)
+        let window = try alloyWindow(rig.workspace)
+        try window.click(window.element(identifier: "session-name-\(b.id.uuidString)"))
+        window.advance(by: 1)   // past the double-click window, so the single tap resolves
+        try await window.runUntil { rig.workspace.selectedSessionID == b.id }
+    }
+
+    @Test func doubleClickOnAnotherRowsNameRenamesIt() async throws {
+        let rig = Rig()
+        let a = await rig.workspace.newSession(name: "A")
+        let b = await rig.workspace.newSession(name: "B")
+        #expect(rig.workspace.selectedSessionID == a.id)
+        let window = try alloyWindow(rig.workspace)
+        try window.doubleClick(window.element(identifier: "session-name-\(b.id.uuidString)"))
+        try await window.runUntil { (try? window.element(identifier: "rename-\(b.id.uuidString)")) != nil }
+    }
+
     @Test func selectingRowSelectsSession() async throws {
         let rig = Rig()
         let a = await rig.workspace.newSession(name: "A")

@@ -52,7 +52,7 @@ struct FilePanelView: Component {
             if let path = workspace.activeTab, let document = workspace.document(path) { panel.ensureView(for: document) }
         }
         // A request for another tab's caret must not move the user once they have left it.
-        .onChange(of: workspace.activeTab) { panel.cancelDefinition() }
+        .onChange(of: workspace.activeTab) { panel.cancelDefinition(); workspace.codePanelFocused = false }
         .onChange(of: workspace.tabs) { panel.prune(keeping: workspace.tabs) }
         // A document replaced behind a background tab: its old view is closed now, not when the tab is next shown.
         .onChange(of: workspace.tabs.map { workspace.document($0)?.id }) { panel.refreshReplaced(workspace: workspace) }

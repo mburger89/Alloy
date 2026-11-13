@@ -228,6 +228,7 @@ private func prop(_ type: String, _ description: String) -> JSONValue {
 struct NotesLookupTool: MCPTool {
     let ref: WorkspaceRef
     let name = "notes_lookup"
+    let readOnly = true
     let description = "Check what the other sessions in this project already know before reading a file: who read it, whether "
         + "notes_read can give you its text, and the notes they left. Pass exactly one of path or topic."
     let inputSchema = schema([
@@ -260,6 +261,7 @@ struct NotesLookupTool: MCPTool {
 struct NotesReadTool: MCPTool {
     let ref: WorkspaceRef
     let name = "notes_read"
+    let readOnly = true
     let description = "Get a file's text, as another session in this project already read it, when the file has not changed since. "
         + "Returns numbered lines; only lines some session actually read are served. Use the Read tool for anything it does not give."
     let inputSchema = schema([

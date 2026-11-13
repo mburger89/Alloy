@@ -16,7 +16,7 @@ struct SidebarView: Component {
                 Spacer()
                 Button {
                     let n = workspace.sessions.count + 1
-                    Task { await workspace.newSession(name: "Session \(n)") }
+                    Task { await workspace.newSessionFromUser(name: "Session \(n)") }
                 } label: {
                     Image(systemName: "plus").font(.system(size: 13)).padding(Pixels(4))
                 }
@@ -117,6 +117,8 @@ struct SessionRow: Component {
                 } else {
                     Text(session.name).font(size: 13)
                         .onTapGesture(count: 2) { draft = session.name; renaming = true }
+                        // The count-2 tap holds the row's own click back, so a single click on the name selects here.
+                        .onTapGesture { workspace.selectedSessionID = id }
                         .accessibilityIdentifier("session-name-\(id.uuidString)")
                 }
                 HStack(spacing: Pixels(6)) {

@@ -40,7 +40,11 @@ private func makeWorkspace(root: URL, appSupport: URL, harness: Harness,
                            locate: @escaping @Sendable (String?) throws -> URL = fakeClaude,
                            home: URL = FileManager.default.homeDirectoryForCurrentUser,
                            writer: @escaping @Sendable (Data, URL, () -> Bool) throws -> Bool = { d, u, _ in try d.write(to: u, options: .atomic); return false }) -> Workspace {
-    Workspace(projectRoot: root, appSupport: appSupport, settings: AlloySettings(), locate: locate,
+    // These tests script an edit's ledger text and write the disk later, so they run without "Follow edits"
+    // (which would open the file against a disk that does not match yet).
+    var settings = AlloySettings()
+    settings.followEdits = false
+    return Workspace(projectRoot: root, appSupport: appSupport, settings: settings, locate: locate,
               makeTransport: harness.factory, now: Date.init, writeFile: writer, home: home)
 }
 

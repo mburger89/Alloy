@@ -40,9 +40,13 @@ struct OverlapWarningRecord {
     var editorTool: String = ""
 }
 
+struct OverlapNoticeKey: Hashable { let session: Session.ID; let text: String }
+
 extension Workspace {
     /// An overlap warning lives this long without activity (the tug window, 10 minutes).
     static let warningLifetime: TimeInterval = TugOfWar.window
+    /// The same overlap notice reaches one session's chat at most once in this long.
+    static let overlapNoticeWindow: TimeInterval = 60
     private static let maxOverlapWarnings = 50
 
     /// The warnings to show now, oldest first: overlap warnings and tug alerts not yet ten minutes old. Reading it
@@ -177,10 +181,19 @@ extension Workspace {
             var tools: Set<String> = [tool]
             if item.key.hasPrefix("tool:") { tools.insert(String(item.key.dropFirst(5))) }   // the other party's call
             overlapWarnings.append(OverlapWarningRecord(warning: warning, key: item.key, edits: edits, tools: tools, editorTool: tool))
-            otherSession?.transcript.appendNotice(kind: .warning, text: "\"\(editorName)\" is editing \(where_) next to your change")
+            if let otherSession { showOverlapNotice("\"\(editorName)\" is editing \(where_) next to your change", to: otherSession, at: date) }
         }
         if overlapWarnings.count > Self.maxOverlapWarnings { overlapWarnings.removeFirst(overlapWarnings.count - Self.maxOverlapWarnings) }
         armWarningExpiry()
+    }
+
+    /// Appends the notice unless this session already got the same text within `overlapNoticeWindow`.
+    private func showOverlapNotice(_ text: String, to session: Session, at date: Date) {
+        overlapNoticeShown = overlapNoticeShown.filter { date.timeIntervalSince($0.value) < Self.overlapNoticeWindow }
+        let key = OverlapNoticeKey(session: session.id, text: text)
+        if overlapNoticeShown[key] != nil { return }
+        overlapNoticeShown[key] = date
+        session.transcript.appendNotice(kind: .warning, text: text)
     }
 
     private func pruneOverlapWarnings() {

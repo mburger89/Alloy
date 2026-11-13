@@ -51,6 +51,7 @@ enum CoordinationTools {
 struct SessionsChangesTool: MCPTool {
     let ref: WorkspaceRef
     let name = "sessions_changes"
+    let readOnly = true
     let description = "See what the other sessions in this project are doing: for each, its status, the files and lines it "
         + "has changed (not yet kept or reverted), and the regions it has claimed. Check this before a large edit."
     let inputSchema = CoordinationTools.schema([:])

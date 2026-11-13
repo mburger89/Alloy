@@ -31,11 +31,14 @@ public protocol MCPTool: Sendable {
     var inputSchema: JSONValue { get }
     /// Which callers see this tool. Defaults to `.shared`.
     var scope: MCPToolScope { get }
+    /// True for a tool that changes nothing (the list says so with `annotations.readOnlyHint`). Defaults to false.
+    var readOnly: Bool { get }
     func call(_ arguments: JSONValue, caller: MCPCaller) async -> MCPToolResult
 }
 
 extension MCPTool {
     public var scope: MCPToolScope { .shared }
+    public var readOnly: Bool { false }
 }
 
 /// JSON-RPC handling for the MCP subset Alloy serves: initialize, ping, tools/list, tools/call.
@@ -87,11 +90,13 @@ public enum MCPServer {
             return result(id: id, .object([:]))
         case "tools/list":
             let list = tools.filter { caller.scopes.contains($0.scope) }.map { tool -> JSONValue in
-                .object([
+                var entry: [String: JSONValue] = [
                     "name": .string(tool.name),
                     "description": .string(tool.description),
                     "inputSchema": tool.inputSchema,
-                ])
+                ]
+                if tool.readOnly { entry["annotations"] = .object(["readOnlyHint": .bool(true)]) }
+                return .object(entry)
             }
             return result(id: id, .object(["tools": .array(list)]))
         case "tools/call":

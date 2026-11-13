@@ -87,6 +87,8 @@ public final class Workspace {
             track { [weak self] in try? await self?.save(old) }
         }
     }
+    /// True while the code panel holds keyboard focus (the panel reports it); following edits never interrupts it.
+    public var codePanelFocused = false
     /// Why a tab has no document ("Binary file", unreadable, outside the project).
     public internal(set) var tabMessages: [String: String] = [:]
     var documents: [String: EditorDocument] = [:]
@@ -171,6 +173,10 @@ public final class Workspace {
     /// Overlap warnings the sessions were told about, for the markers and the notice (see `coordinationWarnings`).
     /// Live-only, like the tug alerts.
     var overlapWarnings: [OverlapWarningRecord] = []
+    /// When each overlap chat notice was last shown, by receiving session and text (see `overlapNoticeWindow`).
+    @ObservationIgnored var overlapNoticeShown: [OverlapNoticeKey: Date] = [:]
+    /// The tools each live session was launched with in `--allowedTools`; a permission request for one is answered allow.
+    @ObservationIgnored var launchAllowedTools: [Session.ID: Set<String>] = [:]
     /// Warnings whose notice strip the user dismissed or followed.
     public internal(set) var dismissedWarnings: Set<DismissedWarning> = []
     /// Wakes when the earliest warning expires, so the screen drops it without a per-frame timer. Not tracked, so
@@ -503,8 +509,15 @@ public final class Workspace {
         return s
     }
 
+    /// The "+" button and ⌘N: creates a session and switches to it. `newSession` alone selects only when nothing is
+    /// selected (restore and theme paths rely on that).
     @discardableResult
-    func newSession(name: String, purpose: SessionPurpose) async -> Session {
+    public func newSessionFromUser(name: String) async -> Session {
+        await newSession(name: name, purpose: .coding, select: true)
+    }
+
+    @discardableResult
+    func newSession(name: String, purpose: SessionPurpose, select: Bool = false) async -> Session {
         ensureLoaded()
         let s = Session(id: UUID(), name: allowedName(name, for: nil), colorIndex: records.count % 12, projectRoot: projectRoot,
                         purpose: purpose)
@@ -515,7 +528,7 @@ public final class Workspace {
             return s
         }
         sessions.append(s)
-        if selectedSessionID == nil { selectedSessionID = s.id }
+        if select || selectedSessionID == nil { selectedSessionID = s.id }
         persistSessions()
         await launch(s, resume: false)
         return s
@@ -760,6 +773,7 @@ public final class Workspace {
         } else if theme {
             s.transcript.appendNotice(kind: .error, text: "Theme tools are unavailable: Alloy's local server is not running.")
         }
+        launchAllowedTools[s.id] = Set(configuration.allowedTools)
         let transport = makeTransport(configuration)
         let stream: AsyncStream<ProcessEvent>
         do { stream = try await transport.start() } catch {
@@ -876,6 +890,12 @@ public final class Workspace {
             }
             return
         }
+        // Plan mode asks about tools that were launched pre-approved; Alloy's own tools are answered here, with no card.
+        if case .message(.controlRequest(let req)) = event, case .canUseTool(let name, let input, _, let tid, _) = req.kind,
+           launchAllowedTools[s.id]?.contains(name) == true, let t = live[s.id]?.transport {
+            Task { @MainActor [weak self] in await self?.deliver(.allow(requestID: req.requestID, updatedInput: input), via: t, to: s) }
+            return
+        }
         s.handle(event)
         switch event {
         case .message(.systemInit), .message(.result), .exited: turnPending.remove(s.id)
@@ -926,6 +946,7 @@ public final class Workspace {
                 reindex(path)
                 noteFileChanged(path)
                 syncOpenBuffer(path, by: s)
+                if let newest = mine.last { followEdit(newest, by: s) }
                 if !mine.isEmpty {
                     s.transcript.attach(editIDs: mine.map(\.id), toToolUseID: r.toolUseID)
                     let lines = diffLines(path: path)

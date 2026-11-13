@@ -40,11 +40,14 @@ final class Rig {
     /// Delivers file-system events by hand, so a test decides when an outside change arrives.
     let changes = ScriptedChangeSource()
 
-    init() {
+    /// `followEdits` is off by default: the UI tests drive the panel by hand and expect it to stay where they put it.
+    init(followEdits: Bool = false) {
+        var settings = AlloySettings()
+        settings.followEdits = followEdits
         root = FileManager.default.temporaryDirectory.appendingPathComponent("alloy-ui-\(UUID().uuidString)").resolvingSymlinksInPath()
         try? FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         let bag = transports, source = changes
-        workspace = Workspace(projectRoot: root, appSupport: root.appendingPathComponent("support"), settings: AlloySettings(),
+        workspace = Workspace(projectRoot: root, appSupport: root.appendingPathComponent("support"), settings: settings,
                               locate: { _ in URL(fileURLWithPath: "/fake/claude") },
                               makeTransport: { _ in bag.make() }, autosaveClock: clock,
                               changes: { _ in source })

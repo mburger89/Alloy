@@ -635,6 +635,7 @@ struct CodePanel: Component {
             view.rebuildIfNeeded(workspace: workspace)
         }
         .onChange(of: codeFocused) { old, new in
+            workspace.codePanelFocused = new
             if old && !new { Task { await workspace.focusLeft(path) } }
         }
     }
