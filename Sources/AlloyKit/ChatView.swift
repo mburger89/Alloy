@@ -34,9 +34,9 @@ struct ChatColumn: Component {
                 .frame(width: Pixels(4))
                 .frame(maxHeight: .infinity)
             VStack(spacing: 0) {
-                TranscriptView(workspace: workspace, session: session, ui: ui)
+                TranscriptView(workspace: workspace, session: session, ui: ui).equatable()
                 Divider()
-                ComposerView(workspace: workspace, session: session, model: ui.composer)
+                ComposerView(workspace: workspace, session: session, model: ui.composer).equatable()
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
@@ -59,6 +59,7 @@ struct TranscriptView: Component {
     let ui: SessionUIStore.Entry
 
     var content: some ElementGroup {
+        let _ = BodyProbe.hit("TranscriptView")
         let blocks = session.transcript.blocks
         let defaults = Self.defaults(blocks)
         let ui = ui

@@ -374,14 +374,13 @@ enum TextDiff {
     }
 
     /// Byte-level common prefix / suffix trim shared by `ops` and `hunks`. Returns the middle slices of
-    /// `old` and `new` plus the count of cut leading bytes and lines, or nil when the fast path does not apply
-    /// (a "\r" anywhere makes line-ending detection depend on the first line, so those texts take the full path).
+    /// `old` and `new` plus the count of cut leading bytes and lines. Always applies: both algorithms split on "\n"
+    /// alone and a cut never falls inside a line terminator. (`hunks` additionally pins the line-ending flag, see there.)
     /// The cuts fall right after a "\n" in the common prefix and common suffix, so both texts stay split on
     /// the same line boundaries; `keepAfter` is how many whole common lines to keep after the changed region.
     private static func trimmed(old: String, new: String, keepBefore: Int, keepAfter: Int)
-        -> (old: String, new: String, bytes: Int, lines: Int, scalars: Int)? {
+        -> (old: String, new: String, bytes: Int, lines: Int, scalars: Int) {
         let a = Array(old.utf8), b = Array(new.utf8)
-        if a.contains(0x0D) || b.contains(0x0D) { return nil }
         var p = 0
         let minLen = min(a.count, b.count)
         while p < minLen, a[p] == b[p] { p += 1 }
@@ -414,7 +413,7 @@ enum TextDiff {
     /// Character-level operations turning `old` into `new`, at scalar offsets in `old`. Trims the common
     /// prefix and suffix (at line boundaries) before diffing; equal to `opsReference`.
     static func ops(old: String, new: String) -> [TextOp] {
-        guard let t = trimmed(old: old, new: new, keepBefore: 0, keepAfter: 0) else { return opsReference(old: old, new: new) }
+        let t = trimmed(old: old, new: new, keepBefore: 0, keepAfter: 0)
         return opsReference(old: t.old, new: t.new).map { TextOp(start: $0.start + t.scalars, deleteCount: $0.deleteCount, insert: $0.insert) }
     }
 
@@ -478,19 +477,76 @@ enum TextDiff {
 
     /// Line hunks (context 3) as stored on records; trims common lines first so huge files stay cheap.
     static func hunks(old: String, new: String, context: Int = 3) -> [PatchHunk] {
-        guard let t = trimmed(old: old, new: new, keepBefore: context + 1, keepAfter: context + 1) else {
-            return hunksReference(old: old, new: new, context: context)
-        }
-        return hunksReference(old: t.old, new: t.new, context: context).map {
+        // `TextLines` strips the "\r" of a CRLF line only when the text's first line break is CRLF. Lines of the two
+        // texts compare after that, so texts that disagree take the full path, and a trimmed slice (whose own first
+        // break can differ from the whole text's) is split with the whole text's flag.
+        let crlf = TextLines.detectsCRLF(Array(old.utf8))
+        guard crlf == TextLines.detectsCRLF(Array(new.utf8)) else { return hunksReference(old: old, new: new, context: context) }
+        if crlf { return crlfHunks(old: old, new: new, context: context) }
+        let t = trimmed(old: old, new: new, keepBefore: context + 1, keepAfter: context + 1)
+        return hunksReference(old: t.old, new: t.new, context: context, crlf: crlf).map {
             var h = $0
             h.oldStart += t.lines; h.newStart += t.lines
             return h
         }
     }
 
+    /// `hunks` for two texts whose first line break is CRLF. `TextLines` drops the "\r" of every terminated line there,
+    /// so "a\r\n" and "a\n" are the same line and the byte trim could stop short of where the reference does (which
+    /// changes where an insertion among equal lines lands). This trims the common lines by those stripped contents,
+    /// keeping `context` lines each side exactly as `hunksReference` does, then diffs the slices with the same flag.
+    private static func crlfHunks(old: String, new: String, context: Int) -> [PatchHunk] {
+        let a = Array(old.utf8), b = Array(new.utf8)
+        // Content range of the line starting at `i` (terminator and a CRLF's "\r" excluded) and where the next starts.
+        func forward(_ x: [UInt8], _ i: Int) -> (end: Int, next: Int) {
+            var j = i
+            while j < x.count, x[j] != 0x0A { j += 1 }
+            if j == x.count { return (j, j) }
+            return (j > i && x[j - 1] == 0x0D ? j - 1 : j, j + 1)
+        }
+        // The line that ends (terminator included) at `e`: its content range and start.
+        func backward(_ x: [UInt8], _ e: Int) -> (start: Int, end: Int) {
+            let terminated = x[e - 1] == 0x0A
+            var end = terminated ? e - 1 : e
+            var start = end
+            while start > 0, x[start - 1] != 0x0A { start -= 1 }
+            if terminated, end > start, x[end - 1] == 0x0D { end -= 1 }
+            return (start, end)
+        }
+        func lineCount(_ x: [UInt8]) -> Int {
+            var n = 0
+            for byte in x where byte == 0x0A { n += 1 }
+            return n + (x.isEmpty || x.last == 0x0A ? 0 : 1)
+        }
+        let na = lineCount(a), nb = lineCount(b)
+        var ia = 0, ib = 0, p = 0
+        while p < na, p < nb {
+            let x = forward(a, ia), y = forward(b, ib)
+            guard a[ia..<x.end].elementsEqual(b[ib..<y.end]) else { break }
+            ia = x.next; ib = y.next; p += 1
+        }
+        var ea = a.count, eb = b.count, s = 0
+        while s < na - p, s < nb - p {
+            let x = backward(a, ea), y = backward(b, eb)
+            guard a[x.start..<x.end].elementsEqual(b[y.start..<y.end]) else { break }
+            ea = x.start; eb = y.start; s += 1
+        }
+        let lo = max(0, p - context), hi = max(0, s - context)
+        var fa = 0, fb = 0
+        for _ in 0..<lo { fa = forward(a, fa).next; fb = forward(b, fb).next }
+        var ta = a.count, tb = b.count
+        for _ in 0..<hi { ta = backward(a, ta).start; tb = backward(b, tb).start }
+        let oldSlice = String(decoding: a[fa..<max(fa, ta)], as: UTF8.self), newSlice = String(decoding: b[fb..<max(fb, tb)], as: UTF8.self)
+        return hunksReference(old: oldSlice, new: newSlice, context: context, crlf: true).map {
+            var h = $0
+            h.oldStart += lo; h.newStart += lo
+            return h
+        }
+    }
+
     /// The untrimmed algorithm behind `hunks` (it only trims whole common lines), for equivalence tests.
-    static func hunksReference(old: String, new: String, context: Int = 3) -> [PatchHunk] {
-        let a = TextLines(old).lines, b = TextLines(new).lines
+    static func hunksReference(old: String, new: String, context: Int = 3, crlf: Bool? = nil) -> [PatchHunk] {
+        let a = TextLines(old, crlf: crlf).lines, b = TextLines(new, crlf: crlf).lines
         var p = 0
         while p < a.count, p < b.count, same(a[p], b[p]) { p += 1 }
         var s = 0

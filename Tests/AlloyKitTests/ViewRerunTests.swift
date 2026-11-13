@@ -57,6 +57,71 @@ import Testing
         }
     }
 
+    /// Two sessions, "A" selected; returns the window settled after one idle round.
+    private func chatRig() async throws -> (rig: Rig, a: Session, b: Session, window: TestWindow) {
+        let rig = Rig()
+        let a = await rig.workspace.newSession(name: "A")
+        let b = await rig.workspace.newSession(name: "B")
+        rig.workspace.selectedSessionID = a.id
+        let window = try alloyWindow(rig.workspace)
+        try window.click(window.element(identifier: "composer"))
+        for _ in 0..<10 { window.tick(); await Task.yield() }
+        return (rig, a, b, window)
+    }
+
+    @Test func typingInComposerLeavesTranscriptAndRowsAlone() async throws {
+        let (rig, a, _, window) = try await chatRig()
+        _ = rig
+        var reruns: [String: Int] = [:]
+        let names = ["TranscriptView", "SessionRow", "ComposerView", "ChatColumn", "SessionRow#A", "SessionRow#B"]
+        for _ in 0..<20 {
+            probed(names, &reruns) { window.typeText("a"); window.tick() }
+            await Task.yield()
+        }
+        #expect(a.transcript.blocks.isEmpty)
+        print("RERUNS typing \(reruns)")
+        #expect(reruns["TranscriptView"] == 0, "TranscriptView \(reruns["TranscriptView"]!)")
+        #expect(reruns["SessionRow"] == 0, "SessionRow \(reruns["SessionRow"]!)")
+    }
+
+    @Test func streamingLeavesOtherRowsAndComposerAlone() async throws {
+        let (rig, a, b, window) = try await chatRig()
+        var reruns: [String: Int] = [:]
+        let names = ["TranscriptView", "SessionRow#A", "SessionRow#B", "ComposerView"]
+        // Each chunk is a fresh assistant message, so the transcript grows per chunk.
+        for i in 0..<10 {
+            await rig.transports[0].emit(.assistantBlock(messageID: "m\(i)", block: .text("chunk \(i)")))
+            try await waitUntil { a.transcript.blocks.count == i + 1 }
+            probed(names, &reruns) { window.tick() }
+            await Task.yield()
+        }
+        print("RERUNS streaming \(reruns)")
+        #expect(b.transcript.blocks.isEmpty)
+        #expect(reruns["SessionRow#B"] == 0, "row B \(reruns["SessionRow#B"]!)")
+        #expect(reruns["ComposerView"]! <= 2, "ComposerView \(reruns["ComposerView"]!)")
+        // The transcript and row A show the new data: they do re-run.
+        #expect(reruns["TranscriptView"]! >= 10)
+        _ = try window.element(label: "chunk 9")
+    }
+
+    @Test func rowAndTranscriptStillFollowTheirOwnData() async throws {
+        let (rig, a, _, window) = try await chatRig()
+        func text(_ id: String) -> String? { (try? window.element(identifier: id)).flatMap { $0.value ?? $0.label } }
+        func shown(_ label: String) -> Bool { (try? window.element(label: label)) != nil }
+        await rig.transports[0].emit(.assistantBlock(messageID: "m1", block: .text("first")))
+        try await window.runUntil { shown("first") }
+        rig.workspace.rename(a.id, to: "Renamed")
+        try await window.runUntil { text("session-name-\(a.id.uuidString)") == "Renamed" }
+        await rig.transports[0].emit(.assistantBlock(messageID: "m2", block: .text("second")))
+        try await window.runUntil { shown("second") }
+        try await window.runUntil { shown("Working") }
+        #expect(a.status == .working)
+        // A queued message shows in the composer toolbar, which is equatable and reads the queue in a child.
+        await rig.workspace.send(OutgoingMessage(text: "later", images: [], priority: .later), to: a.id)
+        try await window.runUntil { text("queued-count") != nil || shown("1 queued") }
+        #expect(shown("1 queued"))
+    }
+
     @Test func settingsButtonFollowsStateClosedElsewhere() async throws {
         let rig = Rig()
         let window = try alloyWindow(rig.workspace)
@@ -80,4 +145,13 @@ private func probed(_ names: [String], _ reruns: inout [String: Int], _ body: ()
     let before = names.map(BodyProbe.count)
     body()
     for (i, n) in names.enumerated() { reruns[n, default: 0] += BodyProbe.count(n) - before[i] }
+}
+
+@MainActor
+private func waitUntil(_ condition: @MainActor () -> Bool) async throws {
+    for _ in 0..<20_000 {
+        if condition() { return }
+        await Task.yield()
+    }
+    Issue.record("condition never held")
 }

@@ -26,10 +26,19 @@ public struct TextLines: Sendable, Equatable, Codable {
     public var lineEnding: String
     public var hasTrailingNewline: Bool
 
-    public init(_ text: String) {
+    public init(_ text: String) { self.init(text, crlf: nil) }
+
+    /// The CRLF flag `init(_:)` would pick for `text`: whether its first line break is "\r\n".
+    static func detectsCRLF(_ bytes: [UInt8]) -> Bool {
+        guard let firstLF = bytes.firstIndex(of: 0x0A) else { return false }
+        return firstLF > 0 && bytes[firstLF - 1] == 0x0D
+    }
+
+    /// `crlf` overrides the detected line ending, so a slice cut from the middle of a text splits into the same lines
+    /// as the whole text did (its own first line break may differ from the whole text's).
+    init(_ text: String, crlf forced: Bool?) {
         let bytes = Array(text.utf8)
-        let firstLF = bytes.firstIndex(of: 0x0A)
-        let crlf = firstLF.map { $0 > 0 && bytes[$0 - 1] == 0x0D } ?? false
+        let crlf = forced ?? Self.detectsCRLF(bytes)
         lineEnding = crlf ? "\r\n" : "\n"
         hasTrailingNewline = bytes.last == 0x0A
         guard !bytes.isEmpty else { lines = []; return }

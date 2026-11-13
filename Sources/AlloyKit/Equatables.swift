@@ -47,3 +47,29 @@ extension FilePanelHeader: Equatable {
         a.workspace === b.workspace && a.path == b.path && a.document === b.document && a.view === b.view
     }
 }
+
+// Chat children. Each body reads the session (transcript, status, queue, ...) or the composer model through
+// observation, so identity of those reference inputs is enough: a change to anything they read re-runs them. The
+// session row also takes the workspace's coordination warnings by value, so they are compared.
+
+extension TranscriptView: Equatable {
+    nonisolated static func == (a: Self, b: Self) -> Bool {
+        a.workspace === b.workspace && a.session === b.session && a.ui === b.ui
+    }
+}
+
+extension ComposerView: Equatable {
+    nonisolated static func == (a: Self, b: Self) -> Bool {
+        a.workspace === b.workspace && a.session === b.session && a.model === b.model
+    }
+}
+
+extension SessionRow: Equatable {
+    nonisolated static func == (a: Self, b: Self) -> Bool {
+        a.workspace === b.workspace && a.session === b.session && a.warnings == b.warnings
+    }
+}
+
+extension QueuedCount: Equatable {
+    nonisolated static func == (a: Self, b: Self) -> Bool { a.session === b.session }
+}

@@ -45,7 +45,7 @@ First real `--trace time` recordings of `typingLatency` and `memory` (harness 0e
 - The open file is no longer held twice: the read goes straight into one array, and the windowed highlighter reads
   the buffer's rope snapshot and keeps only its window's bytes (about 4.3 MiB less for a 2.2 MB file).
 - Recording an edit trims the common prefix and suffix before diffing, and fragment visibility is cached:
-  "EditHistory apply" (500 edits) 1,347 ms to 532 ms. Texts containing "\r" still take the untrimmed path.
+  "EditHistory apply" (500 edits) 1,347 ms to 532 ms.
 - MetalUI follow-ups are gap G33: (b) per-frame map capacity, (d) Rope.lineStart and per-row styling caches,
   (e) rope chunk overhead; (a) automatic retention and (c) interned element IDs await a design.
 - G33 (b) and (d) merged in MetalUI 07173201. Re-profiled the same test: the code view's prepaint fell from 561 to
@@ -54,6 +54,12 @@ First real `--trace time` recordings of `typingLatency` and `memory` (harness 0e
   traces vary several-fold for individual layout functions, so compare frame totals across repeated runs.
 - G33 (e) merged in MetalUI e6875f34: rope chunks now fit the 512-byte malloc class (they rounded up to 640 bytes).
   `memory` with the 2.2 MB file open fell from 54.7 to 54.3 MiB in two runs; `memoryIdle` is unchanged (44.4-44.5 MiB).
+- Chat views are retained too: TranscriptView, ComposerView and SessionRow are `.equatable()`, and the composer's
+  "N queued" label is its own child (reading the queue reads the transcript). Typing 20 keys into the composer re-ran
+  the transcript 20 times, now 0; 10 streamed messages re-ran another session's row 10 times and the composer 11,
+  now 0 and 1.
+- CRLF and mixed line-ending texts now take the prefix/suffix trim when recording edits ("FileLedger full-text CRLF"
+  257 ms to 141 ms p50). Two texts whose first line break differs (one CRLF, one LF) still take the full path.
 
 ## memory (large file open) - run 2026-11-11-163850 (resolved)
 

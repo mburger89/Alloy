@@ -21,6 +21,21 @@ private enum ComposerDrop: Transferable {
     }
 }
 
+/// "N queued" beside the toolbar. Reading the queue means reading the transcript, which changes with every streamed
+/// chunk; this child holds that read so the composer body (and its text field) is not evaluated per chunk.
+struct QueuedCount: Component {
+    let session: Session
+
+    var content: some ElementGroup {
+        let _ = BodyProbe.hit("QueuedCount")
+        let count = session.queued.count
+        if count > 0 {
+            Text("\(count) queued").foregroundColor(.mutedInk)
+                .accessibilityIdentifier("queued-count")
+        }
+    }
+}
+
 /// The toolbar (mode, model, Stop, queued count) above the message field and Send button. Return sends (steering a
 /// running turn), ⌥Return queues, ⇧Return adds a line, ⌘Return sends, ⇧Tab cycles the mode, Esc interrupts.
 struct ComposerView: Component {
@@ -33,6 +48,7 @@ struct ComposerView: Component {
     @FocusState var fieldFocused: Bool
 
     var content: some ElementGroup {
+        let _ = BodyProbe.hit("ComposerView")
         let workspace = workspace, sessionID = session.id, model = model, session = session
         let working = session.status == .working || session.status == .awaitingPermission
         let mode = Binding<PermissionMode>(get: { model.mode }, set: { model.setMode($0) })
@@ -63,10 +79,7 @@ struct ComposerView: Component {
                     Button("Stop") { Task { await workspace.interrupt(sessionID) } }
                         .accessibilityIdentifier("stop")
                 }
-                if !session.queued.isEmpty {
-                    Text("\(session.queued.count) queued").foregroundColor(.mutedInk)
-                        .accessibilityIdentifier("queued-count")
-                }
+                QueuedCount(session: session).equatable()
             }
             if !model.attachments.isEmpty || model.pending > 0 {
                 HStack(spacing: Pixels(8)) {

@@ -31,7 +31,7 @@ struct SidebarView: Component {
             ScrollView {
                 List(workspace.sessions, selection: selection, rowHeight: Pixels(62)) { session in
                     // The List's tint is the selection fill; controls inside the row (the rename field) keep the accent.
-                    Column { SessionRow(workspace: workspace, session: session, warnings: warnings) }.tint(Color(ColorToken.accent))
+                    Column { SessionRow(workspace: workspace, session: session, warnings: warnings).equatable() }.tint(Color(ColorToken.accent))
                 }
                 .tint(.sessionSelection)   // MetalUI fills the selected row in the tint, else the accent
             }
@@ -103,6 +103,7 @@ struct SessionRow: Component {
     @FocusState var renameFocused: Bool
 
     var content: some ElementGroup {
+        let _ = BodyProbe.hit("SessionRow", tag: session.name)
         let id = session.id
         HStack(spacing: Pixels(8)) {
             Circle().fill(Color.sessionColor(session.colorIndex)).frame(width: Pixels(10), height: Pixels(10))

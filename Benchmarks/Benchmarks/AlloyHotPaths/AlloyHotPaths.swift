@@ -198,6 +198,23 @@ let benchmarks: @Sendable () -> Void = {
         benchmark.stopMeasurement()
     }
 
+    // `record` diffs the whole file against its visible text on every full-text change; CRLF files used to skip the
+    // common prefix/suffix trim. 120 single-line edits of a CRLF copy of the medium file.
+    Benchmark("FileLedger full-text CRLF", configuration: configuration(maxIterations: 5)) { benchmark in
+        let crlf = medium.replacingOccurrences(of: "\r\n", with: "\n").replacingOccurrences(of: "\n", with: "\r\n")
+        var lines = crlf.components(separatedBy: "\r\n")
+        var ledger = FileLedger(path: "medium.rs", baseline: crlf)
+        let session = UUID()
+        benchmark.startMeasurement()
+        for i in 0..<120 {
+            lines[(i * 37) % lines.count] = "let edited\(i) = \(i);"
+            _ = ledger.applyFullText(author: .session(session), newText: lines.joined(separator: "\r\n"), toolUseID: nil,
+                                     date: Date(timeIntervalSince1970: Double(i)))
+        }
+        benchmark.stopMeasurement()
+        blackHole(ledger)
+    }
+
     Benchmark("OverlapIndex query", configuration: configuration(maxIterations: 15)) { benchmark in
         let rig = await OverlapRig()
         benchmark.startMeasurement()
