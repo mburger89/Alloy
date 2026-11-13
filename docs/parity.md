@@ -30,6 +30,13 @@ measures 36.7-38.4 ms, matching the old path. Memory with `large.rs` open 54.2-5
 No Rust language server is installed on the benchmark Mac, so these numbers cover the LSP code's own cost (none
 measurable), not a running server's.
 
+MetalUI #279 (one frame per keystroke, est>screen fix), GUI benchmark 2026-11-13, alternated builds on MetalUI
+a6106901 (before) and f00534fd (after): typing latency 14.7-16.2 ms (p95 23.4-23.8) before and 15.9-16.3 ms (p95
+23.3-23.5) after, unchanged at the harness's resolution; memory 53.3-54.5 / idle 44.6-45.3 MiB on both. The
+`METALUI_LATENCY_TRACE` record shows the saving: 200 typed characters drew about 407 frames before and 207 after (2.0 to
+1.0 frames per keystroke), and est>screen fell from p50 15.6 / p95 32.4 ms (170 frames over 20 ms) to p50 6.4-8.5 / p95
+13.6-15.6 ms (none over 20 ms). Half the GPU and CPU frame work per key, at the same perceived latency.
+
 ## Profiles - 2026-11-12 (not a parity run; traced timings include profiler overhead)
 
 First real `--trace time` recordings of `typingLatency` and `memory` (harness 0e15b2b, Xcode 27.2 xctrace).

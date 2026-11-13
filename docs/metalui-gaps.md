@@ -199,8 +199,10 @@ plus gutter markers on real rows; a modifier-click hook with the offset. Phase 1
 ## G37: app-menu Settings slot (adopted)
 - Status: adopted (MetalUI 09d57f8e). Alloy fills `CommandGroup(replacing: .appSettings)` with "Settings…" (⌘,), which MetalUI places in its own group after About.
 
-## G39: a double-tap gesture on a List row's child blocks the row's single-click selection (forwarded)
+## G39: a double-tap gesture on a List row's child blocks the row's single-click selection (adopted)
 A row child with `.onTapGesture(count: 2)` (the session name, for rename) keeps the List row from selecting on a single
 click, even after the double-click interval passes; SwiftUI selects the row. MetalUI: row click at `List.swift` ~1127,
 tap arbitration in `Gesture.swift` ~1091 and ~1858-1890. Alloy stopgap: an explicit `.onTapGesture` after the double tap
 in `SidebarView.swift` sets the selection (test `singleClickOnTheNameSelectsTheSession`).
+- Status: adopted (MetalUI f00534fd, #281): a click on a count-2 row child selects the row on mouse-up and the double
+  tap fires once. The Alloy stopgap is removed; the test still pins the behaviour.

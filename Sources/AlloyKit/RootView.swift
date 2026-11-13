@@ -76,6 +76,16 @@ struct AlloyScreen: Component {
             .splitViewAutosaveName("alloy-main")
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             GlobalKeys(workspace: workspace, quickOpen: quickOpen)
+            // Esc closes Settings wherever the focus is (a click on a session row focuses the list), after the focused
+            // view declined the key.
+            if showSettings {
+                Button("Close Settings") { settingsShown.wrappedValue = false }
+                    .keyboardShortcut(.cancelAction)
+                    .frame(width: Pixels(0), height: Pixels(0))
+                    .opacity(0)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+            }
         }
     }
 }

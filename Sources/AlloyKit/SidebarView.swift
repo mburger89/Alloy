@@ -117,8 +117,6 @@ struct SessionRow: Component {
                 } else {
                     Text(session.name).font(size: 13)
                         .onTapGesture(count: 2) { draft = session.name; renaming = true }
-                        // The count-2 tap holds the row's own click back, so a single click on the name selects here.
-                        .onTapGesture { workspace.selectedSessionID = id }
                         .accessibilityIdentifier("session-name-\(id.uuidString)")
                 }
                 HStack(spacing: Pixels(6)) {
