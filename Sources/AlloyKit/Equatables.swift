@@ -11,9 +11,7 @@ extension AlloyScreen: Equatable {
 }
 
 extension SidebarView: Equatable {
-    nonisolated static func == (a: Self, b: Self) -> Bool {
-        MainActor.assumeIsolated { a.workspace === b.workspace && a.showSettings == b.showSettings }
-    }
+    nonisolated static func == (a: Self, b: Self) -> Bool { a.workspace === b.workspace }
 }
 
 extension ChatView: Equatable {
@@ -40,6 +38,18 @@ extension ChatColumn: Equatable {
 
 extension FileTabStrip: Equatable {
     nonisolated static func == (a: Self, b: Self) -> Bool { a.workspace === b.workspace }
+}
+
+extension DiagnosticCountsBadge: Equatable {
+    nonisolated static func == (a: Self, b: Self) -> Bool { a.workspace === b.workspace && a.path == b.path }
+}
+
+extension ServerStatusLabel: Equatable {
+    nonisolated static func == (a: Self, b: Self) -> Bool { a.workspace === b.workspace && a.path == b.path }
+}
+
+extension DefinitionMessage: Equatable {
+    nonisolated static func == (a: Self, b: Self) -> Bool { a.view === b.view }
 }
 
 extension FilePanelHeader: Equatable {

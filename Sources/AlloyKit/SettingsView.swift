@@ -1,4 +1,5 @@
 import AlloyCore
+import AlloyLSP
 import Foundation
 import MetalUI
 
@@ -68,6 +69,10 @@ struct SettingsView: Component {
                 Text("Running sessions pick up a change when they are next idle.").font(size: 11).foregroundColor(.mutedInk)
                 Button("Back to defaults") { resetKnowledge() }.accessibilityIdentifier("settings-reset")
             }
+            if let coordinator = workspace.languageServices as? LSPCoordinator {
+                Divider()
+                LanguageServersSection(workspace: workspace, builtIn: coordinator.builtIn, locator: coordinator.locator)
+            }
             if saved {
                 Text("Saved").font(size: 12).foregroundColor(.mutedInk).accessibilityIdentifier("settings-saved")
             }
@@ -133,6 +138,75 @@ struct SettingsView: Component {
         do { try workspace.updateSettings(s); saved = true; failure = nil } catch {
             saved = false
             failure = "Could not save: \(error.localizedDescription)"
+        }
+    }
+}
+
+/// The language servers part of Settings: one row per known server (name, extensions, whether its command is found on
+/// this Mac) with an on/off toggle that saves at once. Lookups run off the main actor and start afresh each time
+/// Settings opens, so a server installed meanwhile shows up.
+struct LanguageServersSection: Component {
+    let workspace: Workspace
+    let builtIn: [ServerConfig]
+    let locator: ServerLocator
+    /// Server id -> found; absent until looked up.
+    @State var found: [String: Bool] = [:]
+    @State var looked = false
+    @State var failure: String?
+
+    var content: some ElementGroup {
+        let workspace = workspace
+        let servers = ServerRegistry(builtIn: builtIn, overrides: workspace.settings.languageServers).all
+        VStack(alignment: .leading, spacing: Pixels(8)) {
+            Text("Language servers").font(size: 12).foregroundColor(.mutedInk)
+            ForEach(servers, id: \.id) { server in
+                HStack(spacing: Pixels(8)) {
+                    Toggle(isOn: enabled(server.id, default: server.enabled)) { Text(verbatim: server.name).font(size: 13) }
+                        .accessibilityIdentifier("settings-lsp-\(server.id)")
+                    Text(verbatim: Self.extensions(server)).font(size: 11).foregroundColor(.mutedInk)
+                    Spacer()
+                    Text(verbatim: found[server.id].map { $0 ? "Found" : "Not found" } ?? "\u{2026}").font(size: 11)
+                        .foregroundColor(found[server.id] == false ? .warningInk : .mutedInk)
+                        .accessibilityIdentifier("settings-lsp-status-\(server.id)")
+                }
+            }
+            Text("Alloy never installs or downloads a server; it runs the ones you have.").font(size: 11).foregroundColor(.mutedInk)
+            if let failure {
+                Text(verbatim: failure).font(size: 11).foregroundColor(.errorInk).accessibilityIdentifier("settings-lsp-error")
+            }
+        }
+        .onAppear { lookUp(servers) }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("settings-lsp-section")
+    }
+
+    static func extensions(_ server: ServerConfig) -> String {
+        (server.extensions.map { ".\($0)" } + server.fileNames).joined(separator: " ")
+    }
+
+    private func enabled(_ id: String, default value: Bool) -> Binding<Bool> {
+        let workspace = workspace
+        return Binding(get: { workspace.settings.languageServers[id]?.enabled ?? value },
+                       set: { on in
+                           var s = workspace.settings
+                           var o = s.languageServers[id] ?? ServerConfigOverride()
+                           o.enabled = on
+                           s.languageServers[id] = o
+                           do { try workspace.updateSettings(s); failure = nil } catch { failure = "Could not save: \(error.localizedDescription)" }
+                       })
+    }
+
+    private func lookUp(_ servers: [ServerConfig]) {
+        guard !looked else { return }
+        looked = true
+        let locator = locator
+        let commands = servers.map { ($0.id, $0.command) }
+        Task {
+            let result: [String: Bool] = await Task.detached {
+                locator.invalidate()
+                return Dictionary(uniqueKeysWithValues: commands.map { ($0.0, locator.resolve($0.1) != nil) })
+            }.value
+            found = result
         }
     }
 }

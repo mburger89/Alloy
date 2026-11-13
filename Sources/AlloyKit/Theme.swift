@@ -123,6 +123,16 @@ struct FindMatchFill: ThemeColorKey {
 struct CurrentFindMatchFill: ThemeColorKey {
     static let defaultValue = Color(light: Color(hex: 0xFFDD9E), dark: Color(hex: 0x4D3E12))
 }
+/// Diagnostic marks in the code view: the gutter bar, a tint over the range (at `diagnosticTintAlpha`) and the message row.
+struct DiagnosticErrorKey: ThemeColorKey {
+    static let defaultValue = ErrorInk.defaultValue
+}
+struct DiagnosticWarningKey: ThemeColorKey {
+    static let defaultValue = WarningInk.defaultValue
+}
+struct DiagnosticInfoKey: ThemeColorKey {
+    static let defaultValue = LinkInk.defaultValue
+}
 
 /// Session hues. Dark values from the mockup; light variants darkened to at least 3:1 on the light sidebar fill.
 struct SessionColor1: ThemeColorKey {
@@ -156,6 +166,8 @@ struct SessionColor12: ThemeColorKey { static let defaultValue = SessionColor4.d
 
 /// Opacity of the background that marks the text one author wrote on a line more than one author wrote on.
 let authorRunAlpha = 0.28
+/// Opacity of the diagnostic colour as a tint over the text and message rows of a problem.
+let diagnosticTintAlpha = 0.22
 
 extension Color {
     static let thinkingTint = Color(ThinkingTint.self)
@@ -203,6 +215,9 @@ extension Color {
     static let codeSelectionFill = Color(CodeSelectionFill.self)
     static let findMatchFill = Color(FindMatchFill.self)
     static let currentFindMatchFill = Color(CurrentFindMatchFill.self)
+    static let diagnosticError = Color(DiagnosticErrorKey.self)
+    static let diagnosticWarning = Color(DiagnosticWarningKey.self)
+    static let diagnosticInfo = Color(DiagnosticInfoKey.self)
 
     /// One of twelve session hues (`SessionColor1…12`); `index` is taken mod 12 (negative indices wrap too). Keys 9-12
     /// repeat 1-4 until a theme sets them.

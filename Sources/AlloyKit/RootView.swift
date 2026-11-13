@@ -50,9 +50,15 @@ struct AlloyScreen: Component {
         let _ = BodyProbe.hit("AlloyScreen")
         let workspace = workspace, quickOpen = quickOpen
         let settingsShown = settingsBinding
+        // The app menu's "Settings…" (⌘,) opens the view the sidebar's gear used to: detect `claude` on first open, and
+        // leave an open Settings open.
+        let _: Void = workspace.openSettings = {
+            if !settingsShown.wrappedValue { Task { await workspace.detectClaude() } }
+            settingsShown.wrappedValue = true
+        }
         ZStack {
             HSplitView {
-                SidebarView(workspace: workspace, showSettings: settingsShown).equatable()
+                SidebarView(workspace: workspace).equatable()
                     .frame(minWidth: Pixels(200), idealWidth: Pixels(250), maxWidth: Pixels(380))
                 VStack(spacing: 0) {
                     if let themes { ThemeBar(themes: themes) }

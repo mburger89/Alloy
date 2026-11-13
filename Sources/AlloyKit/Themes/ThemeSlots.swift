@@ -79,6 +79,9 @@ public enum ThemeSlots {
         key("codeSelectionFill", CodeSelectionFill.self, "Selection fill in code views."),
         key("findMatchFill", FindMatchFill.self, "Highlight of find matches in code views."),
         key("currentFindMatchFill", CurrentFindMatchFill.self, "Highlight of the current find match."),
+        key("diagnosticError", DiagnosticErrorKey.self, "Errors from language servers: gutter bar, text tint and message row."),
+        key("diagnosticWarning", DiagnosticWarningKey.self, "Warnings from language servers: gutter bar, text tint and message row."),
+        key("diagnosticInfo", DiagnosticInfoKey.self, "Information from language servers: gutter bar and text tint."),
     ]
 
     private static let syntax: [ThemeSlot] = [

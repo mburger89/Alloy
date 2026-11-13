@@ -200,6 +200,9 @@ Every slot name a theme file can set, with its purpose. MetalUI tokens come firs
 | `codeSelectionFill` | Selection fill in code views. |
 | `findMatchFill` | Highlight of find matches in code views. |
 | `currentFindMatchFill` | Highlight of the current find match. |
+| `diagnosticError` | Errors from language servers: gutter bar, text tint and message row. |
+| `diagnosticWarning` | Warnings from language servers: gutter bar, text tint and message row. |
+| `diagnosticInfo` | Information from language servers: gutter bar and text tint. |
 | `syntax.keyword` | Keywords. |
 | `syntax.string` | String literals. |
 | `syntax.comment` | Comments. |

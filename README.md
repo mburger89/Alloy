@@ -84,10 +84,66 @@ Coordination between sessions
   dismissed unless it escalates.
 - Settings: "Ask before sessions use Alloy's tools" covers all seven Alloy tools.
 
+## Language servers
+
+Alloy can talk to the language servers you already have installed. Phase 1 gives you:
+
+- Diagnostics: error and warning counts in the file header, and F8 / Shift-F8 to jump to the next / previous problem.
+- Go to definition: F12 on the symbol at the caret. A target in another file opens it; a target outside the project
+  (a dependency, the standard library) shows its location in the header.
+- Semantic colouring for files that have no tree-sitter grammar.
+- The server's name and state in the file header: "rust-analyzer starting…", "rust-analyzer", "rust-analyzer not
+  installed" or "rust-analyzer failed".
+
+Hover, completion, squiggles under problems and cmd-click are planned for phase 2.
+
+How a server is found: when you open a file, Alloy picks the enabled server for its extension (or file name) and looks
+for the server's command in the PATH of your login shell, so the tools in `~/.cargo/bin`, Homebrew and similar
+directories are found even though Alloy starts from the Dock. `sourcekit-lsp` also falls back to
+`xcrun --find sourcekit-lsp`. Nothing starts until you open a file a server handles. Files over 1 MiB are never sent
+to a server. A server that crashes is restarted at most three times in five minutes, then shown as failed.
+
+Built in: rust-analyzer, sourcekit-lsp, typescript-language-server, pyright, gopls, clangd, lua-language-server, zls,
+ruby-lsp, elixir-ls, bash-language-server, yaml-language-server, the VS Code JSON, CSS and HTML servers, marksman,
+taplo, kotlin-language-server, jdtls, ocamllsp, haskell-language-server, dart, terraform-ls and nil. Settings has a
+"Language servers" section: one row per server with its extensions, whether its command was found, and an on/off
+switch.
+
+Configure servers under `languageServers` in `~/Library/Application Support/Alloy/settings.json`, keyed by server id.
+Every field is optional; a set field replaces the built-in value.
+
+```json
+{
+  "languageServers": {
+    "rust-analyzer": { "command": "/opt/homebrew/bin/rust-analyzer" },
+    "gopls": { "enabled": false },
+    "my-lang": {
+      "name": "My Lang",
+      "command": "my-lang-server",
+      "arguments": ["--stdio"],
+      "extensions": ["ml2", "mli2"],
+      "languageID": "mylang",
+      "languageIDs": { "mli2": "mylang-interface" }
+    }
+  }
+}
+```
+
+An id that is not built in adds a server; it needs a `command` and `extensions` (or `fileNames`). Other keys:
+`name`, `fileNames`, `initializationOptions`. A change made in Settings applies to open files at once; edits to settings.json are read at launch.
+An entry that is malformed (wrong types, or a new id without `command` and `extensions`/`fileNames`) is ignored, and the rest of the file still applies.
+
+Privacy: Alloy never installs, downloads or updates a server and makes no network requests for this. The servers are
+your own binaries, run as your user with the project folder as the working directory; what they do (a server may
+fetch packages itself) is up to them. What a server receives: the absolute path of every file you open and the text of
+those files, kept current as you edit, with a notice when you save or close one; the project folder's path and name, and
+Alloy's process id (in the LSP `initialize` request); the caret position when you ask for a definition; and the
+`initializationOptions` you configured for it. Nothing else is sent.
+
 ## Themes
 
 Alloy ships six built-in themes: Dracula (the default), Alloy Dark, Alloy Light, Solarized Dark, Solarized Light and
-One Dark. Pick one in Settings (the gear in the sidebar): "One theme" uses a single theme always, "Match system"
+One Dark. Pick one in Settings (Alloy ▸ Settings…, or ⌘,): "One theme" uses a single theme always, "Match system"
 uses a light and a dark theme that follow the system appearance. A pick repaints at once and never touches your
 sessions.
 

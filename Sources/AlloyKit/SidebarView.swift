@@ -5,7 +5,6 @@ import MetalUI
 /// Sessions list, New session button, changed files and any workspace errors.
 struct SidebarView: Component {
     let workspace: Workspace
-    @Binding var showSettings: Bool
 
     var content: some ElementGroup {
         let _ = BodyProbe.hit("SidebarView")
@@ -37,7 +36,6 @@ struct SidebarView: Component {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             KnowledgeStats(workspace: workspace)
-            SettingsButton(workspace: workspace, showSettings: $showSettings)
             Divider()
             ChangedFilesSection(workspace: workspace, warnings: warnings)
             if !workspace.errors.isEmpty {

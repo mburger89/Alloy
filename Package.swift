@@ -36,6 +36,19 @@ let package = Package(
     targets: [
         // UI-free logic: wire protocol, sessions, edit ledger.
         .target(name: "AlloyCore", dependencies: [.product(name: "MetalUICodeBuffer", package: "MetalUI")]),
+        // Language Server Protocol client: framing, JSON-RPC, sessions. UI-free.
+        .target(
+            name: "AlloyLSP",
+            dependencies: [
+                "AlloyCore",
+                "AlloyHighlight",
+                .product(name: "MetalUICodeBuffer", package: "MetalUI"),
+            ]
+        ),
+        // Test-only scriptable language server. Not a product: the test targets depend on it, so SwiftPM always builds it.
+        .executableTarget(name: "AlloyFakeLSP", dependencies: ["AlloyCore", "AlloyLSP"]),
+        // Shared helpers of the tests that run the fake server (its path, polling, launch and result collectors).
+        .target(name: "AlloyLSPTestSupport", dependencies: ["AlloyLSP"]),
         // Test doubles shared by the test targets.
         .target(name: "AlloyTestSupport", dependencies: ["AlloyCore"]),
         // Tree-sitter highlighting for CodeView and chat code fences.
@@ -66,6 +79,7 @@ let package = Package(
             dependencies: [
                 "AlloyCore",
                 "AlloyHighlight",
+                "AlloyLSP",
                 .product(name: "MetalUI", package: "MetalUI"),
                 .product(name: "MetalUIMarkdown", package: "MetalUI"),
             ]
@@ -83,6 +97,11 @@ let package = Package(
             resources: [.copy("Fixtures")]
         ),
         .testTarget(
+            name: "AlloyLSPTests",
+            dependencies: ["AlloyLSP", "AlloyCore", "AlloyLSPTestSupport", "AlloyFakeLSP",
+                           .product(name: "MetalUICodeBuffer", package: "MetalUI")]
+        ),
+        .testTarget(
             name: "AlloyHighlightTests",
             dependencies: [
                 "AlloyHighlight",
@@ -94,7 +113,10 @@ let package = Package(
             name: "AlloyKitTests",
             dependencies: [
                 "AlloyKit",
+                "AlloyLSP",
                 "AlloyTestSupport",
+                "AlloyLSPTestSupport",
+                "AlloyFakeLSP",
                 .product(name: "MetalUI", package: "MetalUI"),
                 .product(name: "MetalUITesting", package: "MetalUI"),
                 .product(name: "MetalUITestingSnapshot", package: "MetalUI"),

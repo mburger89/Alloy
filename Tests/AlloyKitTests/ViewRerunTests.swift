@@ -127,7 +127,7 @@ import Testing
         let window = try alloyWindow(rig.workspace)
         func shown() -> Bool { (try? window.element(identifier: "settings-view")) != nil }
         for round in 0..<2 {
-            try window.click(window.element(identifier: "settings"))
+            try window.openSettingsFromMenu()
             try await window.runUntil { shown() }
             // Closed from SettingsView, not from the sidebar that owns the button.
             try window.click(window.element(identifier: "settings-close"))

@@ -9,7 +9,7 @@ import Testing
 @MainActor
 @Suite struct SettingsViewTests {
     private func open(_ window: TestWindow) async throws {
-        try window.click(window.element(identifier: "settings"))
+        try window.openSettingsFromMenu()
         try await window.runUntil { (try? window.element(identifier: "settings-view")) != nil }
     }
 
@@ -17,7 +17,7 @@ import Testing
         try await window.runUntil { (try? window.element(identifier: id)) == nil }
     }
 
-    @Test func gearOpensSettingsViewAndEscCloses() async throws {
+    @Test func menuItemOpensSettingsViewAndEscCloses() async throws {
         let rig = Rig()
         let window = try alloyWindow(rig.workspace)
         #expect((try? window.element(identifier: "settings-view")) == nil)
@@ -32,6 +32,45 @@ import Testing
         try await open(window)
         try window.click(window.element(identifier: "settings-close"))
         try await gone(window, "settings-view")
+    }
+
+    @Test func appMenuHasSettingsWithCommandComma() throws {
+        let rig = Rig()
+        let window = try alloyWindow(rig.workspace)
+        let appMenu = try #require(window.testApp.menuBar.first)
+        let titles = appMenu.items.map(\.title)
+        let about = try #require(titles.firstIndex { $0.hasPrefix("About") })
+        let settings = try #require(titles.firstIndex(of: "Settings…"))
+        #expect(settings > about)
+        let item = try #require(window.testApp.menuBar.flatMap(\.items).first { $0.title == "Settings…" })
+        #expect(item.shortcut?.key == ",")
+        #expect(item.shortcut?.modifiers == [.command])
+        #expect(item.isEnabled)
+    }
+
+    @Test func settingsMenuItemIsDisabledWithoutAProject() throws {
+        let model = LauncherModel()
+        let window = try TestWindow(size: Size(width: Pixels(900), height: Pixels(600))) { launcherRoot(model: model) }
+        window.testApp.app.commands { alloyCommands(model: model) }
+        window.tick()
+        let item = try #require(window.testApp.menuBar.flatMap(\.items).first { $0.title == "Settings…" })
+        #expect(!item.isEnabled)
+        #expect(throws: (any Error).self) { try window.openSettingsFromMenu() }
+    }
+
+    @Test func menuItemWhileSettingsIsOpenLeavesItOpen() async throws {
+        let rig = Rig()
+        let window = try alloyWindow(rig.workspace)
+        try await open(window)
+        try window.openSettingsFromMenu()
+        for _ in 0..<3 { window.tick(); await Task.yield() }
+        _ = try window.element(identifier: "settings-view")
+    }
+
+    @Test func sidebarNoLongerHasSettingsButton() throws {
+        let rig = Rig()
+        let window = try alloyWindow(rig.workspace)
+        #expect((try? window.element(identifier: "settings")) == nil)
     }
 
     @Test func existingSettingsIdsStillWork() async throws {

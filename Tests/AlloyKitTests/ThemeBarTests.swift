@@ -25,6 +25,7 @@ import Testing
         let window = try TestWindow(size: Size(width: Pixels(1200), height: Pixels(800))) {
             rootView(workspace: rig.workspace, themes: holder.controller)
         }
+        window.installAlloyMenu(rig.workspace)
         let controller = ThemeController(workspace: rig.workspace, host: window.window, watcher: nil)
         holder.controller = controller
         window.tick(); window.tick()
@@ -52,7 +53,7 @@ import Testing
     }
 
     private func openSettings(_ t: Setup) async throws {
-        try t.window.click(t.window.element(identifier: "settings"))
+        try t.window.openSettingsFromMenu()
         try await t.window.runUntil { (try? t.window.element(identifier: "settings-theme-section")) != nil }
     }
 
@@ -113,6 +114,7 @@ import Testing
         let window = try TestWindow(size: Size(width: Pixels(1200), height: Pixels(800))) {
             rootView(workspace: rig.workspace, themes: holder.controller)
         }
+        window.installAlloyMenu(rig.workspace)
         let controller = ThemeController(workspace: rig.workspace, host: window.window, watcher: nil)
         holder.controller = controller
         defer { controller.stop() }
@@ -132,6 +134,7 @@ import Testing
         let window = try TestWindow(size: Size(width: Pixels(1200), height: Pixels(800))) {
             rootView(workspace: rig.workspace, themes: holder.controller)
         }
+        window.installAlloyMenu(rig.workspace)
         let controller = ThemeController(workspace: rig.workspace, host: window.window, watcher: nil)
         holder.controller = controller
         defer { controller.stop() }

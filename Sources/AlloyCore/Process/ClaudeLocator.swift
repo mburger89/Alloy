@@ -62,6 +62,12 @@ public enum ClaudeLocator {
         return info
     }
 
+    /// Forgets the cached login-shell answers so the next call asks the shell again.
+    public static func resetLoginShellCache() {
+        cache.lock(); defer { cache.unlock() }
+        cached = nil
+    }
+
     /// `claude` as the login shell resolves it; nil on any failure.
     public static func loginShellLookup() -> String? { loginShell().claude }
 

@@ -15,6 +15,21 @@ was blank. `CodeViewHighlighter` answered up to the end of the row's text, so th
 unknown and MetalUI asked again every frame. Fixed in Alloy (merge 0496c49: rows are covered through their newline);
 MetalUI gap G32 makes an empty answer unable to loop.
 
+## LSP phase 1 - 2026-11-12 (micro-benchmarks and GUI benchmark)
+
+`tools/microbench.sh check` against the local baseline on the `feat/lsp` branch: no regression. Wall-clock p50 versus
+baseline: HighlightEngine keystroke medium 115 ms vs 152 ms (-24%), open+viewport large 7.5 vs 8.9 ms (-15%), medium
+8.1 vs 9.2 ms (-12%), small 1.0 vs 1.4 ms (-28%), OverlapIndex query 5.2 vs 6.1 ms (-14%), Transcript replay 314 vs
+352 ms (-10%); the rest and every peak-memory p50 are within the 10% threshold. The baseline is older than the branch
+point, so the gains are not from LSP work; the suite does not exercise the LSP code. Typing latency, memory and idle
+CPU with and without a real server come from the GUI benchmark.
+
+GUI benchmark, 2026-11-13, with MetalUI's immediate input on (its macOS default since MetalUI #275): typing latency
+16.3-16.7 ms on `master` (p95 about 24 ms) and 16.2-17.3 ms on `feat/lsp`; with `METALUI_IMMEDIATE_INPUT=0` the branch
+measures 36.7-38.4 ms, matching the old path. Memory with `large.rs` open 54.2-54.5 MiB and idle 44.4-44.7 MiB on both.
+No Rust language server is installed on the benchmark Mac, so these numbers cover the LSP code's own cost (none
+measurable), not a running server's.
+
 ## Profiles - 2026-11-12 (not a parity run; traced timings include profiler overhead)
 
 First real `--trace time` recordings of `typingLatency` and `memory` (harness 0e15b2b, Xcode 27.2 xctrace).

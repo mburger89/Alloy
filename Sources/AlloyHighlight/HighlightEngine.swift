@@ -346,6 +346,14 @@ public actor HighlightEngine {
         doc.window = window
     }
 
+    /// Bytes of source text this engine owns for `id`: the whole-text array plus the window's array. A windowed
+    /// document's rope `snapshot` is shared with the buffer and is not counted (test observability; deterministic,
+    /// unlike process-wide heap deltas).
+    package func retainedByteCount(id: UUID) -> Int {
+        guard let doc = documents[id] else { return 0 }
+        return doc.bytes.count + (doc.window?.bytes.count ?? 0)
+    }
+
     /// Forgets `id`; its waiting `captures` calls answer ``unknownVersion``.
     public func close(id: UUID) {
         documents[id] = nil

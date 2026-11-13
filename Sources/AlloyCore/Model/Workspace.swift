@@ -214,6 +214,8 @@ public final class Workspace {
     /// Messages about the user's work for the UI to show (for example a session edit that overlapped unsaved typing).
     public internal(set) var notices: [Notice] = []
     @ObservationIgnored private var opening: Set<String> = []
+    /// Callers of `open` that arrived while the same path was being read; resumed when that read finished.
+    @ObservationIgnored private var openWaiters: [String: [CheckedContinuation<Void, Never>]] = [:]
     @ObservationIgnored private var closing: Set<String> = []
     /// Paths opened again while their close was writing; that close then aborts.
     @ObservationIgnored private var reopened: Set<String> = []
@@ -353,6 +355,19 @@ public final class Workspace {
     @ObservationIgnored private var draining: Set<UUID> = []
     /// Sessions whose process exited while their queued messages were still being delivered.
     @ObservationIgnored private var exitedWhileDraining: Set<UUID> = []
+    /// Called after a save wrote a document to disk and marked it saved, with the project-relative path.
+    @ObservationIgnored public var onSaved: (@MainActor (String) -> Void)?
+    /// Called when a settings update changed the language-server overrides.
+    @ObservationIgnored public var onLanguageServersChanged: (@MainActor ([String: ServerConfigOverride]) -> Void)?
+    /// Awaited at the end of `stopAll()`: whatever else must stop before the app quits (the language servers).
+    @ObservationIgnored public var onStop: (@MainActor () async -> Void)?
+    /// Go to Definition for the active tab's caret (set by the code panel; the menu and F12 call it).
+    @ObservationIgnored public var goToDefinition: (@MainActor () -> Void)?
+    /// Opens the Settings view over the chat column (set by the root view; the app menu's "Settings…" calls it).
+    /// Settings already open stays open.
+    @ObservationIgnored public var openSettings: (@MainActor () -> Void)?
+    /// An opaque slot for the UI layer's language-server coordinator (AlloyCore cannot name that type).
+    @ObservationIgnored public var languageServices: AnyObject?
     /// Set by `stopAll()` and never cleared: from then on nothing launches a process.
     public private(set) var isShuttingDown = false
     /// Launches between their start and end; `stopAll()` waits for them to drain.
@@ -529,7 +544,9 @@ public final class Workspace {
             || s.askBeforeSharedNotes != settings.askBeforeSharedNotes
             || s.shareAcrossProjects != settings.shareAcrossProjects
         let visibilityChanged = s.shareKnowledge != settings.shareKnowledge || s.shareAcrossProjects != settings.shareAcrossProjects
+        let serversChanged = s.languageServers != settings.languageServers
         settings = s
+        if serversChanged { onLanguageServersChanged?(s.languageServers) }
         if visibilityChanged { reloadKnowledgeAfterSettingsChange() }
         settingsGeneration += 1
         cachedExecutable = nil
@@ -1278,6 +1295,7 @@ public final class Workspace {
             if case .exited = s.status { continue }
             s.status = .exited(status: 0, message: "Stopped")
         }
+        await onStop?()
     }
 
     /// Whether the transport took the message.
@@ -1327,6 +1345,10 @@ public final class Workspace {
                 }
             }
             opening.remove(path)
+            for waiter in openWaiters.removeValue(forKey: path) ?? [] { waiter.resume() }
+        } else if opening.contains(path) {
+            // The same file is being read by an earlier call: continue once its document is installed.
+            await withCheckedContinuation { openWaiters[path, default: []].append($0) }
         }
         if let doc = documents[path] {
             if let mode { doc.diffMode = mode }
@@ -1338,6 +1360,19 @@ public final class Workspace {
                 doc.buffer.select(snap.lineRange(row), reveal: true)
             }
         }
+    }
+
+    /// Opens `path` like ``open(_:revealLine:mode:)`` and selects the UTF-8 byte range `range` computes from the loaded
+    /// document's snapshot (clamped to the text, once the document is installed; an open of the same path already in
+    /// flight is waited for). The range is not snapped to character boundaries. Nothing is selected when the file has no
+    /// document.
+    public func open(_ path: String, selecting range: (CodeSnapshot) -> Range<Int>) async {
+        await open(path)
+        guard activeTab == path, let doc = documents[path] else { return }
+        let snap = doc.buffer.snapshot()
+        let wanted = range(snap)
+        let lower = min(max(wanted.lowerBound, 0), snap.utf8Count), upper = min(max(wanted.upperBound, lower), snap.utf8Count)
+        doc.buffer.select(lower..<upper, reveal: true)
     }
 
     func install(_ result: EditorFileRead, path: String, url: URL) {
@@ -1470,6 +1505,7 @@ public final class Workspace {
                 }
                 await appendToLedger(path, saved: doc.savedSnapshot, edits: [(.user, text)])
                 doc.markSaved(snapshot: snap, stamp: stamp)
+                onSaved?(path)
                 return
             }
         }

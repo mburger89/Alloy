@@ -188,3 +188,13 @@ These are hard-coded white inside MetalUI and cannot follow a theme: the `Toggle
 
 ## G29: TextField with selectedOffsets + prompt + axis (forwarded)
 The composer needs caret offsets, a coloured prompt and vertical growth together. Until this lands, the placeholder uses MetalUI's default `.secondary` (4.48:1).
+
+## G35: CodeView APIs for language server features (forwarded)
+Alloy's LSP phase 2 (docs/superpowers/specs/2026-11-12-alloy-lsp-design.md) needs: public point to byte offset and
+range to rects; a hover callback with a range-anchored popover; a caret-anchored suggestion overlay whose ↑↓ Return
+Tab Esc reach the app first; an underline/squiggle `CodeStyle`; line decorations and virtual rows from several owners
+plus gutter markers on real rows; a modifier-click hook with the offset. Phase 1 stopgaps: diagnostic tints on the
+`.diagnostics` layer, virtual rows merged into the diff decorations, keyboard go-to-definition.
+
+## G37: app-menu Settings slot (adopted)
+- Status: adopted (MetalUI 09d57f8e). Alloy fills `CommandGroup(replacing: .appSettings)` with "Settings…" (⌘,), which MetalUI places in its own group after About.

@@ -2,6 +2,7 @@ import AlloyCore
 import AlloyHighlight
 import Foundation
 import MetalUI
+import AlloyLSP
 import Observation
 
 /// What a decoration build is for: the ledger's version and the buffer version it was saved as.
@@ -22,10 +23,32 @@ final class OpenDocumentView {
     /// The left pane's scroll position in side-by-side mode; it outlives the pane, which is rebuilt with the ledger.
     @ObservationIgnored let leftScroll = CodeScrollState()
     @ObservationIgnored private(set) var highlighter: CodeViewHighlighter?
+    /// Server-driven colours for a file with no grammar; present only while the document is reported to a server.
+    @ObservationIgnored private(set) var semantic: SemanticHighlighter?
+    @ObservationIgnored private var hasGrammar = true
     @ObservationIgnored private var feed: AsyncStream<Feed>.Continuation?
     @ObservationIgnored private var cursor: CodeEditCursor
     @ObservationIgnored private let engine: HighlightEngine
     @ObservationIgnored private(set) var closed = false
+    /// The language-server bridge, and whether this document is currently reported open to it.
+    @ObservationIgnored private let lsp: LSPCoordinator?
+    @ObservationIgnored private var lspOpen = false
+    /// Whether a server handles this file (decided at open and on settings changes, so typing does no lookup).
+    @ObservationIgnored private var lspWanted = false
+    /// What the last diff build applied, kept so a diagnostics change can set the diff and the diagnostics together.
+    private struct AppliedDiff {
+        var model: DiffDecorationModel
+        var sessions: [Session]
+        var version: UInt64
+        var byteCount: Int
+        var fillers: [SideBySideModel.Filler]?
+        var rowCount: Int
+        /// Whether the author-run layer of this diff is set (it is set once; diagnostics repaints leave it).
+        var annotated = false
+    }
+    /// The row changes since the view opened, to carry the diff to the current version by hand (see ``RowDeltaLog``).
+    @ObservationIgnored private var rowLog: RowDeltaLog
+    @ObservationIgnored private var appliedDiff: AppliedDiff?
     @ObservationIgnored private var builtKey: BuildKey?
     @ObservationIgnored private var building: BuildKey?
     /// Decoration tag to edit, for the click and menu closures.
@@ -48,18 +71,23 @@ final class OpenDocumentView {
     /// Test hook: the buffer versions whose search matches were applied.
     @ObservationIgnored private(set) var appliedSearchVersions: [UInt64] = []
 
-    init(document: EditorDocument, engine: HighlightEngine) {
+    init(document: EditorDocument, engine: HighlightEngine, lsp: LSPCoordinator? = nil) {
         self.document = document
         self.engine = engine
+        self.lsp = lsp
         self.decorations = CodeDecorations(buffer: document.buffer)
         self.decorations.theme = .alloy
         self.cursor = document.buffer.makeEditCursor()
+        self.rowLog = RowDeltaLog(base: document.buffer.version)
         startHighlighting()
     }
 
     /// Stops feeding the engine and forgets the document there.
     func close() {
         closed = true
+        messageTask?.cancel()
+        if lspOpen { lsp?.closed(path: document.path); lspOpen = false }
+        stopSemantic()
         left?.close()
         left = nil
         feed?.finish()
@@ -75,7 +103,10 @@ final class OpenDocumentView {
         cursor = document.buffer.makeEditCursor()
         defer { observeBuffer() }
         let first = document.buffer.snapshot()
-        guard let language = Language.detect(path: document.path, firstLine: first.lineCount > 0 ? first.line(0) : nil) else { return }
+        let detected = Language.detect(path: document.path, firstLine: first.lineCount > 0 ? first.line(0) : nil)
+        hasGrammar = detected != nil
+        reportOpenToLSP(first)
+        guard let language = detected else { return }
         let (stream, continuation) = AsyncStream.makeStream(of: Feed.self)
         feed = continuation
         let engine = engine, id = document.id
@@ -116,13 +147,99 @@ final class OpenDocumentView {
     private func drain() {
         // Matches follow edits but a new one is not found by that, so an open find searches again (off main).
         if findVisible, !findQuery.isEmpty { search() }
+        drainEdits()
+    }
+
+    /// Passes the buffer's pending edits to the highlight engine and the language server.
+    private func drainEdits() {
         let batch = cursor.drain()
         switch batch {
         case .edits(let edits):
             guard !edits.isEmpty else { return }
-            feed?.yield(.edits(edits, document.buffer.snapshot()))
+            let after = document.buffer.snapshot()
+            for edit in edits { rowLog.record(edit) }
+            feed?.yield(.edits(edits, after))
+            forwardToLSP(.edits(edits, after: after), snapshot: after)
+            semantic?.documentChanged()
         case .resync(let snapshot):
+            rowLog.reset(at: snapshot.version)
             feed?.yield(.open(snapshot))
+            forwardToLSP(.resync(snapshot), snapshot: snapshot)
+            semantic?.documentChanged()
+        }
+    }
+
+    /// A file over the server size cap is never reported: one that grows past it is closed, one that shrinks below it
+    /// is opened then.
+    private func forwardToLSP(_ change: DocumentChange, snapshot: CodeSnapshot) {
+        guard lspWanted, let lsp else { return }
+        let fits = snapshot.utf8Count <= DocumentSync.maxFileBytes
+        if lspOpen {
+            if fits {
+                lsp.changed(path: document.path, change: change)
+            } else {
+                lsp.closed(path: document.path)
+                lspOpen = false
+                stopSemantic()
+            }
+        } else if fits {
+            reportOpenToLSP(snapshot)
+        }
+    }
+
+    // MARK: Language server
+
+    /// Tells the language server about this document when one handles its file. Read-only documents (truncated or
+    /// not valid UTF-8) never reach a server: their text is not the file's.
+    private func reportOpenToLSP(_ snapshot: CodeSnapshot) {
+        guard let lsp, document.state == .editable, lsp.wants(document.path) else { return }
+        lspWanted = true
+        guard snapshot.utf8Count <= DocumentSync.maxFileBytes else { return }
+        lspOpen = true
+        probedVersion = snapshot.version
+        lsp.opened(path: document.path, snapshot: snapshot)
+        // A file with no grammar takes its colours from the server's semantic tokens, if it offers them: the first
+        // request finds out (once the server is ready), and only then is a highlighter made.
+        if !hasGrammar { lsp.requestSemanticTokens(path: document.path, probe: true) }
+    }
+
+    /// The buffer version of the text the opening probe asked about.
+    @ObservationIgnored private var probedVersion: UInt64?
+
+    /// The server answered whether it offers semantic tokens for this file.
+    func semanticSupport(_ supported: Bool) {
+        guard let lsp, !closed, lspOpen, !hasGrammar else { return }
+        guard supported else { stopSemantic(); return }
+        guard semantic == nil else { return }
+        semantic = SemanticHighlighter(path: document.path, decorations: decorations) { [weak lsp] path in
+            lsp?.requestSemanticTokens(path: path)
+        }
+        // An edit between the probe and now cancelled the probe's answer in the manager, and the edit's own request was
+        // dropped because there was no highlighter: ask for the current text.
+        if probedVersion != document.buffer.version { semantic?.documentChanged() }
+    }
+
+    private func stopSemantic() {
+        semantic?.stop()
+        semantic = nil
+    }
+
+    /// After a save: sends the edits not yet passed on, so the server sees `didSave` after the text it saved.
+    func lspSaved() {
+        guard lspOpen, !closed else { return }
+        drainEdits()
+        lsp?.flushedSaved(path: document.path)
+    }
+
+    /// After the server settings changed: reports the document if a server now handles it, and forgets it if none does.
+    func lspSettingsChanged() {
+        guard let lsp, !closed else { return }
+        if lsp.wants(document.path) {
+            if !lspOpen { drainEdits(); lspWanted = false; reportOpenToLSP(document.buffer.snapshot()) }
+        } else {
+            lspOpen = false
+            lspWanted = false
+            stopSemantic()
         }
     }
 
@@ -162,8 +279,9 @@ final class OpenDocumentView {
             guard !closed, workspace.ledger.files[path]?.version == key.ledger, document.savedVersion == key.saved,
                   sameText, document.diffMode == key.mode else { return }
             tags = model.tags
-            DiffDecorations.apply(model, to: decorations, sessions: workspace.sessions, version: key.saved,
-                                  byteCount: saved.utf8Count, fillers: sbs?.rightFillers)
+            appliedDiff = AppliedDiff(model: model, sessions: workspace.sessions, version: key.saved,
+                                      byteCount: saved.utf8Count, fillers: sbs?.rightFillers, rowCount: saved.lineCount)
+            applyLineLayers()
             if let sbs {
                 // The pane (buffer, engine document, highlights) changes only when the old text does.
                 let pane: LeftPane
@@ -185,6 +303,132 @@ final class OpenDocumentView {
             builtKey = key
             workspace.noteDecorationBuild()
         }
+    }
+
+    // MARK: Go to definition
+
+    /// A short message about the last go-to-definition ("No definition found", or where an outside file lies); the header shows it.
+    var definitionMessage: String?
+    @ObservationIgnored private var messageTask: Task<Void, Never>?
+    /// How long ``definitionMessage`` stays, per kind.
+    nonisolated static let noDefinitionSeconds = 2.0
+    nonisolated static let externalSeconds = 6.0
+
+    /// Starts a go-to-definition for the caret and returns its task (the store keeps one in flight and cancels it). The
+    /// answer is dropped silently when the tab, the text or the caret changed since the request.
+    func startDefinition(workspace: Workspace) -> Task<Void, Never>? {
+        definitionMessage = nil
+        messageTask?.cancel()
+        guard let lsp, lspOpen, !closed else {
+            showDefinitionMessage("No definition found", seconds: Self.noDefinitionSeconds)
+            return nil
+        }
+        drainEdits()
+        let snapshot = document.buffer.snapshot()
+        let offset = document.buffer.primarySelection.head
+        let path = document.path
+        return Task { @MainActor [weak self] in
+            let outcome = await lsp.definition(path: path, utf8Offset: offset, snapshot: snapshot)
+            guard !Task.isCancelled, let self, !self.closed, workspace.activeTab == path,
+                  self.document.buffer.version == snapshot.version, self.document.buffer.primarySelection.head == offset else { return }
+            switch outcome {
+            case .stale: return
+            case .unavailable: self.showDefinitionMessage("No definition found", seconds: Self.noDefinitionSeconds)
+            case .answered(let result):
+                guard let first = result.targets.first else {
+                    self.showDefinitionMessage("No definition found", seconds: Self.noDefinitionSeconds)
+                    return
+                }
+                await self.go(to: first, encoding: result.encoding, workspace: workspace)
+            }
+        }
+    }
+
+    private func go(to target: DefinitionTarget, encoding: PositionEncoding, workspace: Workspace) async {
+        switch target {
+        case .inWorkspace(let path, let range):
+            await workspace.open(path, selecting: { Positions.utf8Range(of: range, in: $0, encoding: encoding) })
+        case .external(let url, let range):
+            // Alloy has no read-only view for files outside the project (`Workspace.open` refuses them): say where it is.
+            showDefinitionMessage("Definition: \(url.path):\(range.start.line + 1):\(range.start.character + 1)",
+                                  seconds: Self.externalSeconds)
+        }
+    }
+
+    private func showDefinitionMessage(_ text: String, seconds: Double) {
+        definitionMessage = text
+        messageTask?.cancel()
+        messageTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(seconds))
+            guard !Task.isCancelled else { return }
+            self?.definitionMessage = nil
+        }
+    }
+
+    // MARK: Diagnostics
+
+    /// The diagnostics of this document changed: paints the tint, and the rows together with the diff's.
+    ///
+    /// A burst of publishes costs one paint per main-actor turn: the first paints at once, the others in the same turn
+    /// only mark that one more paint is due, which runs at the start of the next turn.
+    func paintDiagnostics() {
+        guard !closed else { return }
+        if paintGate { paintQueued = true; return }
+        paintGate = true
+        paintDiagnosticsNow()
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            self.paintGate = false
+            if self.paintQueued {
+                self.paintQueued = false
+                self.paintDiagnostics()
+            }
+        }
+    }
+
+    @ObservationIgnored private var paintGate = false
+    @ObservationIgnored private var paintQueued = false
+    /// Paints of the diagnostics so far, and how many of them set the diff's author-run layer (test observability).
+    @ObservationIgnored private(set) var diagnosticsPaintCount = 0
+    @ObservationIgnored private(set) var annotationApplyCount = 0
+
+    private func paintDiagnosticsNow() {
+        diagnosticsPaintCount += 1
+        DiagnosticDecorations.applyTint(lsp?.diagnostics.entry(for: document.path), to: decorations)
+        applyLineLayers()
+    }
+
+    /// Sets the line decorations and virtual rows: the diff's, if built, and the diagnostics'.
+    private func applyLineLayers() {
+        drainEdits()   // the row log must hold every edit MetalUI has seen
+        var layout = DiagnosticDecorations.currentLayout(lsp?.diagnostics.entry(for: document.path), in: document.buffer)
+        let sideBySide = document.diffMode == .sideBySide
+        if sideBySide { layout.rows = [] }   // only the right pane could show them, which would unlevel the panes
+        if let diff = appliedDiff {
+            let ok = DiffDecorations.apply(diff.model, to: decorations, sessions: diff.sessions, version: diff.version,
+                                           byteCount: diff.byteCount, fillers: diff.fillers,
+                                           diagnostics: layout, rowLog: rowLog, savedRowCount: diff.rowCount,
+                                           includeAnnotations: !diff.annotated)
+            if ok, !diff.annotated {
+                appliedDiff?.annotated = true
+                annotationApplyCount += 1
+            }
+            if !ok {
+                // The diff cannot be carried forward any more: forget it and have it built again.
+                appliedDiff = nil
+                builtKey = nil
+            }
+        } else if lsp != nil {
+            DiffDecorations.applyDiagnostics(layout, to: decorations)
+        }
+    }
+
+    /// Selects the next (`+1`) or previous (`-1`) problem from the caret, wrapping.
+    func stepProblem(_ direction: Int) {
+        let items = DiagnosticDecorations.current(lsp?.diagnostics.entry(for: document.path), in: document.buffer)
+        let selection = document.buffer.primarySelection.range
+        guard let range = DiagnosticDecorations.nextProblem(items, selection: selection, direction: direction) else { return }
+        document.buffer.select(range, reveal: true)
     }
 
     /// The value `onChange` watches to start a rebuild.
@@ -281,13 +525,46 @@ final class CodePanelStore {
         return registry.lazy.compactMap { $0.store?.view(for: document) }.first
     }
     private var views: [String: OpenDocumentView] = [:]
+    private var lsp: LSPCoordinator?
+
+    /// Connects the store to the workspace's language-server coordinator, if one is installed. Idempotent.
+    func attach(workspace: Workspace) {
+        guard let coordinator = workspace.languageServices as? LSPCoordinator, coordinator !== lsp else { return }
+        lsp = coordinator
+        coordinator.savedHandler = { [weak self] path in self?.views[path]?.lspSaved() }
+        coordinator.diagnosticsHandler = { [weak self] path in self?.views[path]?.paintDiagnostics() }
+        coordinator.semanticSupportHandler = { [weak self] path, supported in self?.views[path]?.semanticSupport(supported) }
+        coordinator.semanticHandler = { [weak self] path, version, runs in self?.views[path]?.semantic?.apply(runs, version: version) }
+        workspace.goToDefinition = { [weak self, weak workspace] in
+            guard let self, let workspace else { return }
+            self.goToDefinition(workspace: workspace)
+        }
+        coordinator.reloadHandler = { [weak self] in self?.views.values.forEach { $0.lspSettingsChanged() } }
+    }
+
+    /// The one go-to-definition in flight, for whichever view asked last.
+    private var definitionTask: Task<Void, Never>?
+
+    /// Go to Definition at the active tab's caret; replaces (cancels) any request still in flight.
+    func goToDefinition(workspace: Workspace) {
+        cancelDefinition()
+        guard let path = workspace.activeTab, let document = workspace.document(path), let view = view(for: document) else { return }
+        definitionTask = view.startDefinition(workspace: workspace)
+    }
+
+    /// Abandons the request in flight (a tab switch, a closed view).
+    func cancelDefinition() {
+        definitionTask?.cancel()
+        definitionTask = nil
+    }
 
     /// Makes (or replaces, when the path was reopened) the state of `document`. Called outside rendering.
     func ensureView(for document: EditorDocument) {
         if !Self.registry.contains(where: { $0.store === self }) { Self.registry.append(Weak(self)) }
         if let existing = views[document.path], existing.document === document { return }
+        if views[document.path] != nil { cancelDefinition() }
         views[document.path]?.close()
-        views[document.path] = OpenDocumentView(document: document, engine: engine)
+        views[document.path] = OpenDocumentView(document: document, engine: engine, lsp: lsp)
     }
 
     /// The state of `document`, once ``ensureView(for:)`` has made it.
@@ -301,6 +578,7 @@ final class CodePanelStore {
     /// had a view gets one when it is first shown.
     func refreshReplaced(workspace: Workspace) {
         for (path, view) in views where workspace.document(path) !== view.document {
+            cancelDefinition()
             view.close()
             views[path] = nil
             if let document = workspace.document(path) { ensureView(for: document) }
@@ -310,6 +588,7 @@ final class CodePanelStore {
     /// Drops the state of documents that are no longer open.
     func prune(keeping paths: [String]) {
         for (path, view) in views where !paths.contains(path) {
+            cancelDefinition()
             view.close()
             views[path] = nil
         }

@@ -30,13 +30,14 @@ import Testing
         let window = try TestWindow(size: Size(width: width, height: Pixels(800))) {
             rootView(workspace: rig.workspace, themes: holder.controller)
         }
+        window.installAlloyMenu(rig.workspace)
         let watcher = ScriptedChangeSource()
         let controller = ThemeController(workspace: rig.workspace, host: window.window, watcher: watcher)
         holder.controller = controller
         window.tick(); window.tick()
         let underneath = Set(window.scene.glyphs.map { [$0.bounds.origin.x, $0.bounds.origin.y] })
         let s = Setup(rig: rig, window: window, controller: controller, watcher: watcher, underneath: underneath)
-        try window.click(window.element(identifier: "settings"))
+        try window.openSettingsFromMenu()
         try await window.runUntil { (try? window.element(identifier: "settings-theme-section")) != nil }
         return s
     }

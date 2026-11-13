@@ -9,9 +9,24 @@ import MetalUITesting
 @MainActor
 func alloyWindow(_ workspace: Workspace) throws -> TestWindow {
     let window = try TestWindow(size: Size(width: Pixels(1200), height: Pixels(800))) { rootView(workspace: workspace) }
+    // The menu bar as main.swift installs it: Settings… lives there now.
+    window.installAlloyMenu(workspace)
     window.tick()
     window.tick()
     return window
+}
+
+extension TestWindow {
+    /// The menu bar as main.swift installs it: Settings… lives there.
+    func installAlloyMenu(_ workspace: Workspace) {
+        let model = LauncherModel(workspace: workspace)
+        testApp.app.commands { alloyCommands(model: model) }
+    }
+
+    /// Opens Settings through the application menu's "Settings…" item.
+    func openSettingsFromMenu() throws {
+        try testApp.performMenuBarItem(accessibilityIdentifier: "app-settings")
+    }
 }
 
 /// A workspace whose sessions run on `ScriptedTransport`s, collected in order.

@@ -36,6 +36,8 @@ func makeWorkspace(root: URL, file: String?) -> Workspace? {
     let workspace = Workspace(projectRoot: checked, appSupport: appSupport, settings: current,
                               loginPATH: { ClaudeLocator.loginShell().path })
     themeController.bind(workspace)
+    // Language servers start lazily, on the first open of a file one handles; they stop with the sessions on quit.
+    LSPCoordinator.installLive(on: workspace, loginPATH: { ClaudeLocator.loginShell().path })
     workspace.startWatching()
     workspace.openFilePath = file
     return workspace
@@ -80,6 +82,9 @@ if let dumpURL = FrameTimingRecorder.install(on: window, environment: ProcessInf
     source.resume()
     frameTimingTerm = source
 }
+
+// The app menu's Settings… (⌘,) and the Go menu; see alloyCommands.
+app.commands { alloyCommands(model: model) }
 
 // Closing the window or quitting stops every claude process first.
 installWindowShutdown(on: window, model: model)
