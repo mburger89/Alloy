@@ -602,6 +602,9 @@ struct CodePanel: Component {
     let store: SessionUIStore
     let document: EditorDocument
     let view: OpenDocumentView
+    /// The glass bar floating over the panel's top (its height with the gutter below it): the code scrolls under it, so
+    /// the code's top margin is this; the find bar, which is not scrolled, sits below the glass bar instead.
+    var topClear: Double = 0
     @FocusState var codeFocused: Bool
 
     var content: some ElementGroup {
@@ -609,7 +612,10 @@ struct CodePanel: Component {
         let workspace = workspace, document = document, view = view, path = document.path
         let editable = document.state == .editable
         VStack(alignment: .leading, spacing: 0) {
-            if view.findVisible { FindBar(view: view, onClose: { codeFocused = true }) }
+            if view.findVisible {
+                VStack(spacing: 0) { FindBar(view: view, onClose: { codeFocused = true }) }
+                    .padding(Edges(top: Pixels(Float(topClear)), right: Pixels(0), bottom: Pixels(0), left: Pixels(0)))
+            }
             if document.diffMode == .sideBySide {
                 SideBySideView(workspace: workspace, store: store, document: document, view: view, focused: $codeFocused)
             } else {
@@ -631,6 +637,7 @@ struct CodePanel: Component {
                 PanelEditBar(workspace: workspace, store: store, record: record)
             }
         }
+        .contentMargins(.top, Pixels(Float(view.findVisible ? 0 : topClear)), for: .scrollContent)
         .onChange(of: view.buildTrigger(workspace: workspace), initial: true) {
             view.rebuildIfNeeded(workspace: workspace)
         }

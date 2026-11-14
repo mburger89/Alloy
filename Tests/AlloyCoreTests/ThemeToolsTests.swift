@@ -97,6 +97,37 @@ private final class FakeWorkshop: ThemeWorkshop {
         #expect(o["format"]?.stringValue?.isEmpty == false)
     }
 
+    @Test func themeSlotsDescribeStyle() async throws {
+        let r = rig()
+        let o = try object(await call(r, "theme_slots", [:]))
+        let style = try #require(o["style"])
+        let keys = ["gutter", "cornerRadius", "islandOpacity", "controlOpacity", "controlBlur", "pillButtons"]
+        #expect(Set(try #require(style.objectValue).keys) == Set(keys))
+        for key in keys {
+            #expect(style[key]?["value"] != nil && style[key]?["value"] != .null, "\(key) value")
+            #expect(style[key]?["range"]?.arrayValue?.isEmpty == false, "\(key) range")
+            #expect(style[key]?["purpose"]?.stringValue?.isEmpty == false, "\(key) purpose")
+        }
+        #expect(style["gutter"]?["range"] == .array([.number(0), .number(16)]))
+        #expect(style["islandOpacity"]?["range"] == .array([.number(0.4), .number(1)]))
+        #expect(style["controlBlur"]?["range"] == .array([.string("light"), .string("medium"), .string("heavy")]))
+        #expect(style["gutter"]?["value"] == .number(r.shop.shownTheme?.style.gutter ?? -1))
+        #expect(o["format"]?.stringValue?.contains("\"style\"") == true)
+    }
+
+    @Test func saveWritesStyle() async throws {
+        let r = rig()
+        let styled = draft(["style": .object(["gutter": .number(14), "controlBlur": .string("light")])])
+        let result = await call(r, "theme_save", ["name": .string("Roomy"), "theme": styled])
+        #expect(!result.isError, "\(result.text)")
+        let bytes = try Data(contentsOf: ThemeLibrary.userDirectory(appSupport: r.support).appendingPathComponent("roomy.json"))
+        let onDisk = try ThemeFile.parse(bytes)
+        #expect(onDisk.style?.gutter == 14 && onDisk.style?.controlBlur == .light)
+        #expect(String(decoding: bytes, as: UTF8.self).contains("\"style\""))
+        _ = await call(r, "theme_preview", ["theme": styled])
+        #expect(r.shop.previews.last?.resolved.style.gutter == 14)
+    }
+
     @Test func slotsWithNothingShownReturnsNullThemeAndSlotList() async throws {
         let r = rig()
         r.shop.shownTheme = nil

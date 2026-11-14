@@ -29,6 +29,30 @@ import Testing
         #expect(names.contains("syntax.keyword") && !names.contains("syntax.plain") && !names.contains("syntax.variable"))
     }
 
+    @Test func islandSlotsAreListedWithPurposes() {
+        for name in ["windowBackground", "islandFill", "controlFill", "glassRim"] {
+            let slot = ThemeSlots.all.first { $0.name == name }
+            #expect(slot != nil, "\(name) missing")
+            #expect(slot?.purpose.isEmpty == false, "\(name) has no purpose")
+        }
+    }
+
+    @Test(arguments: ["dracula", "alloy-dark", "alloy-light", "solarized-dark", "solarized-light", "one-dark"])
+    func builtInsFillIslandSlots(id: String) throws {
+        let theme = try resolve(id)
+        for name in ["windowBackground", "islandFill", "controlFill", "glassRim"] {
+            #expect(theme.colors[name] != nil, "\(id) lacks \(name)")
+        }
+        let applied = ThemeApplier.theme(for: theme)
+        let colors = [Color.windowBackground, .islandFill, .controlFill, .glassRim]
+        let themed = try themedResolve(colors, theme: applied, dark: theme.appearance == .dark)
+        let expected = ["windowBackground", "islandFill", "controlFill", "glassRim"].compactMap { theme.colors[$0] }
+        for (got, want) in zip(themed, expected) {
+            #expect(abs(Double(got.red) - want.r) < 0.01 && abs(Double(got.green) - want.g) < 0.01
+                && abs(Double(got.blue) - want.b) < 0.01 && abs(Double(got.opacity) - want.a) < 0.01)
+        }
+    }
+
     @Test func alloyDarkAndLightDefineEverySlot() throws {
         for id in ["alloy-dark", "alloy-light"] {
             let theme = try resolve(id)
@@ -127,7 +151,7 @@ import Testing
         }
         window.tick()
         window.tick()
-        func blueGlyphs() -> Int { window.scene.glyphs.filter { abs($0.color.h - 0.6667) < 0.002 && $0.color.s > 0.9 }.count }
+        func blueGlyphs() -> Int { window.allGlyphs.filter { abs($0.color.h - 0.6667) < 0.002 && $0.color.s > 0.9 }.count }
         #expect(blueGlyphs() == 0)
         window.window.darkTheme = theme
         window.tick()

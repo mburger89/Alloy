@@ -141,12 +141,12 @@ private func ratio(_ a: RGB, _ b: RGB) -> Double {
             add("syntax.\(token).chatFill", fg, [.markdownCodeFill], 4.5)
             add("syntax.\(token).added", fg, [.editAddTint], 4.5)
             add("syntax.\(token).removed", fg, [.editRemoveTint], 4.5)
-            add("syntax.\(token).panel", fg, [.surface], 4.5)
-            add("syntax.\(token).panelAdded", fg, [.surface, .addedRowTint], 4.5)
-            add("syntax.\(token).panelRemoved", fg, [.surface, .removedRowTint], 4.5)
-            add("syntax.\(token).selection", fg, [.surface, CodeTheme.alloy.selection], 4.5)
-            add("syntax.\(token).find", fg, [.surface, CodeTheme.alloy.findMatch], 4.5)
-            add("syntax.\(token).findCurrent", fg, [.surface, CodeTheme.alloy.currentFindMatch], 4.5)
+            add("syntax.\(token).panel", fg, [.islandFill], 4.5)
+            add("syntax.\(token).panelAdded", fg, [.islandFill, .addedRowTint], 4.5)
+            add("syntax.\(token).panelRemoved", fg, [.islandFill, .removedRowTint], 4.5)
+            add("syntax.\(token).selection", fg, [.islandFill, CodeTheme.alloy.selection], 4.5)
+            add("syntax.\(token).find", fg, [.islandFill, CodeTheme.alloy.findMatch], 4.5)
+            add("syntax.\(token).findCurrent", fg, [.islandFill, CodeTheme.alloy.currentFindMatch], 4.5)
         }
 
         // Suggestions and quick open.
@@ -170,17 +170,17 @@ private func ratio(_ a: RGB, _ b: RGB) -> Double {
         add("panel.notice.error", .errorInk, [.errorTint], 4.5)
         add("panel.notice.warning", .warningInk, [.warningTint], 4.5)
         add("panel.conflict", text, [.warningTint], 4.5)
-        // The code view with MetalUI's default `CodeTheme`: text, gutter numbers, selection and find highlights.
-        add("panel.code.text", text, [.surface], 4.5)
-        add("panel.code.gutter", CodeTheme.alloy.gutterForeground, [.surface], 4.5)
-        add("panel.code.added", text, [.surface, .addedRowTint], 4.5)
-        add("panel.code.removed", text, [.surface, .removedRowTint], 4.5)
-        add("panel.code.selection", text, [.surface, CodeTheme.alloy.selection], 4.5)
-        add("panel.code.find", text, [.surface, CodeTheme.alloy.findMatch], 4.5)
-        add("panel.code.findCurrent", text, [.surface, CodeTheme.alloy.currentFindMatch], 4.5)
+        // The code view with `CodeTheme.alloy` (clear, so on the island): text, gutter numbers, selection and find highlights.
+        add("panel.code.text", text, [.islandFill], 4.5)
+        add("panel.code.gutter", CodeTheme.alloy.gutterForeground, [.islandFill], 4.5)
+        add("panel.code.added", text, [.islandFill, .addedRowTint], 4.5)
+        add("panel.code.removed", text, [.islandFill, .removedRowTint], 4.5)
+        add("panel.code.selection", text, [.islandFill, CodeTheme.alloy.selection], 4.5)
+        add("panel.code.find", text, [.islandFill, CodeTheme.alloy.findMatch], 4.5)
+        add("panel.code.findCurrent", text, [.islandFill, CodeTheme.alloy.currentFindMatch], 4.5)
         for (name, c) in authors {
-            add("panel.code.bar.\(name)", c, [.surface], 3)
-            add("panel.code.authorRun.\(name)", text, [.surface, c.opacity(authorRunAlpha)], 4.5)
+            add("panel.code.bar.\(name)", c, [.islandFill], 3)
+            add("panel.code.authorRun.\(name)", text, [.islandFill, c.opacity(authorRunAlpha)], 4.5)
         }
 
         // Tabs (MetalUI `TabStrip`): selected, unselected, hovered.

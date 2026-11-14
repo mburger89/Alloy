@@ -68,6 +68,10 @@ public enum ThemeContrast {
         ContrastRule(foregrounds: ["linkInk"], backgrounds: [["chatFill"], ["markdownCodeFill"]], minimum: 4.5, note: nil),
         ContrastRule(foregrounds: ["pickerThumbEdge"], backgrounds: [["surfaceSecondary"], ["surfaceSecondary", "pickerThumb"]], minimum: 3,
                      note: "pickerThumb is the selected segment: surface in a light theme, textPrimary at alpha 0.18 over surfaceSecondary in a dark one"),
+        ContrastRule(foregrounds: ["island text"], backgrounds: [["windowBackground", "islandFill"]], minimum: 4.5,
+                     note: "island text is textPrimary; islandFill is drawn at the theme's island opacity over windowBackground, which is what chat, sidebar and code sit on; the pair is named \"text on island\""),
+        ContrastRule(foregrounds: ["control text"], backgrounds: [["islandFill", "controlFill"]], minimum: 4.5,
+                     note: "control text is textPrimary; controlFill is drawn at the theme's controlOpacity over islandFill; the pair is named \"control text on control fill\""),
         ContrastRule(foregrounds: ["sessionColors[*]"], backgrounds: [["sidebarFill"]], minimum: 3, note: nil),
     ]
 
@@ -91,14 +95,14 @@ public enum ThemeContrast {
         // Layers that are not slots: the segmented picker's selected segment ("thumb").
         // `check` reads `synthetic` lazily at call time: a later check that needs the thumb must come after it is filled.
         var synthetic: [String: ThemeRGBA] = [:]
-        func check(_ fgName: String, _ fg: ThemeRGBA?, on layerNames: [String], _ minimum: Double, label: String? = nil) {
+        func check(_ fgName: String, _ fg: ThemeRGBA?, on layerNames: [String], _ minimum: Double, label: String? = nil, pairName: String? = nil) {
             guard let fg else { return }
             var layers: [ThemeRGBA] = []
             for name in layerNames {
                 guard let color = synthetic[name] ?? theme.colors[name] else { return }
                 layers.append(color)
             }
-            let pair = (label ?? fgName) + " on " + layerNames.joined(separator: " over ")
+            let pair = pairName ?? ((label ?? fgName) + " on " + layerNames.joined(separator: " over "))
             guard seen.insert(pair).inserted else { return }
             let base = composite(layers)
             let value = ratio(over(fg, base), base)
@@ -167,6 +171,24 @@ public enum ThemeContrast {
         }
         check("pickerThumbEdge", slot("pickerThumbEdge"), on: ["surfaceSecondary"], 3)
         check("pickerThumbEdge", slot("pickerThumbEdge"), on: ["surfaceSecondary", "pickerThumb"], 3)
+
+        // Island text: textPrimary on the islands' fill, drawn at the theme's island opacity over the window background.
+        // The synthetic layer is removed again so the control check below sees the plain island fill.
+        if var island = slot("islandFill") {
+            island.a *= theme.style.islandOpacity
+            synthetic["islandFill"] = island
+        }
+        check("textPrimary", slot("textPrimary"), on: ["windowBackground", "islandFill"], 4.5, label: "island text",
+              pairName: "text on island")
+        synthetic["islandFill"] = nil
+
+        // Control text: textPrimary on the floating controls' fill, drawn at the theme's control opacity over the island.
+        if var control = slot("controlFill") {
+            control.a *= theme.style.controlOpacity
+            synthetic["controlFill"] = control
+        }
+        check("textPrimary", slot("textPrimary"), on: ["islandFill", "controlFill"], 4.5, label: "control text",
+              pairName: "control text on control fill")
 
         // Session colours.
         for (i, color) in theme.sessionColors.enumerated() {

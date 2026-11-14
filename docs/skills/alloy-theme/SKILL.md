@@ -54,6 +54,8 @@ Alloy's themes folder:
    - `warningInk` on `warningTint`: 4.5:1
    - `linkInk` on `chatFill`, `markdownCodeFill`: 4.5:1
    - `pickerThumbEdge` on `surfaceSecondary`, `surfaceSecondary` over `pickerThumb`: 3:1 (pickerThumb is the selected segment: surface in a light theme, textPrimary at alpha 0.18 over surfaceSecondary in a dark one)
+   - `island text` on `windowBackground` over `islandFill`: 4.5:1 (island text is textPrimary; islandFill is drawn at the theme's island opacity over windowBackground, which is what chat, sidebar and code sit on; the pair is named "text on island")
+   - `control text` on `islandFill` over `controlFill`: 4.5:1 (control text is textPrimary; controlFill is drawn at the theme's controlOpacity over islandFill; the pair is named "control text on control fill")
    - `sessionColors[*]` on `sidebarFill`: 3:1
    Fix every pair under its minimum before telling the user it is ready.
 6. Tell the user to pick the theme in Alloy's Settings. Alloy re-checks contrast itself and warns before
@@ -73,7 +75,8 @@ A theme is a JSON file in the themes folder (`~/Library/Application Support/Allo
   "author": "You",
   "credit": "optional",
   "colors": { "chatFill": "#FFF8E7", "accent": "#B5651D" },
-  "sessionColors": ["#B5651D", "#2E7D32", "#1565C0", "#6A1B9A", "#C62828", "#00838F"]
+  "sessionColors": ["#B5651D", "#2E7D32", "#1565C0", "#6A1B9A", "#C62828", "#00838F"],
+  "style": { "gutter": 6, "cornerRadius": 10, "islandOpacity": 0.7, "controlOpacity": 0.6, "controlBlur": "heavy", "pillButtons": true }
 }
 ```
 
@@ -82,4 +85,7 @@ A theme is a JSON file in the themes folder (`~/Library/Application Support/Allo
   `one-dark`) or another user theme's file name without `.json`. Slots the file leaves out come from the base.
 - `colors` maps slot names to `#RRGGBB` or `#RRGGBBAA`. `reference/slots.md` lists every slot and what it colours.
 - `sessionColors` is 6 to 12 colours.
+- `style` is optional and sets the layout and glass look; a key left out comes from the base. `gutter` 0 to 16,
+  `cornerRadius` 0 to 20, `islandOpacity` and `controlOpacity` fractions 0.40 to 1.0, `controlBlur` `light`,
+  `medium` or `heavy`, `pillButtons` true or false. `theme_slots` lists the keys with ranges.
 - Keep text readable: 4.5:1 for text, 3:1 for glyphs and outlines.

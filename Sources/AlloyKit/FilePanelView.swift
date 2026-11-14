@@ -14,6 +14,39 @@ struct FilePanelView: Component {
     let store: SessionUIStore
     let panel: CodePanelStore
     let quickOpen: QuickOpenModel
+    /// Where the glass bar reads the look from; nil (tests without themes) draws the defaults.
+    var themes: ThemeController?
+    /// The glass bar's height with its gutter above and below: the code's top margin. Written only when it changes.
+    /// Zero until measured; the first frames use the store's last measured height or the style's estimate, so the code does not jump
+    /// when the measurement arrives.
+    @State var barHeight: Double = 0
+
+    /// The notice, then the file's message or its code. The code takes `clear` as its top margin; the others as padding.
+    @ElementBuilder
+    private func fileBody(path: String?, notice: Notice?, document: EditorDocument?, view: OpenDocumentView?,
+                          style: AppearanceStyle, clear: Double, noticeClear: Double) -> some ElementGroup {
+        let top = Self.topInset(clear)
+        if let path {
+            if let notice {
+                VStack(spacing: 0) { FilePanelNotice(workspace: workspace, notice: notice, style: style) }
+                    .padding(Self.topInset(noticeClear))
+            }
+            if let message = workspace.tabMessages[path] {
+                VStack(spacing: 0) { FilePanelMessage(text: message) }.padding(top)
+            } else if let document, let view {
+                CodePanel(workspace: workspace, store: store, document: document, view: view, topClear: clear).equatable()
+                    .id(document.id.uuidString)
+            } else {
+                VStack(spacing: 0) { FilePanelMessage(text: "Loading\u{2026}") }.padding(top)
+            }
+        } else {
+            VStack(spacing: 0) { FilePanelMessage(text: "Select a changed file to see it here.") }.padding(top)
+        }
+    }
+
+    private static func topInset(_ top: Double) -> Edges<Pixels> {
+        Edges(top: Pixels(Float(top)), right: Pixels(0), bottom: Pixels(0), left: Pixels(0))
+    }
 
     /// The function keys the panel handles (`NSF8FunctionKey`, `NSF12FunctionKey`); MetalUI names no function keys.
     static let f8 = KeyEquivalent("\u{f70b}")
@@ -21,31 +54,33 @@ struct FilePanelView: Component {
 
     var content: some ElementGroup {
         let _ = BodyProbe.hit("FilePanelView")
+        let style = themes?.style ?? .defaults
+        let path = workspace.activeTab
+        let document = path.flatMap { workspace.document($0) }
+        let view = document.flatMap { panel.view(for: $0) }
+        let showsBar = !workspace.tabs.isEmpty || path != nil
+        let barHeight = $barHeight
+        let notice = path.flatMap { path in workspace.notices.last(where: { $0.path == path }) }
+        // The bar floats over the top of the panel. Rows that are not the code (quick open, a notice, a message) start
+        // below it; the code itself scrolls under it, its first line one gutter below the bar.
+        let known = barHeight.wrappedValue > 0 ? barHeight.wrappedValue : (store.metrics.filePanelBarHeight ?? style.filePanelBarHeightEstimate)
+        let clear = showsBar ? known : 0
+        let belowBar = quickOpen.isShowing || notice != nil
+        let quickOpenTop = Self.topInset(clear)
+        let bodyClear = belowBar ? 0 : clear
         VStack(alignment: .leading, spacing: 0) {
-            if !workspace.tabs.isEmpty { FileTabStrip(workspace: workspace).equatable() }
-            if quickOpen.isShowing { QuickOpenField(workspace: workspace, model: quickOpen) }
-            if let path = workspace.activeTab {
-                let document = workspace.document(path)
-                let view = document.flatMap { panel.view(for: $0) }
-                FilePanelHeader(workspace: workspace, path: path, document: document, view: view).equatable()
-                if let notice = workspace.notices.last(where: { $0.path == path }) {
-                    FilePanelNotice(workspace: workspace, notice: notice)
-                }
-                Divider()
-                if let message = workspace.tabMessages[path] {
-                    FilePanelMessage(text: message)
-                } else if let document, let view {
-                    CodePanel(workspace: workspace, store: store, document: document, view: view).equatable()
-                        .id(document.id.uuidString)
-                } else {
-                    FilePanelMessage(text: "Loading\u{2026}")
-                }
-            } else {
-                FilePanelMessage(text: "Select a changed file to see it here.")
+            if quickOpen.isShowing {
+                VStack(spacing: 0) { QuickOpenField(workspace: workspace, model: quickOpen) }.padding(quickOpenTop)
+            }
+            fileBody(path: path, notice: notice, document: document, view: view, style: style, clear: bodyClear, noticeClear: quickOpen.isShowing ? 0 : clear)
+        }
+        // The tabs and the header share one glass bar floating over the code.
+        .overlay(alignment: .top) {
+            if showsBar {
+                FilePanelBar(workspace: workspace, path: path, document: document, view: view, style: style, height: barHeight, metrics: store.metrics)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(.panelFill)
         // Per-document state is made when a document appears or is replaced (never while rendering).
         .onChange(of: workspace.activeTab.flatMap { workspace.document($0)?.id }, initial: true) {
             panel.attach(workspace: workspace)
@@ -79,6 +114,38 @@ struct FilePanelView: Component {
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("file-panel")
+    }
+}
+
+/// The glass bar floating over the top of the panel: the tabs and the header. Its height with the gutter above and below
+/// is the code's top margin, written to `height` only when it changes.
+struct FilePanelBar: Component {
+    let workspace: Workspace
+    let path: String?
+    let document: EditorDocument?
+    let view: OpenDocumentView?
+    let style: AppearanceStyle
+    let height: Binding<Double>
+    /// Remembers the measured height for the next panel's first frame.
+    let metrics: SessionUIStore.BarMetrics
+
+    var content: some ElementGroup {
+        let _ = BodyProbe.hit("FilePanelBar")
+        let height = height
+        VStack(spacing: 0) {
+            VStack(alignment: .leading, spacing: 0) {
+                if !workspace.tabs.isEmpty { FileTabStrip(workspace: workspace).equatable() }
+                if let path { FilePanelHeader(workspace: workspace, path: path, document: document, view: view).equatable() }
+            }
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("file-panel-bar")
+            .glassControl(style: style, cornerRadius: style.cornerRadius)
+        }
+        .padding(style.gutterInsets)
+        .onGeometryChange(for: Double.self, of: { Double($0.size.height.value) }) { new in
+            if height.wrappedValue != new { height.wrappedValue = new }
+            metrics.filePanelBarHeight = new
+        }
     }
 }
 
@@ -248,6 +315,7 @@ struct DefinitionMessage: Component {
 struct FilePanelNotice: Component {
     let workspace: Workspace
     let notice: Notice
+    var style: AppearanceStyle = .defaults
 
     var content: some ElementGroup {
         let workspace = workspace, notice = notice
@@ -257,6 +325,7 @@ struct FilePanelNotice: Component {
                 .accessibilityIdentifier("file-panel-notice")
             Spacer()
             Button("Dismiss") { workspace.dismiss(notice) }
+                .buttonStyle(PillButtonStyle(style: style))
                 .accessibilityIdentifier("file-panel-notice-dismiss")
         }
         .padding(inset(12, 4))

@@ -47,6 +47,32 @@ import Testing
         #expect(condition(), "\(what)")
     }
 
+    /// A host that counts how often the themes are installed on it.
+    @MainActor private final class CountingHost: ThemeHost {
+        var installs = 0
+        var lightTheme: Theme = .light { didSet { installs += 1 } }
+        var darkTheme: Theme = .dark { didSet { installs += 1 } }
+        var preferredColorScheme: ColorScheme?
+    }
+
+    /// Choosing a theme whose style differs changes the style inside `apply()`; the themes are installed once, not again for the style.
+    @Test func styleChangingApplyInstallsOnce() throws {
+        let rig = Rig()
+        let dir = themesDirectory(rig)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        try #"{"name":"Wide","appearance":"dark","base":"dracula","style":{"gutter":14}}"#
+            .write(to: dir.appendingPathComponent("wide.json"), atomically: true, encoding: .utf8)
+        let host = CountingHost()
+        let controller = ThemeController(workspace: rig.workspace, host: host, watcher: nil)
+        controller.stop()
+        #expect(controller.style.gutter == AppearanceStyle.defaults.gutter)
+        host.installs = 0
+        try controller.choose(theme: "user/wide")
+        #expect(controller.style.gutter == 14, "the style followed the theme")
+        // Single mode installs the light and dark slots: one install is two assignments.
+        #expect(host.installs == 2, "installed \(host.installs / 2) times")
+    }
+
     @Test func defaultIsDraculaForcedDark() throws {
         let rig = Rig()
         let probe = try Probe([.chatFill, hex("#282A36")])

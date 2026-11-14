@@ -7,6 +7,7 @@
     "codeSelectionFill" : "#EEE8D5",
     "commandTint" : "#EEEAD9",
     "controlBorder" : "#809191",
+    "controlFill" : "#E6DFC8",
     "currentFindMatchFill" : "#D9C072",
     "diagnosticError" : "#C52421",
     "diagnosticInfo" : "#1D6AA0",
@@ -17,6 +18,8 @@
     "errorInk" : "#C52421",
     "errorTint" : "#F7E1D0",
     "findMatchFill" : "#E7D59F",
+    "glassRim" : "#0000001A",
+    "islandFill" : "#FDF6E3",
     "linkInk" : "#1D6AA0",
     "markdownCodeFill" : "#FDF6E3",
     "markdownQuoteBar" : "#93A1A1",
@@ -64,7 +67,8 @@
     "warningInk" : "#826100",
     "warningTint" : "#F1E7CC",
     "webInk" : "#268BD2",
-    "webTint" : "#E8EBE1"
+    "webTint" : "#E8EBE1",
+    "windowBackground" : "#EEE8D5"
   },
   "name" : "Solarized Light",
   "sessionColors" : [

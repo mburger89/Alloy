@@ -35,11 +35,21 @@ public struct AlloySettings: Codable, Equatable, Sendable {
     /// `extensions` adds a server.
     public var languageServers: [String: ServerConfigOverride]
 
+    /// Glass on (the default) or off: off draws solid controls and an opaque window, no blur anywhere. The See-through and
+    /// Blur values are kept while it is off.
+    public var glass: Bool
+
+    /// The user's look overrides, applied over the theme's style.
+    public var appearance: AppearanceOverrides
+
     public init(claudePath: String? = nil, lastProjectPath: String? = nil,
                 shareKnowledge: Bool = true, shareAcrossProjects: Bool = true, askBeforeSharedNotes: Bool = false, followEdits: Bool = true,
                 themeMode: ThemeMode = .single, theme: String = "dracula",
                 lightTheme: String = "alloy-light", darkTheme: String = "dracula",
-                languageServers: [String: ServerConfigOverride] = [:]) {
+                languageServers: [String: ServerConfigOverride] = [:],
+                appearance: AppearanceOverrides = AppearanceOverrides(), glass: Bool = true) {
+        self.glass = glass
+        self.appearance = appearance
         self.languageServers = languageServers
         self.themeMode = themeMode
         self.theme = theme
@@ -54,7 +64,7 @@ public struct AlloySettings: Codable, Equatable, Sendable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case claudePath, lastProjectPath, shareKnowledge, shareAcrossProjects, askBeforeSharedNotes, followEdits, themeMode, theme, lightTheme, darkTheme, languageServers
+        case claudePath, lastProjectPath, shareKnowledge, shareAcrossProjects, askBeforeSharedNotes, followEdits, themeMode, theme, lightTheme, darkTheme, languageServers, appearance, glass
     }
 
     /// Every key is optional, so a file written by an older Alloy still loads with its values intact.
@@ -72,6 +82,8 @@ public struct AlloySettings: Codable, Equatable, Sendable {
         theme = (try? c.decodeIfPresent(String.self, forKey: .theme)) ?? "dracula"
         lightTheme = (try? c.decodeIfPresent(String.self, forKey: .lightTheme)) ?? "alloy-light"
         darkTheme = (try? c.decodeIfPresent(String.self, forKey: .darkTheme)) ?? "dracula"
+        appearance = (try? c.decodeIfPresent(AppearanceOverrides.self, forKey: .appearance)) ?? AppearanceOverrides()
+        glass = try c.decodeIfPresent(Bool.self, forKey: .glass) ?? true
         // Entry by entry: one malformed override is dropped without losing the others.
         let lossy = (try? c.decodeIfPresent([String: LossyOverride].self, forKey: .languageServers)) ?? nil
         languageServers = (lossy ?? [:]).compactMapValues(\.value)

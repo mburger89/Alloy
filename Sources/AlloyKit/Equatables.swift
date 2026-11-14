@@ -27,6 +27,7 @@ extension FilePanelView: Equatable {
 extension CodePanel: Equatable {
     nonisolated static func == (a: Self, b: Self) -> Bool {
         a.workspace === b.workspace && a.store === b.store && a.document === b.document && a.view === b.view
+            && a.topClear == b.topClear
     }
 }
 
@@ -64,13 +65,13 @@ extension FilePanelHeader: Equatable {
 
 extension TranscriptView: Equatable {
     nonisolated static func == (a: Self, b: Self) -> Bool {
-        a.workspace === b.workspace && a.session === b.session && a.ui === b.ui
+        a.workspace === b.workspace && a.session === b.session && a.ui === b.ui && a.bottomInset == b.bottomInset
     }
 }
 
 extension ComposerView: Equatable {
     nonisolated static func == (a: Self, b: Self) -> Bool {
-        a.workspace === b.workspace && a.session === b.session && a.model === b.model
+        a.workspace === b.workspace && a.session === b.session && a.model === b.model && a.style == b.style
     }
 }
 

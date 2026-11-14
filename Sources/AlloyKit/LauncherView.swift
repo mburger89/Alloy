@@ -63,7 +63,7 @@ public func launcherRoot(model: LauncherModel, themes: ThemeController? = nil) -
         }
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity)
-    .background(.chatFill)
+    .background { WindowBackdropView(style: themes?.style ?? .defaults).equatable() }
 }
 
 struct ChooseProjectView: Component {

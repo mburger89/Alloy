@@ -34,6 +34,8 @@ struct SettingsView: Component {
             if let themes {
                 ThemeSection(themes: themes, workspace: workspace, close: close)
                 Divider()
+                AppearanceSection(themes: themes, workspace: workspace)
+                Divider()
             }
             VStack(alignment: .leading, spacing: Pixels(8)) {
                 Text("Path to claude").font(size: 12).foregroundColor(.mutedInk)
@@ -90,9 +92,10 @@ struct SettingsView: Component {
         }
         .padding(Pixels(20))
         .frame(maxWidth: .infinity, alignment: .topLeading)
+        // The text buttons are pills; the close button and the theme rows set `.plain` themselves.
+        .buttonStyle(PillButtonStyle(style: themes?.style ?? .defaults))
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(.panelFill)
         .focusable()
         .focused($focused)
         .onKeyPress(.escape) { close(); return .handled }
@@ -103,6 +106,10 @@ struct SettingsView: Component {
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Settings")
         .accessibilityIdentifier("settings-view")
+        // The chat island's shape, so the overlay keeps the island's rounded corners.
+        .background(alignment: .center) {
+            RoundedRectangle(cornerRadius: Pixels(Float((themes?.style ?? .defaults).cornerRadius))).fill(Color.panelFill)
+        }
     }
 
     /// Editing the path takes back "Saved" and any save error.
@@ -388,5 +395,99 @@ struct ThemeSection: Component {
 
     private func run(_ change: () throws -> Void) {
         do { try change(); saveError = nil } catch { saveError = "Could not save the theme: \(error.localizedDescription)" }
+    }
+}
+
+/// The look part of Settings: island gutter, corner radius, control opacity and blur, and a reset. Each control writes
+/// `settings.appearance` through `Workspace.updateSettings`, which repaints at once and saves; nothing here touches
+/// the open document or focus.
+struct AppearanceSection: Component {
+    let themes: ThemeController
+    let workspace: Workspace
+    @State var failure: String?
+    @Environment(\.accessibilityReduceTransparency) var reduceTransparency
+
+    var content: some ElementGroup {
+        let style = themes.style
+        VStack(alignment: .leading, spacing: Pixels(8)) {
+            Text("Appearance").font(size: 12).foregroundColor(.mutedInk)
+            Toggle(isOn: glassBinding) { Text("Glass").font(size: 13) }
+                .accessibilityIdentifier("settings-appearance-glass")
+            Text("Off draws solid controls and an opaque window. Lighter on battery and GPU.").font(size: 11).foregroundColor(.mutedInk)
+            sliderRow("Gutter", id: "settings-appearance-gutter", value: style.gutter, range: AppearanceStyle.gutterRange,
+                      unit: "") { $0.gutter = $1 }
+            sliderRow("Corners", id: "settings-appearance-corners", value: style.cornerRadius, range: AppearanceStyle.cornerRadiusRange,
+                      unit: "") { $0.cornerRadius = $1 }
+            sliderRow("Control opacity", id: "settings-appearance-control-opacity", value: style.controlOpacity * 100,
+                      range: (AppearanceStyle.opacityRange.lowerBound * 100)...(AppearanceStyle.opacityRange.upperBound * 100),
+                      unit: "%", disabled: !style.glass) { $0.controlOpacity = $1 / 100 }
+            sliderRow("See-through", id: "settings-appearance-see-through", value: (1 - style.islandOpacity) * 100,
+                      range: (AppearanceStyle.seeThroughRange.lowerBound * 100)...(AppearanceStyle.seeThroughRange.upperBound * 100),
+                      unit: "%", disabled: !style.glass) { $0.islandOpacity = 1 - $1 / 100 }
+            Text("Control blur").font(size: 11).foregroundColor(.mutedInk)
+            Picker("Control blur", selection: blurBinding) {
+                Text("Light").tag(ControlBlur.light)
+                Text("Medium").tag(ControlBlur.medium)
+                Text("Heavy").tag(ControlBlur.heavy)
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .disabled(!style.glass)
+            .accessibilityIdentifier("settings-appearance-blur")
+            if reduceTransparency {
+                Text("Reduce Transparency is on in macOS, so glass is drawn solid.").font(size: 11).foregroundColor(.mutedInk)
+                    .accessibilityIdentifier("settings-appearance-reduce-transparency-note")
+            }
+            if let failure {
+                Text(verbatim: failure).font(size: 11).foregroundColor(.errorInk).accessibilityIdentifier("settings-appearance-error")
+            }
+            Button("Reset to theme") { write { $0 = AppearanceOverrides() } }
+                .accessibilityIdentifier("settings-appearance-reset")
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("settings-appearance-section")
+    }
+
+    private func sliderRow(_ title: String, id: String, value: Double, range: ClosedRange<Double>, unit: String, disabled: Bool = false,
+                           set: @escaping (inout AppearanceOverrides, Double) -> Void) -> some ElementGroup {
+        let binding = Binding<Double>(get: { value }, set: { new in
+            if new != value { write(persist: false) { set(&$0, new) } }
+        })
+        return HStack(spacing: Pixels(8)) {
+            Text(verbatim: title).font(size: 13)
+            Slider(value: binding, in: range, step: 1, onEditingChanged: { editing in
+                // Each step repaints live; the file is written once, when the drag ends.
+                if !editing { persist() }
+            })
+                .disabled(disabled)
+                .accessibilityLabel(title)
+                .accessibilityIdentifier(id)
+            Text(verbatim: "\(Int(value.rounded()))\(unit)").font(size: 11).foregroundColor(.mutedInk)
+        }
+    }
+
+    /// The Glass toggle: a top-level setting, saved at once. Nothing but the style changes, so the window repaints live.
+    private var glassBinding: Binding<Bool> {
+        let workspace = workspace
+        return Binding(get: { workspace.settings.glass }, set: { on in
+            var s = workspace.settings
+            s.glass = on
+            do { try workspace.updateSettings(s); failure = nil } catch { failure = "Could not save: \(error.localizedDescription)" }
+        })
+    }
+
+    private var blurBinding: Binding<ControlBlur> {
+        let themes = themes
+        return Binding(get: { themes.style.controlBlur }, set: { new in write { $0.controlBlur = new } })
+    }
+
+    private func persist() {
+        do { try workspace.persistSettings(); failure = nil } catch { failure = "Could not save: \(error.localizedDescription)" }
+    }
+
+    private func write(persist: Bool = true, _ change: (inout AppearanceOverrides) -> Void) {
+        var s = workspace.settings
+        change(&s.appearance)
+        do { try workspace.updateSettings(s, persist: persist); failure = nil } catch { failure = "Could not save: \(error.localizedDescription)" }
     }
 }

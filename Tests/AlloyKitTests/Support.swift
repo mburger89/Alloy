@@ -17,6 +17,18 @@ func alloyWindow(_ workspace: Workspace) throws -> TestWindow {
 }
 
 extension TestWindow {
+    /// Every rect the last frame draws: the scene's own and, recursively, those of each offscreen group (the islands'
+    /// clipped content is drawn in groups), as `allGlyphs` does for text.
+    var allRects: [MUIRect] {
+        func collect(_ scene: Scene, into out: inout [MUIRect]) {
+            out.append(contentsOf: scene.rects)
+            for group in scene.groupScenes { collect(group, into: &out) }
+        }
+        var rects: [MUIRect] = []
+        collect(scene, into: &rects)
+        return rects
+    }
+
     /// The menu bar as main.swift installs it: Settings… lives there.
     func installAlloyMenu(_ workspace: Workspace) {
         let model = LauncherModel(workspace: workspace)
@@ -41,11 +53,15 @@ final class Rig {
     let changes = ScriptedChangeSource()
 
     /// `followEdits` is off by default: the UI tests drive the panel by hand and expect it to stay where they put it.
-    init(followEdits: Bool = false) {
+    init(followEdits: Bool = false, branch: String? = nil) {
         var settings = AlloySettings()
         settings.followEdits = followEdits
         root = FileManager.default.temporaryDirectory.appendingPathComponent("alloy-ui-\(UUID().uuidString)").resolvingSymlinksInPath()
         try? FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        if let branch {
+            try? FileManager.default.createDirectory(at: root.appendingPathComponent(".git"), withIntermediateDirectories: true)
+            try? "ref: refs/heads/\(branch)\n".write(to: root.appendingPathComponent(".git/HEAD"), atomically: true, encoding: .utf8)
+        }
         let bag = transports, source = changes
         workspace = Workspace(projectRoot: root, appSupport: root.appendingPathComponent("support"), settings: settings,
                               locate: { _ in URL(fileURLWithPath: "/fake/claude") },

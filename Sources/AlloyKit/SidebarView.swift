@@ -43,7 +43,6 @@ struct SidebarView: Component {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(.sidebarFill)
     }
 
     private var selection: Binding<Session.ID?> {

@@ -22,4 +22,10 @@ public protocol ThemeWorkshop: AnyObject {
     /// Reloads the library and marks the preview saved when it matches `file`.
     func didSave(_ saved: SavedTheme, file: ThemeFile, session: UUID) async
     func themeSessionEnded(_ session: UUID)
+    /// The workspace's settings changed (appearance overrides included).
+    func settingsDidChange()
+}
+
+public extension ThemeWorkshop {
+    func settingsDidChange() {}
 }

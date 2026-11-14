@@ -1,5 +1,7 @@
 # Parity shortfalls
 
+> Benchmark note: `ALLOY_GLASS=0` forces glass off everywhere, whatever the Glass setting says: solid controls, an opaque window and opaque islands (no blur, no see-through). Use it for glass-free measurements; results with and without it are not comparable.
+
 This file records metrics where a published parity run (`Bench/published/*.json`) shows Alloy behind Zed, and the
 triage of each: what causes the gap, who owns it, and what to do next. Entries are triage only; none of them is a fix.
 
@@ -36,6 +38,16 @@ a6106901 (before) and f00534fd (after): typing latency 14.7-16.2 ms (p95 23.4-23
 `METALUI_LATENCY_TRACE` record shows the saving: 200 typed characters drew about 407 frames before and 207 after (2.0 to
 1.0 frames per keystroke), and est>screen fell from p50 15.6 / p95 32.4 ms (170 frames over 20 ms) to p50 6.4-8.5 / p95
 13.6-15.6 ms (none over 20 ms). Half the GPU and CPU frame work per key, at the same perceived latency.
+
+Islands and glass (feat/islands, 2026-11-13), GUI benchmark, MetalUI 24176012-era master, alternated builds (master
+72744a1 vs the branch with Glass on and with `ALLOY_GLASS=0`), two full runs plus three startup/large-file runs:
+typing p50 master about 17 ms, Glass on 15-19 ms, Glass off 14-16 ms (Glass on still shows paced keys under load:
+MetalUI tracks an extra redraw after each key with glass, FP-R); scroll frames 17.2 ms in all three; idle CPU 0.0 %.
+Memory 54.2 / 59.3 / 56.4 MiB active and 45.0 / 48.4 / 47.0 MiB idle (master / Glass on / Glass off): the islands
+layout costs about +2 MiB and glass about +3 MiB more (accepted by the user; Glass off is the light mode). Large-file
+open 178-188 ms on master vs 194-205 ms on the branch (+16 ms, +9 %) and startup 158-166 vs 169-172 ms (+9 ms, +5 %):
+open follow-up, to be profiled after the merge. Per-keystroke element requests (warmed ViewRerunTests) 110 per frame
+before islands, 134 after; per-frame build, encode and GPU time unchanged within noise (glass adds about 0.2 ms GPU).
 
 ## Profiles - 2026-11-12 (not a parity run; traced timings include profiler overhead)
 

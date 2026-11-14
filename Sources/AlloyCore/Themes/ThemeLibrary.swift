@@ -30,6 +30,7 @@ public struct ResolvedTheme: Equatable, Sendable {
     public var appearance: ThemeAppearance
     public var colors: [String: ThemeRGBA]
     public var sessionColors: [ThemeRGBA]
+    public var style: AppearanceStyle = .defaults
 }
 
 public struct ThemeLibrary: Equatable, Sendable {
@@ -95,7 +96,20 @@ public struct ThemeLibrary: Equatable, Sendable {
         for link in links.reversed() { colors.merge(link.file.colors) { _, new in new } }
         let sessionColors = links.lazy.compactMap { $0.file.sessionColors }.first ?? []
         return ResolvedTheme(id: start.id, name: start.file.name, appearance: start.file.appearance,
-                             colors: colors, sessionColors: sessionColors)
+                             colors: colors, sessionColors: sessionColors, style: Self.style(along: links))
+    }
+
+    /// The nearest value per key along the chain (`links` is entry first), then the defaults, clamped.
+    private static func style(along links: [ThemeEntry]) -> AppearanceStyle {
+        let files = links.compactMap(\.file.style)
+        var s = AppearanceStyle.defaults
+        s.gutter = files.lazy.compactMap(\.gutter).first ?? s.gutter
+        s.cornerRadius = files.lazy.compactMap(\.cornerRadius).first ?? s.cornerRadius
+        s.islandOpacity = files.lazy.compactMap(\.islandOpacity).first ?? s.islandOpacity
+        s.controlOpacity = files.lazy.compactMap(\.controlOpacity).first ?? s.controlOpacity
+        s.controlBlur = files.lazy.compactMap(\.controlBlur).first ?? s.controlBlur
+        s.pillButtons = files.lazy.compactMap(\.pillButtons).first ?? s.pillButtons
+        return s.clamped()
     }
 
     /// A draft merged over its `base` chain like `resolve(_:)`. An unknown or missing base falls back by appearance and
@@ -112,7 +126,7 @@ public struct ThemeLibrary: Equatable, Sendable {
         library.user.append(entry)
         let theme = library.resolve(id)
             ?? ResolvedTheme(id: id, name: draft.name, appearance: draft.appearance, colors: draft.colors,
-                             sessionColors: draft.sessionColors ?? [])
+                             sessionColors: draft.sessionColors ?? [], style: Self.style(along: [entry]))
         return (theme, notes)
     }
 

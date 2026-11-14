@@ -7,6 +7,7 @@
     "codeSelectionFill" : "#073642",
     "commandTint" : "#0D3640",
     "controlBorder" : "#5D757C",
+    "controlFill" : "#073642",
     "currentFindMatchFill" : "#364726",
     "diagnosticError" : "#E77472",
     "diagnosticInfo" : "#4EA3DF",
@@ -17,6 +18,8 @@
     "errorInk" : "#E77472",
     "errorTint" : "#17323C",
     "findMatchFill" : "#213C2C",
+    "glassRim" : "#FFFFFF26",
+    "islandFill" : "#002B36",
     "linkInk" : "#4EA3DF",
     "markdownCodeFill" : "#002B36",
     "markdownQuoteBar" : "#586E75",
@@ -64,7 +67,8 @@
     "warningInk" : "#BF9100",
     "warningTint" : "#133531",
     "webInk" : "#268BD2",
-    "webTint" : "#043546"
+    "webTint" : "#043546",
+    "windowBackground" : "#001F27"
   },
   "name" : "Solarized Dark",
   "sessionColors" : [

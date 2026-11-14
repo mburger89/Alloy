@@ -49,9 +49,11 @@ public struct ThemeFile: Equatable, Sendable {
     public var credit: String?
     public var colors: [String: ThemeRGBA]
     public var sessionColors: [ThemeRGBA]?
+    public var style: AppearanceStyleFile?
 
     public init(name: String, appearance: ThemeAppearance, base: String? = nil, author: String? = nil,
-                credit: String? = nil, colors: [String: ThemeRGBA] = [:], sessionColors: [ThemeRGBA]? = nil) {
+                credit: String? = nil, colors: [String: ThemeRGBA] = [:], sessionColors: [ThemeRGBA]? = nil,
+                style: AppearanceStyleFile? = nil) {
         self.name = name
         self.appearance = appearance
         self.base = base
@@ -59,6 +61,7 @@ public struct ThemeFile: Equatable, Sendable {
         self.credit = credit
         self.colors = colors
         self.sessionColors = sessionColors
+        self.style = style
     }
 
     public static func parse(_ data: Data) throws(ThemeFileError) -> ThemeFile {
@@ -96,12 +99,15 @@ public struct ThemeFile: Equatable, Sendable {
             sessionColors = list
         }
 
+        // A wrong-typed `style` is ignored so a theme never fails to load because of it.
+        let style = (dict["style"] as? [String: Any]).map { AppearanceStyleFile(json: $0) }
+
         return ThemeFile(
             name: name, appearance: appearance,
             base: dict["base"] as? String,
             author: dict["author"] as? String,
             credit: (dict["credit"] as? String) ?? (dict["source"] as? String),
-            colors: colors, sessionColors: sessionColors)
+            colors: colors, sessionColors: sessionColors, style: style)
     }
 }
 
@@ -114,6 +120,7 @@ extension ThemeFile {
         if let credit { dict["credit"] = credit }
         dict["colors"] = colors.mapValues { $0.hex }
         if let sessionColors { dict["sessionColors"] = sessionColors.map(\.hex) }
+        if let style { dict["style"] = style.json }
         let options: JSONSerialization.WritingOptions = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
         return try JSONSerialization.data(withJSONObject: dict, options: options)
     }

@@ -46,7 +46,7 @@ import Testing
         let minX = Float(box.minX.value) + 40, maxX = Float(box.maxX.value) - 70
         let minY = Float(box.minY.value), maxY = Float(box.maxY.value)
         var set = Set<[Float]>()
-        for g in window.scene.glyphs {
+        for g in window.allGlyphs {
             let b = g.bounds
             guard b.origin.x >= minX, b.origin.x + b.size.width <= maxX, b.origin.y >= minY, b.origin.y + b.size.height <= maxY else { continue }
             set.insert([g.color.h, g.color.s, g.color.l, g.color.a])
@@ -157,7 +157,7 @@ import Testing
         try await waitForColours(window, in: "code-e1-diff", atLeast: 2)
         let box = try window.element(identifier: "code-e1-diff").frame
         var fills = Set<[Float]>()
-        for r in window.scene.rects where r.background.a > 0 {
+        for r in window.allRects where r.background.a > 0 {
             let x0 = r.bounds.origin.x, y0 = r.bounds.origin.y
             let x1 = x0 + r.bounds.size.width, y1 = y0 + r.bounds.size.height
             let inside = x0 >= box.minX.value && y0 >= box.minY.value && x1 <= box.maxX.value && y1 <= box.maxY.value

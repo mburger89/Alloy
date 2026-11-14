@@ -4,7 +4,7 @@ import Foundation
 enum ThemeTools {
     static let unavailable = MCPToolResult(text: "Alloy's theme tools are not available right now.", isError: true)
     static let author = "Made in an Alloy theme session"
-    static let format = "A theme file is a JSON object: {\"name\": text, \"appearance\": \"dark\"|\"light\", \"base\": optional theme id to inherit from, \"colors\": {slot: \"#RRGGBB\" or \"#RRGGBBAA\"}, \"sessionColors\": optional list of 6 to 12 hex colours}."
+    static let format = "A theme file is a JSON object: {\"name\": text, \"appearance\": \"dark\"|\"light\", \"base\": optional theme id to inherit from, \"colors\": {slot: \"#RRGGBB\" or \"#RRGGBBAA\"}, \"sessionColors\": optional list of 6 to 12 hex colours, \"style\": optional {\"gutter\": 0 to 16, \"cornerRadius\": 0 to 20, \"islandOpacity\": 0.40 to 1.0, \"controlOpacity\": 0.40 to 1.0, \"controlBlur\": \"light\"|\"medium\"|\"heavy\", \"pillButtons\": true|false}}. A style key left out comes from the base theme."
 
     static func make(workspace: Workspace) -> [MCPTool] {
         let ref = WorkspaceRef(workspace)
@@ -32,6 +32,26 @@ enum ThemeTools {
     static func json(_ encodable: some Encodable) -> JSONValue {
         guard let data = try? JSONEncoder().encode(encodable), let value = JSONValue.parse(data) else { return .null }
         return value
+    }
+
+    /// The six style keys of a theme file: `{key: {value, range, purpose}}`. `range` is `[min, max]` for numbers, the
+    /// allowed words for `controlBlur` and `[false, true]` for `pillButtons`.
+    static func styleDescription(_ s: AppearanceStyle) -> JSONValue {
+        func number(_ value: Double, _ range: ClosedRange<Double>, _ purpose: String) -> JSONValue {
+            .object(["value": .number(value), "range": .array([.number(range.lowerBound), .number(range.upperBound)]),
+                     "purpose": .string(purpose)])
+        }
+        return .object([
+            "gutter": number(s.gutter, AppearanceStyle.gutterRange, "Points of window background between the islands and the window edge."),
+            "cornerRadius": number(s.cornerRadius, AppearanceStyle.cornerRadiusRange, "Corner radius of the islands, in points."),
+            "islandOpacity": number(s.islandOpacity, AppearanceStyle.opacityRange, "Opacity of islandFill, as a fraction: lower shows more of what is behind the window."),
+            "controlOpacity": number(s.controlOpacity, AppearanceStyle.opacityRange, "Opacity of controlFill on the floating controls, as a fraction."),
+            "controlBlur": .object(["value": .string(s.controlBlur.rawValue),
+                                    "range": .array(ControlBlur.allCases.map { .string($0.rawValue) }),
+                                    "purpose": .string("How strongly the floating controls blur what is behind them.")]),
+            "pillButtons": .object(["value": .bool(s.pillButtons), "range": .array([.bool(false), .bool(true)]),
+                                    "purpose": .string("Fully round buttons when true; buttons use half the island radius when false.")]),
+        ])
     }
 
     static func hexMap(_ colors: [String: ThemeRGBA]) -> JSONValue {
@@ -117,6 +137,7 @@ struct ThemeSlotsTool: MCPTool {
             "appearance": shown.map { .string($0.appearance.rawValue) } ?? .null,
             "slots": .array(slots),
             "sessionColors": .array((shown?.sessionColors ?? []).map { .string($0.hex) }),
+            "style": ThemeTools.styleDescription(shown?.style ?? .defaults),
             "format": .string(ThemeTools.format),
         ]))
     }

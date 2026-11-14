@@ -7,6 +7,7 @@
     "codeSelectionFill" : "#333842",
     "commandTint" : "#353942",
     "controlBorder" : "#707682",
+    "controlFill" : "#3E4451",
     "currentFindMatchFill" : "#4E4A42",
     "diagnosticError" : "#E5848B",
     "diagnosticInfo" : "#61AFEF",
@@ -17,6 +18,8 @@
     "errorInk" : "#E5848B",
     "errorTint" : "#3B353D",
     "findMatchFill" : "#3F3E3D",
+    "glassRim" : "#FFFFFF26",
+    "islandFill" : "#282C34",
     "linkInk" : "#61AFEF",
     "markdownCodeFill" : "#323741",
     "markdownQuoteBar" : "#4B5263",
@@ -64,7 +67,8 @@
     "warningInk" : "#E5C07B",
     "warningTint" : "#3B3B3B",
     "webInk" : "#61AFEF",
-    "webTint" : "#2E3947"
+    "webTint" : "#2E3947",
+    "windowBackground" : "#1B1D23"
   },
   "name" : "One Dark",
   "sessionColors" : [

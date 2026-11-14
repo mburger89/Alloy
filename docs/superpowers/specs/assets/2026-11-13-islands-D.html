@@ -1,0 +1,154 @@
+<!doctype html><html><head><meta charset="utf-8"><style>
+  .dirs { display:flex; flex-direction:column; gap:28px; }
+  .dir { border-radius:14px; padding:14px; cursor:pointer; border:2px solid transparent; background:rgba(127,127,127,.06); }
+  .dir.selected { border-color:#7c6cf0; }
+  .dir h3 { margin:2px 0 4px; }
+  .dir p.d { margin:0 0 12px; opacity:.8; font-size:14px; }
+
+  /* the window */
+  .win { --gut:6px; --r:10px; height:430px; border-radius:12px; overflow:hidden; position:relative;
+         font:12px -apple-system, "SF Pro Text", system-ui, sans-serif; color:#d8dae3;
+         box-shadow:0 18px 50px rgba(0,0,0,.45); display:flex; flex-direction:column; }
+  .tb { height:30px; display:flex; align-items:center; gap:8px; padding:0 12px; flex:none; }
+  .tl { display:flex; gap:7px; } .tl i { width:11px; height:11px; border-radius:50%; display:block; }
+  .tl i:nth-child(1){background:#ff5f57} .tl i:nth-child(2){background:#febc2e} .tl i:nth-child(3){background:#28c840}
+  .tb b { font-weight:600; margin-left:10px; font-size:12px; }
+  .body { flex:1; display:flex; gap:var(--gut); padding:0 var(--gut) var(--gut); min-height:0; }
+  .isl { border-radius:var(--r); overflow:hidden; position:relative; display:flex; flex-direction:column; min-width:0; }
+  .side { width:190px; flex:none; } .chat { flex:1.15; } .file { flex:1; }
+  .hdr { font-size:10px; letter-spacing:.06em; text-transform:uppercase; opacity:.55; padding:10px 12px 6px; }
+  .sess { margin:2px 8px; padding:7px 9px; border-radius:8px; display:flex; gap:8px; align-items:flex-start; }
+  .sess .dot { width:8px; height:8px; border-radius:50%; margin-top:4px; flex:none; }
+  .sess small { display:block; opacity:.55; font-size:10.5px; margin-top:2px; }
+  .sess.sel { background:rgba(124,108,240,.28); }
+  .msgs { flex:1; padding:12px 14px 90px; display:flex; flex-direction:column; gap:9px; overflow:hidden; }
+  .bub { padding:8px 10px; border-radius:9px; line-height:1.4; }
+  .bub.u { align-self:flex-end; max-width:75%; }
+  .tool { font-size:11px; padding:6px 9px; border-radius:8px; display:flex; gap:6px; align-items:center; }
+  .tool code { font:11px ui-monospace, "SF Mono", Menlo, monospace; }
+  .composer { position:absolute; left:10px; right:10px; bottom:10px; border-radius:14px; padding:9px 10px; }
+  .composer .row { display:flex; gap:6px; margin-bottom:7px; }
+  .pill { font-size:10.5px; padding:3px 9px; border-radius:999px; }
+  .composer .field { opacity:.55; padding:3px 2px; display:flex; justify-content:space-between; align-items:center; }
+  .send { width:22px; height:22px; border-radius:50%; background:#7c6cf0; display:inline-block; }
+  .tabs { display:flex; gap:4px; padding:6px 8px 0; flex:none; }
+  .tab { padding:5px 10px; border-radius:8px 8px 0 0; font-size:11px; opacity:.6; }
+  .tab.on { opacity:1; }
+  .fhead { display:flex; justify-content:space-between; align-items:center; padding:7px 10px; font-size:11px; flex:none; }
+  .seg { display:flex; border-radius:999px; padding:2px; } .seg span { padding:2px 8px; border-radius:999px; font-size:10px; }
+  .code { flex:1; padding:8px 0; font:11.5px/1.65 ui-monospace, "SF Mono", Menlo, monospace; overflow:hidden; }
+  .ln { display:flex; } .ln .g { width:34px; text-align:right; padding-right:8px; opacity:.35; flex:none; }
+  .ln .bar { width:3px; margin-right:8px; flex:none; }
+  .add { background:rgba(64,200,120,.12); } .add .bar { background:#3ccf7a; }
+  .k { color:#c792ea } .t { color:#82aaff } .s { color:#c3e88d } .c { color:#6b7089 }
+
+  /* A — JetBrains islands: opaque panels, flat chrome */
+  .A { background:#15161b; } .A .tb { background:#15161b; }
+  .A .isl { background:#1f2027; }
+  .A .bub.u { background:#2a2c36; } .A .tool { background:#262833; }
+  .A .composer { position:static; margin:0 10px 10px; background:#262833; border-radius:10px; }
+  .A .msgs { padding-bottom:12px; }
+  .A .pill { background:#30323d; } .A .tab.on { background:#262833; } .A .seg { background:#2a2c36; } .A .seg span.on { background:#3a3d4a; }
+  .A .fhead { border-bottom:1px solid #2a2c36; }
+
+  /* B — islands + Liquid Glass controls floating over content */
+  .B { background:linear-gradient(135deg,#191a22,#14151b 60%,#1a1726); } .B .tb { background:transparent; }
+  .B .isl { background:#1e1f27; box-shadow:inset 0 0 0 1px rgba(255,255,255,.05); }
+  .B .side { background:rgba(40,41,54,.55); backdrop-filter:blur(20px) saturate(1.4);
+             box-shadow:inset 0 1px 0 rgba(255,255,255,.12), inset 0 0 0 1px rgba(255,255,255,.07); }
+  .B .bub.u { background:#2a2c38; } .B .tool { background:#24262f; }
+  .glass { background:rgba(52,54,70,.42); backdrop-filter:blur(16px) saturate(1.6);
+           box-shadow:inset 0 1px 0 rgba(255,255,255,.22), inset 0 0 0 1px rgba(255,255,255,.10), 0 6px 20px rgba(0,0,0,.35); }
+  .B .pill { background:rgba(255,255,255,.08); box-shadow:inset 0 0 0 1px rgba(255,255,255,.10); }
+  .B .tabs { position:absolute; top:6px; left:8px; right:8px; z-index:2; padding:3px; border-radius:999px; }
+  .B .tab { border-radius:999px; } .B .tab.on { background:rgba(255,255,255,.12); }
+  .B .fhead { position:absolute; top:40px; left:8px; right:8px; z-index:2; border-radius:999px; padding:4px 6px 4px 12px; }
+  .B .file .code { padding-top:78px; }
+  .B .seg { background:rgba(0,0,0,.25); } .B .seg span.on { background:rgba(255,255,255,.16); }
+
+  /* C — everything glass over a desktop-ish backdrop */
+  .C { background:radial-gradient(circle at 20% 30%,#3b2c7a,transparent 55%),radial-gradient(circle at 80% 70%,#0d5c6e,transparent 50%),#121320; }
+  .C .tb { background:transparent; }
+  .C .isl { background:rgba(30,31,42,.48); backdrop-filter:blur(26px) saturate(1.5);
+            box-shadow:inset 0 1px 0 rgba(255,255,255,.14), inset 0 0 0 1px rgba(255,255,255,.08); }
+  .C .bub.u { background:rgba(255,255,255,.09); } .C .tool { background:rgba(255,255,255,.06); }
+  .C .pill { background:rgba(255,255,255,.1); }
+  .C .composer { background:rgba(255,255,255,.08); backdrop-filter:blur(14px); box-shadow:inset 0 1px 0 rgba(255,255,255,.18); }
+  .C .tab.on { background:rgba(255,255,255,.1); } .C .seg { background:rgba(0,0,0,.2); } .C .seg span.on { background:rgba(255,255,255,.15); }
+  .C .fhead { border-bottom:1px solid rgba(255,255,255,.07); }
+</style><style>
+html,body{margin:0;background:#0e0f13;color:#e6e7ee;font-family:-apple-system,system-ui,sans-serif}
+.wrap{box-sizing:border-box;width:1000px;padding:22px 24px 24px} .ln>span:last-child{white-space:pre} h3{margin:0 0 6px;font-size:20px} p.d{margin:0 0 18px;opacity:.75;font-size:14px;max-width:1050px}
+.win{height:600px} .B .msgs{justify-content:flex-end;padding-bottom:24px} .B .file .code{padding-top:14px}.C .isl{background:rgba(30,31,42,.6)!important}</style><style>
+.win{padding-top:0}
+.win .tb{margin:var(--gut);height:38px;border-radius:var(--r);padding:0 10px 0 14px;gap:0}
+.win .tb b{margin-left:18px;font-size:13px}
+.win .tb .sp{flex:1}
+.win .tb .pill{margin-left:6px;font-size:11px;padding:4px 11px}
+.win .tb .branch{margin-left:10px;opacity:.6;font-size:11px}
+.A .tb{background:#1f2027}
+.B .tb{background:rgba(44,46,60,.86);box-shadow:inset 0 1px 0 rgba(255,255,255,.18),inset 0 0 0 1px rgba(255,255,255,.08)}
+.C .tb{background:rgba(30,31,42,.6);box-shadow:inset 0 1px 0 rgba(255,255,255,.14),inset 0 0 0 1px rgba(255,255,255,.08)}
+</style><style>
+.D .glass{background:rgba(70,72,96,.55)!important;box-shadow:inset 0 1px 0 rgba(255,255,255,.25),inset 0 0 0 1px rgba(255,255,255,.12),0 6px 20px rgba(0,0,0,.35)}
+.D .pill{background:rgba(255,255,255,.10);box-shadow:inset 0 0 0 1px rgba(255,255,255,.14)}
+.D .tabs{position:absolute;top:6px;left:8px;right:8px;z-index:2;padding:3px;border-radius:999px}
+.D .tab{border-radius:999px} .D .tab.on{background:rgba(255,255,255,.14)}
+.D .fhead{position:absolute;top:40px;left:8px;right:8px;z-index:2;border-radius:999px;padding:4px 6px 4px 12px;border-bottom:none}
+.D .file .code{padding-top:44px}
+.D .msgs{justify-content:flex-end;padding-bottom:62px}
+.D .composer{background:rgba(70,72,96,.55)!important}
+.D .sess.sel{background:rgba(124,108,240,.35);box-shadow:inset 0 1px 0 rgba(255,255,255,.12)}
+</style><style>
+.D .glass,.D .composer{background:rgba(44,46,62,.6)!important}
+</style><style>
+.D .glass,.D .composer{-webkit-backdrop-filter:blur(28px) saturate(1.5)!important;backdrop-filter:blur(28px) saturate(1.5)!important}
+.C .isl{-webkit-backdrop-filter:blur(26px) saturate(1.5)}
+</style></head><body><div class="wrap"><h3>D · floating glass controls, 60% opaque, heavy blur</h3><p class="d">Same as D, but the tab bar, file header and composer use a 60% opaque glass background with a heavy blur, so text scrolling under them is only a faint smudge.</p><div class="win C D">
+  <div class="tb"><div class="tl"><i></i><i></i><i></i></div><b>Weather</b><span class="branch">⎇ main</span><span class="sp"></span><span class="pill">New Session</span><span class="pill">Quick Open</span><span class="pill">⚙︎</span></div>
+  <div class="body">
+    <div class="isl side">
+      <div class="hdr">Sessions</div>
+      <div class="sess sel"><span class="dot" style="background:#7c6cf0"></span><div>Forecast view<small>Editing Forecast.swift</small></div></div>
+      <div class="sess"><span class="dot" style="background:#3ccf7a"></span><div>Units setting<small>Waiting for you</small></div></div>
+      <div class="sess"><span class="dot" style="background:#f0a23c"></span><div>Tests<small>Running swift test</small></div></div>
+      <div class="hdr" style="margin-top:8px">Changed files</div>
+      <div class="sess"><div>Forecast.swift <small>+24 −3</small></div></div>
+      <div class="sess"><div>Formatting.swift <small>+6 −1</small></div></div>
+    </div>
+    <div class="isl chat">
+      <div class="msgs">
+        <div class="bub u">Show the hourly forecast under today's temperature</div>
+        <div class="bub">I'll add an <b>HourlyStrip</b> below the current reading and reuse the formatter.</div>
+        <div class="tool">✎ <code>Forecast.swift</code> <span style="opacity:.5">+24 −3</span></div>
+        <div class="tool">✎ <code>Formatting.swift</code> <span style="opacity:.5">+6 −1</span></div>
+        <div class="bub">Done — the strip scrolls horizontally and uses the user's unit setting.</div>
+        <div class="bub" style="opacity:.8">Next I can add precipitation chances to each hour if you'd like.</div>
+      </div>
+      <div class="composer glassable glass">
+        <div class="row"><span class="pill">Auto</span><span class="pill">Opus 5.5</span></div>
+        <div class="field">Message Forecast view… <span class="send"></span></div>
+      </div>
+    </div>
+    <div class="isl file">
+      <div class="tabs glassable glass"><span class="tab on">Forecast.swift</span><span class="tab">Formatting.swift</span></div>
+      <div class="fhead glassable glass"><span>Sources/Forecast.swift</span><span class="seg"><span class="on">Inline</span><span>Side by side</span></span></div>
+      <div class="code">
+        <div class="ln"><span class="g">12</span><span class="bar"></span><span><span class="k">struct</span> <span class="t">ForecastView</span>: <span class="t">View</span> {</span></div>
+        <div class="ln"><span class="g">13</span><span class="bar"></span><span>  <span class="k">let</span> forecast: <span class="t">Forecast</span></span></div>
+        <div class="ln add"><span class="g">14</span><span class="bar"></span><span>  <span class="k">let</span> hours: [<span class="t">Hour</span>]</span></div>
+        <div class="ln"><span class="g">15</span><span class="bar"></span><span></span></div>
+        <div class="ln"><span class="g">16</span><span class="bar"></span><span>  <span class="k">var</span> body: <span class="k">some</span> <span class="t">View</span> {</span></div>
+        <div class="ln"><span class="g">17</span><span class="bar"></span><span>    <span class="t">VStack</span> {</span></div>
+        <div class="ln"><span class="g">18</span><span class="bar"></span><span>      <span class="t">Text</span>(forecast.now)</span></div>
+        <div class="ln add"><span class="g">19</span><span class="bar"></span><span>      <span class="t">HourlyStrip</span>(hours)</span></div>
+        <div class="ln add"><span class="g">20</span><span class="bar"></span><span>        .padding(.top, <span class="s">8</span>)</span></div>
+        <div class="ln"><span class="g">21</span><span class="bar"></span><span>    }</span></div>
+        <div class="ln"><span class="g">22</span><span class="bar"></span><span>  }</span></div>
+        <div class="ln"><span class="g">23</span><span class="bar"></span><span>}</span></div>
+        <div class="ln"><span class="g">24</span><span class="bar"></span><span class="c">// Hourly strip</span></div>
+        <div class="ln add"><span class="g">25</span><span class="bar"></span><span><span class="k">struct</span> <span class="t">HourlyStrip</span>: <span class="t">View</span> {</span></div>
+      </div>
+    </div>
+  </div>
+</div></div></body></html>

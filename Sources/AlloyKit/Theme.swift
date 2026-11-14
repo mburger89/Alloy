@@ -82,6 +82,24 @@ struct ChatFillKey: ThemeColorKey {
 struct PanelFillKey: ThemeColorKey {
     static let defaultValue = Color(light: Color(hex: 0xF4F5F7), dark: Color(hex: 0x1A1D23))
 }
+struct WindowBackgroundKey: ThemeColorKey {
+    static let defaultValue = Color(light: Color(hex: 0xE4E6EB), dark: Color(hex: 0x0E1015))
+}
+struct WindowPaintKey: ThemeColorKey {
+    static let defaultValue = WindowBackgroundKey.defaultValue
+}
+struct IslandPaintKey: ThemeColorKey {
+    static let defaultValue = IslandFillKey.defaultValue
+}
+struct IslandFillKey: ThemeColorKey {
+    static let defaultValue = Color(light: Color(hex: 0xFAFAFB), dark: Color(hex: 0x16181D))
+}
+struct ControlFillKey: ThemeColorKey {
+    static let defaultValue = Color(light: Color(hex: 0xE0E3EA), dark: Color(hex: 0x2C2E3E))
+}
+struct GlassRimKey: ThemeColorKey {
+    static let defaultValue = Color(light: Color(white: 0, opacity: 0.10), dark: Color(white: 1, opacity: 0.15))
+}
 struct MarkdownCodeFill: ThemeColorKey {
     static let defaultValue = Color(light: Color(hex: 0xECEEF2), dark: Color(hex: 0x20242B))
 }
@@ -196,6 +214,14 @@ extension Color {
     static let sidebarFill = Color(SidebarFillKey.self)
     static let chatFill = Color(ChatFillKey.self)
     static let panelFill = Color(PanelFillKey.self)
+    static let windowBackground = Color(WindowBackgroundKey.self)
+    static let islandFill = Color(IslandFillKey.self)
+    static let controlFill = Color(ControlFillKey.self)
+    static let glassRim = Color(GlassRimKey.self)
+    /// The window background folded with its tint and shade (see `AppearanceStyle.windowPaint`), set per theme by ThemeApplier.
+    static let windowPaint = Color(WindowPaintKey.self)
+    /// An island's fill folded with its opacity and sheen (see `AppearanceStyle.islandPaint`), set per theme by ThemeApplier.
+    static let islandPaint = Color(IslandPaintKey.self)
     static let markdownCodeFill = Color(MarkdownCodeFill.self)
     static let markdownQuoteBar = Color(MarkdownQuoteBar.self)
     static let markdownRule = Color(MarkdownRule.self)
@@ -233,6 +259,8 @@ extension Color {
 }
 
 extension CodeTheme {
-    /// MetalUI's default code theme with the colours that fail 4.5:1 replaced: selection, line numbers and the find highlights.
-    static let alloy = CodeTheme(selection: .codeSelectionFill, gutterForeground: .mutedInk, findMatch: .findMatchFill, currentFindMatch: .currentFindMatchFill)
+    /// MetalUI's default code theme with a clear background, so the code sits on the file island's own surface (the default
+    /// `surface` painted opaque white on a light island), and the colours that fail 4.5:1 replaced: selection, line numbers
+    /// and the find highlights.
+    static let alloy = CodeTheme(background: .clear, selection: .codeSelectionFill, gutterForeground: .mutedInk, findMatch: .findMatchFill, currentFindMatch: .currentFindMatchFill)
 }

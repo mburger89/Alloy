@@ -7,6 +7,7 @@
     "codeSelectionFill" : "#26406B",
     "commandTint" : "#262A31",
     "controlBorder" : "#6B7385",
+    "controlFill" : "#2C2E3E",
     "currentFindMatchFill" : "#4D3E12",
     "diagnosticError" : "#FF7B72",
     "diagnosticInfo" : "#58A6FF",
@@ -17,6 +18,8 @@
     "errorInk" : "#FF7B72",
     "errorTint" : "#3A1A1E",
     "findMatchFill" : "#3A3217",
+    "glassRim" : "#FFFFFF26",
+    "islandFill" : "#16181D",
     "linkInk" : "#58A6FF",
     "markdownCodeFill" : "#20242B",
     "markdownQuoteBar" : "#3A3F4A",
@@ -64,7 +67,8 @@
     "warningInk" : "#E3B341",
     "warningTint" : "#3B2F17",
     "webInk" : "#58A6FF",
-    "webTint" : "#172A44"
+    "webTint" : "#172A44",
+    "windowBackground" : "#0E1015"
   },
   "name" : "Alloy Dark",
   "sessionColors" : [

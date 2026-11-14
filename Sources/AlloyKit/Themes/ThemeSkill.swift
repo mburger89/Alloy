@@ -115,7 +115,8 @@ public enum ThemeSkill {
           "author": "You",
           "credit": "optional",
           "colors": { "chatFill": "#FFF8E7", "accent": "#B5651D" },
-          "sessionColors": ["#B5651D", "#2E7D32", "#1565C0", "#6A1B9A", "#C62828", "#00838F"]
+          "sessionColors": ["#B5651D", "#2E7D32", "#1565C0", "#6A1B9A", "#C62828", "#00838F"],
+          "style": { "gutter": 6, "cornerRadius": 10, "islandOpacity": 0.7, "controlOpacity": 0.6, "controlBlur": "heavy", "pillButtons": true }
         }
         ```
 
@@ -124,6 +125,9 @@ public enum ThemeSkill {
           `one-dark`) or another user theme's file name without `.json`. Slots the file leaves out come from the base.
         - `colors` maps slot names to `#RRGGBB` or `#RRGGBBAA`. `reference/slots.md` lists every slot and what it colours.
         - `sessionColors` is 6 to 12 colours.
+        - `style` is optional and sets the layout and glass look; a key left out comes from the base. `gutter` 0 to 16,
+          `cornerRadius` 0 to 20, `islandOpacity` and `controlOpacity` fractions 0.40 to 1.0, `controlBlur` `light`,
+          `medium` or `heavy`, `pillButtons` true or false. `theme_slots` lists the keys with ranges.
         - Keep text readable: 4.5:1 for text, 3:1 for glyphs and outlines.
         """ + "\n"
     }

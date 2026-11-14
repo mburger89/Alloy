@@ -73,6 +73,8 @@ extension Workspace {
     /// any file has live edits is decided when the window ends, because the edit that was committed may be recorded
     /// only after the git event arrived (a later batch, or a watcher waiting on an Edit result).
     func baselineEventSeen() {
+        let name = Self.readBranchName(projectRoot: projectRoot)
+        if name != branchName { branchName = name }
         lastBaselineEvent = autosaveClock.now
         scheduleBaselineCheck()
     }
@@ -112,5 +114,30 @@ extension Workspace {
             guard same, !isShuttingDown, ledger.files[path]?.version == version else { continue }
             keepAllEdits(path: path)
         }
+    }
+}
+
+extension Workspace {
+    /// The branch in `HEAD` (`ref: refs/heads/<name>`), or the first 7 characters of a detached HEAD's hash. A `.git`
+    /// file (a worktree) points at the real git directory. Nil without a readable `.git/HEAD`. Reads one small file.
+    static func readBranchName(projectRoot: URL) -> String? {
+        let fm = FileManager.default
+        var gitDir = projectRoot.appendingPathComponent(".git")
+        var isDir: ObjCBool = false
+        guard fm.fileExists(atPath: gitDir.path, isDirectory: &isDir) else { return nil }
+        if !isDir.boolValue {
+            guard let pointer = try? String(contentsOf: gitDir, encoding: .utf8),
+                  let line = pointer.split(whereSeparator: \.isNewline).first(where: { $0.hasPrefix("gitdir:") }) else { return nil }
+            let path = line.dropFirst("gitdir:".count).trimmingCharacters(in: .whitespaces)
+            gitDir = path.hasPrefix("/") ? URL(fileURLWithPath: path) : projectRoot.appendingPathComponent(path).standardizedFileURL
+        }
+        guard let head = try? String(contentsOf: gitDir.appendingPathComponent("HEAD"), encoding: .utf8) else { return nil }
+        let text = head.trimmingCharacters(in: .whitespacesAndNewlines)
+        let prefix = "ref: refs/heads/"
+        if text.hasPrefix(prefix) {
+            let name = String(text.dropFirst(prefix.count))
+            return name.isEmpty ? nil : name
+        }
+        return text.isEmpty ? nil : String(text.prefix(7))
     }
 }

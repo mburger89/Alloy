@@ -74,6 +74,36 @@ import Testing
         #expect(c.shownTheme == c.preview?.resolved)
     }
 
+    @Test func previewAppliesStyleAndDiscardRestores() throws {
+        let rig = Rig()
+        let probe = try Probe([.chatFill])
+        let c = start(rig, probe)
+        let before = c.style
+        #expect(before.gutter != 14)
+        let draft = ThemeFile(name: "Roomy", appearance: .dark, base: "dracula", style: AppearanceStyleFile(gutter: 14))
+        _ = startPreview(c, draft)
+        #expect(c.style.gutter == 14)
+        c.discardPreview()
+        #expect(c.style == before)
+    }
+
+    @Test func keepDoesNotReuseASavedFileWhoseStyleDiffers() async throws {
+        let rig = Rig()
+        let probe = try Probe([.chatFill])
+        let c = start(rig, probe)
+        let a = ThemeFile(name: "Roomy", appearance: .dark, base: "dracula", style: AppearanceStyleFile(gutter: 14))
+        var b = a
+        b.style = AppearanceStyleFile(gutter: 2)
+        let session = startPreview(c, a)
+        let store = ThemeStore(appSupport: support(rig))
+        let saved = try store.save(a, name: "Roomy", session: session, builtIns: BuiltInThemes.all)
+        await c.didSave(saved, file: a, session: session)
+        #expect(c.preview?.savedID == saved.id)
+        _ = startPreview(c, b, session: session)
+        await c.didSave(saved, file: a, session: session)
+        #expect(c.preview?.savedID == nil, "the saved file's style differs from the previewed draft")
+    }
+
     @Test func discardRestoresTheUsersTheme() throws {
         let rig = Rig()
         let probe = try Probe([.chatFill, hex("#282A36")])

@@ -54,6 +54,9 @@ struct SessionRecord: Codable {
 @MainActor @Observable
 public final class Workspace {
     public let projectRoot: URL
+    /// The checked-out branch, or the short hash of a detached HEAD; nil outside a git repository. Read from
+    /// `.git/HEAD` at open and again on each HEAD change.
+    public internal(set) var branchName: String?
     /// How long the shared knowledge pool waits for another connection's write lock (tests shorten it).
     let poolBusyTimeoutMS: Int
     /// The project's files for `@file` and quick open; refreshed on demand.
@@ -420,6 +423,7 @@ public final class Workspace {
         self.coordinationTools = CoordinationTools.make(workspace: self)
         self.themeTools = ThemeTools.make(workspace: self)
         self.hookRootForms = Self.hookRootForms(of: projectRoot)
+        self.branchName = Self.readBranchName(projectRoot: projectRoot)
     }
 
     // MARK: Local server
@@ -551,14 +555,22 @@ public final class Workspace {
     }
 
     /// Saves to Alloy's own settings file and applies to launches from now on. Running sessions are untouched.
-    public func updateSettings(_ s: AlloySettings) throws {
-        try s.save(appSupport: appSupport)
+    /// With `persist: false` the settings take effect in memory only (a slider drag's live steps); call ``persistSettings()`` when the edit ends.
+    public func updateSettings(_ s: AlloySettings, persist: Bool = true) throws {
+        if persist {
+            try s.save(appSupport: appSupport)
+            settingsSaveCount += 1
+            settingsUnsaved = false
+        } else {
+            settingsUnsaved = true
+        }
         let launchOptionsChanged = s.shareKnowledge != settings.shareKnowledge
             || s.askBeforeSharedNotes != settings.askBeforeSharedNotes
             || s.shareAcrossProjects != settings.shareAcrossProjects
         let visibilityChanged = s.shareKnowledge != settings.shareKnowledge || s.shareAcrossProjects != settings.shareAcrossProjects
         let serversChanged = s.languageServers != settings.languageServers
         settings = s
+        themeWorkshop?.settingsDidChange()
         if serversChanged { onLanguageServersChanged?(s.languageServers) }
         if visibilityChanged { reloadKnowledgeAfterSettingsChange() }
         settingsGeneration += 1
@@ -567,6 +579,18 @@ public final class Workspace {
         if launchOptionsChanged {
             for session in sessions where live[session.id] != nil || session.status == .starting { relaunchWhenIdle(session.id) }
         }
+    }
+
+    /// How many times the settings were written to disk; tests count drag saves with it.
+    @ObservationIgnored public private(set) var settingsSaveCount = 0
+    @ObservationIgnored private var settingsUnsaved = false
+
+    /// Writes settings changed with `persist: false` to disk, once. Nothing to write is a no-op.
+    public func persistSettings() throws {
+        guard settingsUnsaved else { return }
+        try settings.save(appSupport: appSupport)
+        settingsSaveCount += 1
+        settingsUnsaved = false
     }
 
     /// Replaces the session's process with a fresh `--resume` one carrying the current settings, once the session

@@ -26,6 +26,21 @@ import Testing
         #expect(finding.ratio <= exact)
     }
 
+    @Test func textOnIslandUsesIslandOpacityOverWindowBackground() throws {
+        func findings(_ opacity: Double) throws -> [ContrastFinding] {
+            var file = ThemeFile(name: "Draft", appearance: .dark, base: "alloy-dark")
+            file.colors["textPrimary"] = rgba("#FFFFFF")
+            file.colors["windowBackground"] = rgba("#FFFFFF")
+            file.colors["islandFill"] = rgba("#000000")
+            file.style = AppearanceStyleFile(islandOpacity: opacity)
+            return ThemeContrast.findings(Self.library.resolve(draft: file).theme)
+        }
+        // White text: a nearly opaque black island reads, a 40% one over white does not.
+        #expect(try findings(1.0).first { $0.pair == "text on island" } == nil)
+        let faint = try #require(try findings(0.4).first { $0.pair == "text on island" })
+        #expect(faint.layers == ["windowBackground", "islandFill"] && faint.minimum == 4.5)
+    }
+
     @Test func translucentLayersComposite() {
         let out = ThemeContrast.composite([rgba("#00000080")])
         #expect(abs(out.r - 0.5) < 0.01 && abs(out.g - 0.5) < 0.01 && abs(out.b - 0.5) < 0.01)
@@ -41,6 +56,46 @@ import Testing
         #expect(finding.minimum == 4.5)
         #expect(finding.ratio < 4.5)
         #expect(finding.foreground == "mutedInk" && finding.layers == ["chatFill"])
+    }
+
+    @Test func controlTextContrastIsChecked() throws {
+        var file = ThemeFile(name: "Draft", appearance: .dark, base: "dracula")
+        file.colors["controlFill"] = file.colors["textPrimary"] ?? rgba("#F8F8F2")
+        let (theme, _) = Self.library.resolve(draft: file)
+        let finding = try #require(ThemeContrast.findings(theme).first { $0.pair == "control text on control fill" })
+        #expect(finding.foreground == "control text" && finding.layers == ["islandFill", "controlFill"] && finding.minimum == 4.5)
+    }
+
+    @Test func controlFillIsCompositedAtTheStyleOpacity() {
+        // Light text on a mid fill: opaque it passes, mostly transparent over a light island it fails.
+        var file = ThemeFile(name: "Draft", appearance: .light, base: "alloy-light")
+        file.colors["textPrimary"] = rgba("#FFFFFF")
+        file.colors["islandFill"] = rgba("#FFFFFF")
+        file.colors["controlFill"] = rgba("#000000")
+        file.style = AppearanceStyleFile(controlOpacity: 1)
+        let opaque = ThemeContrast.findings(Self.library.resolve(draft: file).0)
+        #expect(!opaque.contains { $0.pair == "control text on control fill" })
+        file.style = AppearanceStyleFile(controlOpacity: 0.2)
+        let faint = ThemeContrast.findings(Self.library.resolve(draft: file).0)
+        #expect(faint.contains { $0.pair == "control text on control fill" })
+    }
+
+    @Test func lightControlsSeparateFromIslands() throws {
+        for id in ["alloy-light", "solarized-light"] {
+            let theme = try #require(Self.library.resolve(id))
+            var control = try #require(theme.colors["controlFill"])
+            let island = try #require(theme.colors["islandFill"])
+            control.a *= theme.style.controlOpacity
+            let shown = ThemeContrast.composite([island, control])
+            #expect(ThemeContrast.ratio(shown, ThemeContrast.composite([island])) >= 1.08, "\(id)")
+        }
+    }
+
+    @Test func builtInsPassControlContrast() {
+        for theme in BuiltInThemes.all {
+            let resolved = Self.library.resolve(theme.id)
+            #expect(resolved.map { ThemeContrast.findings($0).contains { $0.pair == "control text on control fill" } } == false, "\(theme.id)")
+        }
     }
 
     @Test func lowContrastPickerThumbEdgeIsReported() throws {

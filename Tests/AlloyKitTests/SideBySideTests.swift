@@ -272,3 +272,87 @@ actor Gate {
     }
     func open() { isOpen = true; waiters.forEach { $0.resume() }; waiters = [] }
 }
+
+@MainActor
+extension SideBySideTests {
+    /// G43: `contentMargins(.top)` set on the panel reaches the side-by-side panes' scroll content. The glass bar floats
+    /// over the panel and its text is glyphs too, so the panes' code rows are located by their offset from the pane's top
+    /// with find open (the find bar then sits between the bar and the pane, so the pane has no margin and nothing above it).
+    /// With find closed the same first row must sit one margin (the glass bar plus its gutters) lower: the pane's top
+    /// is under the bar.
+    @Test func sideBySideContentStartsBelowTheBar() async throws {
+        let rig = try await rigWithEdit()
+        let window = try await sideBySide(rig)
+        for _ in 0..<6 { window.tick(); await Task.yield() }
+        func rowOffsets() throws -> [String: [Float]] {
+            var rows: [String: [Float]] = [:]
+            for id in ["sbs-left", "sbs-right"] {
+                let pane = try window.element(identifier: id).frame
+                let left = Float(pane.minX.value) + 40, right = Float(pane.maxX.value), top = Float(pane.minY.value)
+                let ys: [Float] = window.allGlyphs.compactMap { g in
+                    let x = g.bounds.origin.x, y = g.bounds.origin.y
+                    return left <= x && x < right && y >= top ? y - top : nil
+                }
+                rows[id] = Array(Set(ys)).sorted()
+            }
+            return rows
+        }
+        let bar = try window.element(identifier: "file-panel-bar").frame
+        let panelTop = try window.element(identifier: "sbs-right").frame.minY.value
+        let gutter = Float(AppearanceStyle.defaults.gutter)
+        let margin = Float(bar.maxY.value) + gutter - Float(panelTop)
+        #expect(margin > 40, "the margin is the glass bar and its gutters: \(margin)")
+        let closed = try rowOffsets()
+        try window.click(window.element(identifier: "find-button"))
+        try await window.runUntil { (try? window.element(identifier: "find-field")) != nil }
+        for _ in 0..<6 { window.tick(); await Task.yield() }
+        let open = try rowOffsets()
+        for id in ["sbs-left", "sbs-right"] {
+            let first = try #require(open[id]?.first)
+            let wanted = first + margin
+            let rows = try #require(closed[id])
+            #expect(rows.contains { abs($0 - wanted) < 0.5 }, "\(id): a code row sits one margin (\(margin)) below the pane top, plus the row offset \(first)")
+            // And no code row sits between the pane top and the bar's bottom edge but the bar's own text: every row
+            // above the margin is in the bar's rect.
+            #expect(rows.allSatisfy { $0 < Float(bar.maxY.value) - Float(panelTop) || $0 >= wanted - 0.5 })
+        }
+    }
+
+    /// Opening find while scrolled moves the code by exactly the find bar's height (it sits below the glass bar and the
+    /// code's top margin drops to 0), and closing it moves the code back.
+    @Test func openingFindShiftsTheCodeByTheFindBarHeight() async throws {
+        let rig = try await rigWithEdit()
+        rig.workspace.openFilePath = "login.swift"
+        let window = try alloyWindow(rig.workspace)
+        try await window.runUntil { (try? window.element(identifier: "code-view")) != nil }
+        for _ in 0..<6 { window.tick(); await Task.yield() }
+        let code = try window.element(identifier: "code-view").frame
+        let point = Point(x: code.minX + 200, y: code.minY + 200)
+        window.scroll(at: point, byDeltaX: 0, deltaY: -400)
+        for _ in 0..<6 { window.tick(); await Task.yield() }
+        func probe() throws -> (y: Float, x: Float)? {
+            let pane = try window.element(identifier: "code-view").frame
+            let mid = Float(pane.minY.value) + 300, left = Float(pane.minX.value) + 40
+            let candidates = window.allGlyphs.filter { $0.bounds.origin.x >= left && $0.bounds.origin.y > mid }
+            let g = candidates.min { $0.bounds.origin.y < $1.bounds.origin.y }
+            return g.map { (y: $0.bounds.origin.y, x: $0.bounds.origin.x) }
+        }
+        let before = try #require(try probe())
+        let barBottom = try window.element(identifier: "file-panel-bar").frame.maxY.value
+        try window.click(window.element(identifier: "find-button"))
+        try await window.runUntil { (try? window.element(identifier: "find-field")) != nil }
+        for _ in 0..<6 { window.tick(); await Task.yield() }
+        // The find bar starts one gutter below the glass bar (the code's former top margin) and the code view below it.
+        let gutter = Float(AppearanceStyle.defaults.gutter)
+        let findHeight = try window.element(identifier: "code-view").frame.minY.value - (barBottom + gutter)
+        #expect(findHeight > 10)
+        let target = before.y + Float(findHeight)
+        let shifted = window.allGlyphs.filter { abs($0.bounds.origin.x - before.x) < 0.5 && abs($0.bounds.origin.y - target) < 0.5 }
+        #expect(!shifted.isEmpty, "the fixed line moved down by exactly the find bar's height \(findHeight)")
+        window.typeKey(.escape)
+        try await window.runUntil { (try? window.element(identifier: "find-field")) == nil }
+        for _ in 0..<6 { window.tick(); await Task.yield() }
+        let restored = window.allGlyphs.filter { abs($0.bounds.origin.x - before.x) < 0.5 && abs($0.bounds.origin.y - before.y) < 0.5 }
+        #expect(!restored.isEmpty, "closing find puts the line back")
+    }
+}

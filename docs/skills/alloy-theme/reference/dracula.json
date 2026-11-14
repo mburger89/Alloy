@@ -7,6 +7,7 @@
     "codeSelectionFill" : "#363848",
     "commandTint" : "#3D3F49",
     "controlBorder" : "#86878B",
+    "controlFill" : "#44475A",
     "currentFindMatchFill" : "#505447",
     "diagnosticError" : "#FF8C8C",
     "diagnosticInfo" : "#8BE9FD",
@@ -17,6 +18,8 @@
     "errorInk" : "#FF8C8C",
     "errorTint" : "#4F3C45",
     "findMatchFill" : "#404340",
+    "glassRim" : "#FFFFFF26",
+    "islandFill" : "#282A36",
     "linkInk" : "#8BE9FD",
     "markdownCodeFill" : "#353746",
     "markdownQuoteBar" : "#6272A4",
@@ -64,7 +67,8 @@
     "warningInk" : "#F1FA8C",
     "warningTint" : "#4C4F45",
     "webInk" : "#FF79C6",
-    "webTint" : "#4F3850"
+    "webTint" : "#4F3850",
+    "windowBackground" : "#1A1B24"
   },
   "name" : "Dracula",
   "sessionColors" : [

@@ -6,42 +6,65 @@ import MetalUI
 struct ChatView: Component {
     let workspace: Workspace
     let store: SessionUIStore
+    /// Where the glass composer reads the look from; nil (tests without themes) draws the defaults.
+    var themes: ThemeController?
 
     var content: some ElementGroup {
         let _ = BodyProbe.hit("ChatView")
         if let session = workspace.sessions.first(where: { $0.id == workspace.selectedSessionID }) {
-            ChatColumn(workspace: workspace, session: session, ui: store.entry(for: session, workspace: workspace))
+            ChatColumn(workspace: workspace, session: session, ui: store.entry(for: session, workspace: workspace), themes: themes)
                 .equatable()
                 .id(session.id.uuidString)
         } else {
             Text("Start a session with ⌘N").foregroundColor(.mutedInk)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(.chatFill)
         }
     }
 }
 
-/// One session's chat: a 4 px stripe in the session colour, then transcript and composer.
+/// One session's chat: a 4 px stripe in the session colour, then the transcript with the composer floating over its
+/// bottom edge in a glass bar, one gutter in from the sides and the bottom.
 struct ChatColumn: Component {
     let workspace: Workspace
     let session: Session
     let ui: SessionUIStore.Entry
+    var themes: ThemeController?
+    /// The glass bar's height with its gutter above and below, as measured here. Written only when the composer's line count changes it, so typing
+    /// within a line leaves this column and the transcript alone. Zero until measured: the first frame uses the window's last measured height
+    /// (``SessionUIStore/BarMetrics``) or the style's estimate, so a session switch does not draw the last message under the bar for a frame.
+    @State var composerHeight: Double = 0
 
     var content: some ElementGroup {
         let _ = BodyProbe.hit("ChatColumn")
+        let style = themes?.style ?? .defaults
+        let height = $composerHeight
+        let metrics = ui.metrics
+        let inset = composerHeight > 0 ? composerHeight : (metrics.composerBarHeight ?? style.composerBarHeightEstimate)
         HStack(spacing: 0) {
+            // Inset by the corner radius so its ends stay inside the island's rounded corners.
             Rectangle().fill(Color.sessionColor(session.colorIndex))
                 .frame(width: Pixels(4))
+                .padding(Edges(top: Pixels(Float(style.cornerRadius)), right: Pixels(0), bottom: Pixels(Float(style.cornerRadius)), left: Pixels(0)))
                 .frame(maxHeight: .infinity)
-            VStack(spacing: 0) {
-                TranscriptView(workspace: workspace, session: session, ui: ui).equatable()
-                Divider()
-                ComposerView(workspace: workspace, session: session, model: ui.composer).equatable()
+            ZStack(alignment: .bottom) {
+                TranscriptView(workspace: workspace, session: session, ui: ui,
+                               bottomInset: inset).equatable()
+                VStack(spacing: 0) {
+                    VStack(spacing: 0) {
+                        ComposerView(workspace: workspace, session: session, model: ui.composer, style: style).equatable()
+                    }
+                    .glassControl(style: style, cornerRadius: style.cornerRadius)
+                }
+                .padding(style.gutterInsets)
+                // The bar plus its gutter above and below; the transcript clears it by the bar and one gutter.
+                .onGeometryChange(for: Double.self, of: { Double($0.size.height.value) }) { new in
+                    metrics.composerBarHeight = new
+                    if height.wrappedValue != new { height.wrappedValue = new }
+                }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(.chatFill)
     }
 }
 
@@ -57,6 +80,9 @@ struct TranscriptView: Component {
     /// after it stays off screen long enough: MetalUI LazyStack / StateTable) and the parsed Markdown. They live in the
     /// session's ``SessionUIStore`` entry, which outlives this column.
     let ui: SessionUIStore.Entry
+    /// The scroll content's bottom margin (MetalUI `contentMargins`, G43), so the floating composer never covers the last
+    /// block: the glass bar with its gutter above and below.
+    var bottomInset: Double = 0
 
     var content: some ElementGroup {
         let _ = BodyProbe.hit("TranscriptView")
@@ -82,6 +108,7 @@ struct TranscriptView: Component {
                 .padding(inset(16, 12))
             }
             .defaultScrollAnchor(.bottom)
+            .contentMargins(.bottom, Pixels(Float(bottomInset)), for: .scrollContent)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .onChange(of: ScrollRequest(target: ui.scrollTarget, blockCount: blocks.count), initial: true) {
                 switch Self.scrollDecision(target: ui.scrollTarget, blocks: blocks,

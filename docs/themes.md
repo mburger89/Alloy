@@ -37,7 +37,8 @@ A user theme's id is `user/<file name without .json>`.
     "syntax.keyword": "#FF79C6",
     "scrim": "#0000006B"
   },
-  "sessionColors": ["#BD93F9", "#FFB86C", "#50FA7B", "#FF79C6", "#8BE9FD", "#F1FA8C"]
+  "sessionColors": ["#BD93F9", "#FFB86C", "#50FA7B", "#FF79C6", "#8BE9FD", "#F1FA8C"],
+  "style": { "gutter": 6, "cornerRadius": 10, "islandOpacity": 0.7, "controlOpacity": 0.6, "controlBlur": "heavy", "pillButtons": true }
 }
 ```
 
@@ -50,6 +51,10 @@ A user theme's id is `user/<file name without .json>`.
 - `colors` maps slot names to `#RRGGBB` or `#RRGGBBAA`. Unknown slot names are ignored.
 - `sessionColors` is a list of 6 to 12 colours that replaces the base theme's list. Alloy has 12 session colour keys; key
   *n* takes `list[(n - 1) % count]`.
+- `style` is an optional object that sets the layout and glass look. Every key is optional and comes from `base` when
+  left out; values are clamped to their range. `gutter` (0 to 16, points between the islands), `cornerRadius` (0 to 20),
+  `islandOpacity` and `controlOpacity` (fractions, 0.40 to 1.0), `controlBlur` (`light`, `medium` or `heavy`) and
+  `pillButtons` (true or false). The user's own Appearance settings override a theme's style.
 
 Keep text readable. The built-in themes are checked by the contrast audit in `ContrastAuditTests`, which renders each one
 and tests every pair of colours the app draws in two tiers: 4.5:1 for text and 3:1 for glyphs, with 3:1 also allowed for
@@ -117,6 +122,8 @@ The selected segment of a segmented picker is outlined by the `pickerThumbEdge` 
 | Each block ink (thinking, read, shell, edit, web, question, plan) on its own tint | 3:1 |
 | `errorInk` on `errorTint` and on the panel fill, `warningInk` on `warningTint`, `linkInk` on the chat and code fills | 4.5:1 |
 | `pickerThumbEdge` on `surfaceSecondary` (the track), and on the selected segment (`surface` in a light theme, `textPrimary` at 0.18 over the track in a dark one); skipped when the slot is absent | 3:1 |
+| `textPrimary` on `islandFill` at the theme's island opacity (default 0.70) over `windowBackground`, the surface chat and sidebar sit on; named `text on island` | 4.5:1 |
+| `textPrimary` (control text) on `controlFill` at the theme's control opacity (default 0.60) over `islandFill`; named `control text on control fill` | 4.5:1 |
 | Each session colour on the sidebar | 3:1 |
 
 Secondary text that a theme leaves out is `textPrimary` at MetalUI's derived opacity, and is checked that way.
@@ -187,8 +194,12 @@ Every slot name a theme file can set, with its purpose. MetalUI tokens come firs
 | `errorInk` | Error text and icons. |
 | `warningInk` | Warning text and icons. |
 | `sidebarFill` | Background of the sidebar and user messages. |
-| `chatFill` | Background of the chat column. |
+| `chatFill` | Background of the launcher (the chat column sits on the island: see `islandFill`). |
 | `panelFill` | Background of the code panel, settings and suggestion lists. |
+| `windowBackground` | The colour behind the islands, in the gutters around them. |
+| `islandFill` | Fill of the islands, drawn at island opacity. |
+| `controlFill` | Fill of the floating controls, drawn at control opacity; control text must read on it. |
+| `glassRim` | The 1 pt rim highlight on islands and controls (translucent white in a dark theme, translucent black in a light one). |
 | `markdownCodeFill` | Background of Markdown code blocks. |
 | `markdownQuoteBar` | The bar beside Markdown block quotes. |
 | `markdownRule` | Markdown horizontal rules. |

@@ -133,7 +133,7 @@ import Testing
         // The rendered accent bar (3 x 14 pt, in the strip) is the colour of the gutter bar (3 pt, in the code view).
         let window = try alloyWindow(rig.workspace)
         try await window.runUntil { (try? window.element(identifier: "code-view")) != nil }
-        let top = try window.element(identifier: "code-view").frame.origin.y.value
+        let top = try window.element(identifier: "file-panel-bar").frame.maxY.value
         func accentBar() -> [Float]? {
             window.scene.rects.first { $0.bounds.size.width == 3 && $0.bounds.size.height == 14 && $0.bounds.origin.y < top }
                 .map { [$0.background.h, $0.background.s, $0.background.l] }

@@ -35,7 +35,7 @@ import Testing
         let controller = ThemeController(workspace: rig.workspace, host: window.window, watcher: watcher)
         holder.controller = controller
         window.tick(); window.tick()
-        let underneath = Set(window.scene.glyphs.map { [$0.bounds.origin.x, $0.bounds.origin.y] })
+        let underneath = Set(window.allGlyphs.map { [$0.bounds.origin.x, $0.bounds.origin.y] })
         let s = Setup(rig: rig, window: window, controller: controller, watcher: watcher, underneath: underneath)
         try window.openSettingsFromMenu()
         try await window.runUntil { (try? window.element(identifier: "settings-theme-section")) != nil }
@@ -209,7 +209,7 @@ import Testing
             #expect(row.frame.minX >= section.frame.minX - 0.5 && row.frame.maxX <= section.frame.maxX + 0.5, "\(id) \(row.frame) in \(section.frame)")
             // Five 12 pt swatches and four 3 pt gaps, after the row's 6 pt padding: no label starts inside the strip.
             let stripEnd = Float(row.frame.minX.value) + Float(6 + 5 * 12 + 4 * 3)
-            let glyphs = window.scene.glyphs.filter {
+            let glyphs = window.allGlyphs.filter {
                 !t.underneath.contains([$0.bounds.origin.x, $0.bounds.origin.y]) &&
                 $0.bounds.origin.y >= Float(row.frame.minY.value) && $0.bounds.origin.y + $0.bounds.size.height <= Float(row.frame.maxY.value)
                     && $0.bounds.origin.x >= Float(row.frame.minX.value) - 1 && $0.bounds.origin.x < Float(row.frame.maxX.value)

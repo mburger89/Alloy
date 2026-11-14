@@ -206,3 +206,19 @@ tap arbitration in `Gesture.swift` ~1091 and ~1858-1890. Alloy stopgap: an expli
 in `SidebarView.swift` sets the selection (test `singleClickOnTheNameSelectsTheSession`).
 - Status: adopted (MetalUI f00534fd, #281): a click on a count-2 row child selects the row on mouse-up and the double
   tap fires once. The Alloy stopgap is removed; the test still pins the behaviour.
+
+## G40: a see-through window (forwarded)
+Islands design §6.5: the desktop shows through the window, blurred by macOS, behind translucent islands. SwiftUI
+spelling: `.containerBackground(.thinMaterial, for: .window)` (macOS 15); AppKit: a behind-window
+`NSVisualEffectView` with the Metal layer non-opaque. MetalUI today: `MetalLayerSurface.swift:22` sets the layer
+non-opaque, but no API makes the window background transparent or blurred.
+
+## G41: an HSplitView divider without a line (forwarded)
+Islands design §6.5: the space between islands is a clean gutter that still drags to resize. MetalUI's `SplitDivider`
+always draws a 1-point `.separator` line with a 6-point hit area (`SplitView.swift:230-250`), and its thickness is
+fixed (`SplitDivider.thickness`). Needed: keep the drag area, draw no line (MetalUI-only spelling; SwiftUI has none).
+
+## G42: stronger glass blur (conditional, forwarded)
+Islands design §6.3: "heavy" means text under a floating glass control is barely visible
+(`docs/superpowers/specs/assets/2026-11-13-islands-D-heavy-blur.png`). `Glass` offers `.regular` and `.clear` only
+(`Glass.swift:30-35`). Only needed if `.regular` plus a thick material underneath can't reach the reference.

@@ -48,6 +48,9 @@ public final class ThemeController: ThemeWorkshop {
     public private(set) var preview: ThemePreview?
     /// An activation waiting for the user's answer to the contrast warning.
     public private(set) var pendingActivation: PendingActivation?
+    /// The look the views draw with: the shown theme's style with the user's appearance overrides on top. Stored, and
+    /// written only when it changes, so a view that reads it re-runs on a real change and never per apply.
+    public private(set) var style: AppearanceStyle = .defaults
     /// How many library reloads ran (tests use it to check that event bursts coalesce).
     @ObservationIgnored public private(set) var reloadCount = 0
 
@@ -141,8 +144,26 @@ public final class ThemeController: ThemeWorkshop {
         watcherBox.task = nil
     }
 
+    @ObservationIgnored private var isApplying = false
+
+    /// Recomputes ``style`` from the shown theme and the settings' overrides. `apply()` calls it; call it directly
+    /// after changing only the appearance overrides.
+    public func refreshStyle() {
+        var next = (shownTheme?.style ?? .defaults).applying(currentSettings.appearance)
+        // The Glass setting, unless `ALLOY_GLASS=0` forces glass off. Read here, where the style is resolved, so it adds no element.
+        next.glass = currentSettings.glass && GlassLook.glassEnabledAtLaunch
+        if next != style {
+            style = next
+            // The window and island paints derive from the style: install the themes again (apply() installs its own).
+            if !isApplying { apply() }
+        }
+    }
+
     /// Installs the chosen theme(s) on the host.
     public func apply() {
+        isApplying = true
+        // `isApplying` stays set through `refreshStyle()` so a style change inside it does not install the themes again.
+        defer { refreshStyle(); isApplying = false }
         let settings = currentSettings
         var notes: [String] = []
         func resolved(_ id: String, fallback: String, label: String) -> ResolvedTheme? {
@@ -153,24 +174,24 @@ public final class ThemeController: ThemeWorkshop {
         switch settings.themeMode {
         case .single:
             if let r = resolved(settings.theme, fallback: "dracula", label: "Dracula") {
-                let theme = ThemeApplier.theme(for: r)
+                let theme = ThemeApplier.theme(for: r, overrides: settings.appearance)
                 host.lightTheme = theme
                 host.darkTheme = theme
                 host.preferredColorScheme = r.appearance == .dark ? .dark : .light
             }
         case .matchSystem:
             if let light = resolved(settings.lightTheme, fallback: "alloy-light", label: "Alloy Light") {
-                host.lightTheme = ThemeApplier.theme(for: light)
+                host.lightTheme = ThemeApplier.theme(for: light, overrides: settings.appearance)
             }
             if let dark = resolved(settings.darkTheme, fallback: "dracula", label: "Dracula") {
-                host.darkTheme = ThemeApplier.theme(for: dark)
+                host.darkTheme = ThemeApplier.theme(for: dark, overrides: settings.appearance)
             }
             host.preferredColorScheme = nil
         }
         notice = notes.isEmpty ? nil : notes.joined(separator: " ")
         // A preview sits on top of the user's theme, whatever the theme mode (Ruling 6).
         if let preview {
-            let theme = ThemeApplier.theme(for: preview.resolved)
+            let theme = ThemeApplier.theme(for: preview.resolved, overrides: settings.appearance)
             host.lightTheme = theme
             host.darkTheme = theme
             host.preferredColorScheme = preview.resolved.appearance == .dark ? .dark : .light
@@ -190,13 +211,18 @@ public final class ThemeController: ThemeWorkshop {
     }
 
     /// Saves the choice through `Workspace.updateSettings` (which relaunches nothing for theme-only changes), then applies.
-    public func choose(mode: ThemeMode? = nil, theme: String? = nil, light: String? = nil, dark: String? = nil) throws {
+    public func choose(mode: ThemeMode? = nil, theme: String? = nil, light: String? = nil, dark: String? = nil,
+                       clearingAppearance: Bool = false) throws {
         var s = currentSettings
+        if clearingAppearance { s.appearance = AppearanceOverrides() }
         if let mode { s.themeMode = mode }
         if let theme { s.theme = theme }
         if let light { s.lightTheme = light }
         if let dark { s.darkTheme = dark }
         if let workspace {
+            // `updateSettings` tells the workshop, whose `refreshStyle()` would install the themes; `apply()` below does it once.
+            isApplying = true
+            defer { isApplying = false }
             try workspace.updateSettings(s)
         } else {
             try s.save(appSupport: appSupport)
@@ -208,7 +234,8 @@ public final class ThemeController: ThemeWorkshop {
     /// The themes folder's path, as the installed skill names it.
     public var themesFolderPath: String { directory.path }
 
-    public func backToDracula() throws { try choose(mode: .single, theme: "dracula") }
+    /// Dracula in one theme mode, and the appearance overrides (gutter, corners, opacity, blur) cleared.
+    public func backToDracula() throws { try choose(mode: .single, theme: "dracula", clearingAppearance: true) }
 
     /// Creates the folder when it is missing, then hands its URL to `open`.
     public func openThemesFolder(using open: (URL) -> Void) {
@@ -217,6 +244,9 @@ public final class ThemeController: ThemeWorkshop {
     }
 
     // MARK: ThemeWorkshop
+
+    /// An appearance-only settings change leaves the theme alone, so only the style needs recomputing.
+    public func settingsDidChange() { refreshStyle() }
 
     public var slotCatalog: [ThemeSlotInfo] { ThemeSlots.all.map { ThemeSlotInfo(name: $0.name, purpose: $0.purpose) } }
 
@@ -252,9 +282,10 @@ public final class ThemeController: ThemeWorkshop {
         preview = p
     }
 
-    /// Ruling 7: equal means the same appearance, base, colours and session colours.
+    /// Ruling 7: equal means the same appearance, base, colours, session colours and style.
     private static func sameContent(_ a: ThemeFile, _ b: ThemeFile) -> Bool {
         a.appearance == b.appearance && a.base == b.base && a.colors == b.colors && a.sessionColors == b.sessionColors
+            && a.style == b.style
     }
 
     public func discardPreview() {

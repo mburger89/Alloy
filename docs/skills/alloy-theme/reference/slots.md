@@ -36,8 +36,12 @@ Every colour slot a theme file can set under `colors`, in file order, with what 
 - `errorInk`: Error text and icons.
 - `warningInk`: Warning text and icons.
 - `sidebarFill`: Background of the sidebar and user messages.
-- `chatFill`: Background of the chat column.
+- `chatFill`: Background of the launcher (the chat column sits on the island: see `islandFill`).
 - `panelFill`: Background of the code panel, settings and suggestion lists.
+- `windowBackground`: The colour behind the islands, in the gutters around them.
+- `islandFill`: Fill of the islands, drawn at island opacity.
+- `controlFill`: Fill of the floating controls, drawn at control opacity; control text must read on it.
+- `glassRim`: The 1 pt rim highlight on islands and controls (translucent white in a dark theme, translucent black in a light one).
 - `markdownCodeFill`: Background of Markdown code blocks.
 - `markdownQuoteBar`: The bar beside Markdown block quotes.
 - `markdownRule`: Markdown horizontal rules.

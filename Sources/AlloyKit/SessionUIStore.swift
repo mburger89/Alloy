@@ -8,6 +8,14 @@ import Observation
 /// `AlloyScreen`, and hands every session its same ``Entry`` back.
 @MainActor
 final class SessionUIStore {
+    /// The glass bars' last measured heights. A new column or panel seeds its inset from these (else the style's estimate), so its first
+    /// frame already clears the bar. Per window: the store is owned by `AlloyScreen`.
+    @MainActor final class BarMetrics {
+        var composerBarHeight: Double?
+        var filePanelBarHeight: Double?
+    }
+    let metrics = BarMetrics()
+
     @MainActor @Observable
     final class Entry {
         /// The composer itself: draft, attachments, pending encodes and deferred sends.
@@ -25,14 +33,17 @@ final class SessionUIStore {
         /// Parsed Markdown by block id.
         @ObservationIgnored let markdownCache = MarkdownCache()
 
-        init(composer: ComposerModel) { self.composer = composer }
+        /// The window's bar heights, shared by every session's column.
+        @ObservationIgnored let metrics: BarMetrics
+
+        init(composer: ComposerModel, metrics: BarMetrics) { self.composer = composer; self.metrics = metrics }
     }
 
     private var entries: [Session.ID: Entry] = [:]
 
     func entry(for session: Session, workspace: Workspace) -> Entry {
         if let existing = entries[session.id] { return existing }
-        let made = Entry(composer: ComposerModel(workspace: workspace, sessionID: session.id))
+        let made = Entry(composer: ComposerModel(workspace: workspace, sessionID: session.id), metrics: metrics)
         entries[session.id] = made
         return made
     }

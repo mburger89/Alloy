@@ -43,6 +43,8 @@ struct ComposerView: Component {
     let session: Session
     /// Owned by the session's ``SessionUIStore`` entry, so the draft and any running encode survive a session switch.
     let model: ComposerModel
+    /// The look of the pill buttons; part of the identity, so a style change repaints them.
+    var style: AppearanceStyle = .defaults
     /// The window's clipboard, read by the paste validator to let a text paste through to the field (G10).
     @Environment(\.clipboard) var clipboard
     @FocusState var fieldFocused: Bool
@@ -77,6 +79,7 @@ struct ComposerView: Component {
                 .accessibilityIdentifier("model-menu")
                 if working {
                     Button("Stop") { Task { await workspace.interrupt(sessionID) } }
+                        .buttonStyle(PillButtonStyle(style: style))
                         .accessibilityIdentifier("stop")
                 }
                 QueuedCount(session: session).equatable()
@@ -126,9 +129,11 @@ struct ComposerView: Component {
                     }
                 if session.status == .dormant {
                     Button("Resume") { Task { await workspace.wake(sessionID) } }
+                        .buttonStyle(PillButtonStyle(style: style))
                         .accessibilityIdentifier("resume")
                 }
                 Button("Send") { model.send(priority: model.defaultPriority) }
+                    .buttonStyle(PillButtonStyle(style: style))
                     .keyboardShortcut(.return)
                     .accessibilityIdentifier("send")
             }

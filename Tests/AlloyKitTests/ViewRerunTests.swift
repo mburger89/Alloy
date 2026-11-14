@@ -21,6 +21,13 @@ import Testing
         #expect(reruns["AlloyScreen"] == 0)
     }
 
+    /// The element requests of one warmed-up keystroke frame (islands restyle, measured alone and in the suite).
+    /// 132 before Task 7 (see-through window, content under the bars). Task 7 added a net 2 (the new WindowBackdropView,
+    /// FilePanelBar and IslandRow elements, less the removed spacer and plain background): 134, measured as 2680 requests
+    /// over the 20 counted frames. The contrast shade and sheen are folded into the window and island fills (one element
+    /// each, no overlay), so they add none.
+    private static let steadyFrameRequests = 134
+
     @Test func typingLeavesSidebarScreenAndChatAlone() async throws {
         let (rig, _) = try await editedRig()
         rig.workspace.openFilePath = "login.swift"
@@ -29,11 +36,23 @@ import Testing
         for _ in 0..<10 { window.tick(); await Task.yield() }
         try window.click(window.element(identifier: "code-view"))
         for _ in 0..<5 { window.tick(); await Task.yield() }
-        let names = ["SidebarView", "AlloyScreen", "FilePanelView", "ChatView", "ChatColumn", "CodePanel", "FilePanelHeader", "FileTabStrip"]
+        let names = ["SidebarView", "AlloyScreen", "FilePanelView", "ChatView", "ChatColumn", "CodePanel", "FilePanelHeader", "FileTabStrip", "GlassBackdrop", "IslandBackdrop", "TitleIsland"]
         var reruns: [String: Int] = [:]
         let doc = try #require(rig.workspace.document("login.swift"))
         let version = doc.buffer.version
         let textLength = doc.buffer.snapshot().text.count
+        // Warm up: the first typed frames rebuild before the retained cache settles (300 requests each, the steady count after), and
+        // how many depends on what ran earlier in the process. Type at least 10 settle frames, then until two frames in
+        // a row cost the same.
+        window.resetFrameWork()
+        for i in 0..<40 {
+            window.typeText("a"); window.tick(); await Task.yield()
+            let last = window.frameWork.suffix(2).map(\.elementRequests)
+            if i >= 9, last.count == 2, last[0] == last[1] { break }
+        }
+        let settled = window.frameWork.suffix(2).map(\.elementRequests)
+        #expect(settled.count == 2 && settled[0] == settled[1], "warm-up did not settle: \(settled)")
+        let typedWarmingUp = doc.buffer.snapshot().text.count - textLength
         window.resetFrameWork()
         for _ in 0..<20 {
             probed(names, &reruns) { window.typeText("a"); window.tick() }
@@ -46,13 +65,21 @@ import Testing
         let ineligible = work.reduce(into: [String: Int]()) { $0.merge($1.retainedIneligibleReasons, uniquingKeysWith: +) }
         // Before: 4377 requests / 0 retained hits over these 20 keystrokes. Retained sidebar and chat pay the build
         // recursion only; the editor pane stays ineligible (caret blink).
-        #expect(requests < 3000, "element requests \(requests)")
+        // Pre-islands: 2254 requests (commit 72744a1, measured isolated and without the warm-up above, so it includes
+        // that commit's own cold frames). Islands add wrapper elements to every frame: the island backdrop and its
+        // stroke behind each of the sidebar, chat and code islands, the glass backdrops of the composer and the
+        // code-panel bars, and the title island with its three pill buttons. Warmed up, a frame costs `steadyFrameRequests`.
+        // Every counted frame is held to that plus 2, so one extra unretained element per frame fails; the total is the
+        // secondary check (steady * 20 plus 2%).
+        let perFrame = work.map(\.elementRequests)
+        #expect(perFrame.allSatisfy { $0 <= Self.steadyFrameRequests + 2 }, "per-frame element requests \(perFrame)")
+        #expect(requests <= Self.steadyFrameRequests * 20 * 102 / 100, "element requests \(requests)")
         #expect(hits > 0)
         print("FRAMEWORK frames=\(work.count) requests=\(requests) prepaints=\(prepaints) hits=\(hits) misses=\(misses) ineligible=\(ineligible)")
-        #expect(doc.buffer.snapshot().text.count == textLength + 20)
+        #expect(doc.buffer.snapshot().text.count == textLength + typedWarmingUp + 20)
         // The header and tab strip show the dirty dot: one re-run for clean to dirty, none per keystroke after that.
         for n in ["FilePanelHeader", "FileTabStrip"] { #expect(reruns[n]! <= 1, "\(n)") }
-        for n in ["SidebarView", "AlloyScreen", "FilePanelView", "ChatView", "ChatColumn", "CodePanel"] {
+        for n in ["SidebarView", "AlloyScreen", "FilePanelView", "ChatView", "ChatColumn", "CodePanel", "GlassBackdrop", "IslandBackdrop", "TitleIsland"] {
             #expect(reruns[n] == 0, "\(n) re-ran \(reruns[n]!) times")
         }
     }
@@ -82,6 +109,29 @@ import Testing
         print("RERUNS typing \(reruns)")
         #expect(reruns["TranscriptView"] == 0, "TranscriptView \(reruns["TranscriptView"]!)")
         #expect(reruns["SessionRow"] == 0, "SessionRow \(reruns["SessionRow"]!)")
+    }
+
+    /// The glass composer's height reaches the transcript only when a line is added, never per keystroke.
+    @Test func composerKeystrokesDoNotRerunTranscriptOrColumn() async throws {
+        let (_, _, _, window) = try await chatRig()
+        var within: [String: Int] = [:]
+        for _ in 0..<10 {
+            probed(["TranscriptView", "ChatColumn", "GlassBackdrop", "IslandBackdrop", "TitleIsland"], &within) { window.typeText("a"); window.tick() }
+            await Task.yield()
+        }
+        #expect(within["TranscriptView"] == 0, "TranscriptView \(within["TranscriptView"]!)")
+        #expect(within["ChatColumn"] == 0, "ChatColumn \(within["ChatColumn"]!)")
+        #expect(within["GlassBackdrop"] == 0, "GlassBackdrop \(within["GlassBackdrop"]!)")
+        #expect(within["IslandBackdrop"] == 0, "IslandBackdrop \(within["IslandBackdrop"]!)")
+        #expect(within["TitleIsland"] == 0, "TitleIsland \(within["TitleIsland"]!)")
+        // A new line grows the bar: the transcript follows, once or twice, not per key.
+        var grown: [String: Int] = [:]
+        probed(["TranscriptView"], &grown) {
+            window.typeKey(.return, modifierFlags: .shift)
+            for _ in 0..<4 { window.tick() }
+        }
+        await Task.yield()
+        #expect(grown["TranscriptView"]! <= 2, "TranscriptView \(grown["TranscriptView"]!)")
     }
 
     @Test func streamingLeavesOtherRowsAndComposerAlone() async throws {

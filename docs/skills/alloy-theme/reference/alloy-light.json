@@ -7,6 +7,7 @@
     "codeSelectionFill" : "#DDE8FC",
     "commandTint" : "#E9ECEF",
     "controlBorder" : "#8A8F99",
+    "controlFill" : "#E0E3EA",
     "currentFindMatchFill" : "#FFDD9E",
     "diagnosticError" : "#B81D28",
     "diagnosticInfo" : "#0757B8",
@@ -17,6 +18,8 @@
     "errorInk" : "#B81D28",
     "errorTint" : "#F8DADE",
     "findMatchFill" : "#FFF1C0",
+    "glassRim" : "#0000001A",
+    "islandFill" : "#FAFAFB",
     "linkInk" : "#0757B8",
     "markdownCodeFill" : "#ECEEF2",
     "markdownQuoteBar" : "#C5C9D1",
@@ -64,7 +67,8 @@
     "warningInk" : "#875A00",
     "warningTint" : "#FBEFD3",
     "webInk" : "#0969DA",
-    "webTint" : "#DDEBFB"
+    "webTint" : "#DDEBFB",
+    "windowBackground" : "#E4E6EB"
   },
   "name" : "Alloy Light",
   "sessionColors" : [

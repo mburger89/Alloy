@@ -12,14 +12,18 @@ extension ThemeRGBA {
 public enum ThemeApplier {
     private static let bySlotName: [String: ThemeSlot] = Dictionary(uniqueKeysWithValues: ThemeSlots.all.map { ($0.name, $0) })
 
-    /// `Theme.dark` or `Theme.light` (by appearance) with every slot the theme defines set on top. Unknown slot names are
+    /// `Theme.dark` or `Theme.light` (by appearance), with the derived window and island paints for `overrides` on the theme's style, with every slot the theme defines set on top. Unknown slot names are
     /// ignored; slots the theme leaves out keep the base value. Session colour *n* (1...12) takes
     /// `sessionColors[(n - 1) % count]`; with no session colours the defaults stay.
-    public static func theme(for resolved: ResolvedTheme) -> Theme {
+    public static func theme(for resolved: ResolvedTheme, overrides: AppearanceOverrides = AppearanceOverrides()) -> Theme {
         var theme: Theme = resolved.appearance == .dark ? .dark : .light
         for (name, rgba) in resolved.colors {
             bySlotName[name]?.apply(&theme, rgba)
         }
+        // The see-through window and island fills, folded into single layers for this theme and its effective style.
+        let style = resolved.style.applying(overrides)
+        if let window = resolved.colors["windowBackground"] { theme[WindowPaintKey.self] = Color(style.windowPaint(window).hsla) }
+        if let fill = resolved.colors["islandFill"] { theme[IslandPaintKey.self] = Color(style.islandPaint(fill).hsla) }
         let list = resolved.sessionColors
         if !list.isEmpty {
             for (offset, setter) in sessionSetters.enumerated() { setter(&theme, Color(list[offset % list.count].hsla)) }

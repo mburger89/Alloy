@@ -48,9 +48,10 @@ func emitEdit(_ rig: Rig, old: String, new: String, toolUseID: String) async thr
         window.tick()
     }
 
-    /// The top of the code view: the tab strip's 3 pt accent lies above it, the gutter bars below.
+    /// Where the code shows: the code view starts under the glass bar (the tab strip's 3 pt accent lies in the bar), so
+    /// the gutter bars are below the bar.
     private func codeTop(_ window: TestWindow) -> Float {
-        (try? window.element(identifier: "code-view").frame.origin.y.value) ?? 0
+        (try? window.element(identifier: "file-panel-bar").frame.maxY.value) ?? 0
     }
 
     /// The 3 pt gutter bars drawn in the file panel (right of the chat, in the code view), top to bottom.

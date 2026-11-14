@@ -8,7 +8,12 @@ import Testing
         let pattern: String
         /// Paths (relative to `Sources/`) that may use the spelling. Empty means nowhere.
         let allowedIn: Set<String>
+        /// When non-empty, the rule applies only to paths starting with one of these.
+        var onlyUnder: [String] = []
     }
+
+    /// Views of the islands and the glass controls take radius, opacity and gutter from `AppearanceStyle`, never a number.
+    private static let lookDirectories = ["AlloyKit/Islands/", "AlloyKit/Glass/"]
 
     private static let named = "white|black|gray|red|green|blue|orange|yellow|pink|purple"
 
@@ -25,6 +30,9 @@ import Testing
         // Raw colour constructors belong to the theme plumbing.
         Rule(pattern: #"\bHsla\("#, allowedIn: ["AlloyKit/Themes/ThemeApplier.swift", "AlloyKit/Themes/ThemeSlots.swift"]),
         Rule(pattern: #"\bRgba\("#, allowedIn: ["AlloyKit/Themes/ThemeApplier.swift", "AlloyKit/Themes/ThemeSlots.swift"]),
+        // The look comes from `style`: no numeric radius or opacity in the island and glass views.
+        Rule(pattern: #"cornerRadius:\s*[0-9.]"#, allowedIn: [], onlyUnder: lookDirectories),
+        Rule(pattern: #"\.opacity\(\s*[0-9.]"#, allowedIn: [], onlyUnder: lookDirectories),
     ]
 
     /// Files exempt from every rule, by path relative to `Sources/`, with the reason.
@@ -42,7 +50,8 @@ import Testing
         var out: [String] = []
         for (index, line) in text.split(separator: "\n", omittingEmptySubsequences: false).enumerated() {
             let code = line.split(separator: "//", maxSplits: 1, omittingEmptySubsequences: false).first.map(String.init) ?? ""
-            for rule in rules where !rule.allowedIn.contains(path) && code.range(of: rule.pattern, options: .regularExpression) != nil {
+            for rule in rules where !rule.allowedIn.contains(path) && (rule.onlyUnder.isEmpty || rule.onlyUnder.contains { path.hasPrefix($0) })
+                && code.range(of: rule.pattern, options: .regularExpression) != nil {
                 out.append("line \(index + 1): \(line.trimmingCharacters(in: .whitespaces))")
             }
         }
@@ -77,6 +86,16 @@ import Testing
         #expect(Self.offences(in: "Text(a).foregroundColor(.mutedInk)").isEmpty)
         #expect(Self.offences(in: "Rectangle().fill(.panelFill)").isEmpty)
         #expect(Self.offences(in: "let redFlag = 1; x.greenish()").isEmpty)
+    }
+
+    @Test func guardRejectsInlineRadius() {
+        let island = "AlloyKit/Islands/Island.swift"
+        #expect(Self.offences(in: "RoundedRectangle(cornerRadius: 8)", path: island).count == 1)
+        #expect(Self.offences(in: "shape.fill(Color.islandFill.opacity(0.7))", path: "AlloyKit/Glass/GlassControl.swift").count == 1)
+        #expect(Self.offences(in: "GlassBackdrop(cornerRadius: .5)", path: island).count == 1)
+        #expect(Self.offences(in: "RoundedRectangle(cornerRadius: Pixels(Float(style.cornerRadius)))", path: island).isEmpty)
+        #expect(Self.offences(in: "Color.controlFill.opacity(alpha)", path: island).isEmpty)
+        #expect(Self.offences(in: "RoundedRectangle(cornerRadius: 8)", path: "AlloyKit/Other.swift").isEmpty, "only the look directories")
     }
 
     @Test func confinedSpellingsAreAllowedOnlyWhereListed() {

@@ -62,7 +62,8 @@ if case .open(let root, let file) = initial.choice, let workspace = makeWorkspac
 } else {
     model = LauncherModel()
 }
-let window = try app.openWindow(title: "Alloy", size: alloyWindowSize, minSize: Size(width: Pixels(900), height: Pixels(500))) {
+let window = try app.openWindow(title: "Alloy", size: alloyWindowSize, minSize: Size(width: Pixels(900), height: Pixels(500)),
+                           windowStyle: .hiddenTitleBar) {
     launcherRoot(model: model, themes: themeController)
 }
 
