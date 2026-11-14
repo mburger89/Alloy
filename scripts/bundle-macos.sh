@@ -1,6 +1,6 @@
 #!/bin/sh
 # Builds build/Alloy.app from a release build: the executable, MetalUI's
-# shader resources in Contents/Resources, an .icns when
+# resource bundles (shaders, highlight queries) in Contents/Resources, an .icns when
 # Packaging/icon-1024.png exists, signed ad hoc unless CODESIGN_IDENTITY is
 # set. The steps are MetalUI's docs/packaging.md.
 set -eu
@@ -14,7 +14,13 @@ APP="build/$NAME.app"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN/$NAME" "$APP/Contents/MacOS/"
-cp -R "$BIN/MetalUI_MetalUIRender.bundle" "$APP/Contents/Resources/"
+# Every SwiftPM resource bundle the app links (MetalUI's shaders, the tree-sitter highlight queries), not the test bundles.
+for b in "$BIN"/*.bundle; do
+    case "$(basename "$b")" in *Tests.bundle) continue ;; esac
+    cp -R "$b" "$APP/Contents/Resources/"
+done
+test -f "$APP/Contents/Resources/TreeSitterRust_TreeSitterRust.bundle/Contents/Resources/queries/highlights.scm" \
+    || { echo "bundle-macos: highlight queries missing from $APP" >&2; exit 1; }
 cp Packaging/macOS/Info.plist "$APP/Contents/Info.plist"
 
 if [ -f Packaging/icon-1024.png ]; then

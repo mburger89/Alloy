@@ -167,21 +167,32 @@ struct LanguageSupport: Sendable {
 
     /// `<bundle>.bundle/Contents/Resources/queries/<file>` next to the executable, the app's resources or the
     /// test bundle (SwiftPM puts a dependency's resource bundle beside the products).
+    /// Looks next to the app first; only if that misses does it walk every loaded bundle and framework, because
+    /// `Bundle.allFrameworks` loads each framework's Info.plist (about 90 ms on the first file open).
     private static func queryURL(bundle: String, file: String) -> URL? {
-        var dirs: [URL] = []
-        if let url = Bundle.main.resourceURL { dirs.append(url) }
-        dirs.append(Bundle.main.bundleURL)
-        if let url = Bundle.main.executableURL { dirs.append(url.deletingLastPathComponent()) }
-        for b in Bundle.allBundles + Bundle.allFrameworks { dirs.append(b.bundleURL.deletingLastPathComponent()) }
-        dirs.append(Bundle(for: BundleToken.self).bundleURL.deletingLastPathComponent())
         let sub = ["Contents/Resources/queries", "queries"]
-        for dir in dirs {
-            for s in sub {
-                let url = dir.appendingPathComponent("\(bundle).bundle/\(s)/\(file)")
-                if FileManager.default.isReadableFile(atPath: url.path) { return url }
+        func find(in dirs: [URL]) -> URL? {
+            for dir in dirs {
+                for s in sub {
+                    let url = dir.appendingPathComponent("\(bundle).bundle/\(s)/\(file)")
+                    if FileManager.default.isReadableFile(atPath: url.path) { return url }
+                }
             }
+            return nil
         }
-        return nil
+        // The executable's own folder first, without touching `Bundle.main`: for a bare SwiftPM executable, creating
+        // the main bundle scans the whole build folder (thousands of files).
+        if let exe = ProcessInfo.processInfo.arguments.first,
+           let hit = find(in: [URL(fileURLWithPath: exe).resolvingSymlinksInPath().deletingLastPathComponent()]) {
+            return hit
+        }
+        var near: [URL] = []
+        if let url = Bundle.main.resourceURL { near.append(url) }
+        near.append(Bundle.main.bundleURL)
+        if let url = Bundle.main.executableURL { near.append(url.deletingLastPathComponent()) }
+        near.append(Bundle(for: BundleToken.self).bundleURL.deletingLastPathComponent())
+        if let hit = find(in: near) { return hit }
+        return find(in: (Bundle.allBundles + Bundle.allFrameworks).map { $0.bundleURL.deletingLastPathComponent() })
     }
 
     private final class BundleToken {}
