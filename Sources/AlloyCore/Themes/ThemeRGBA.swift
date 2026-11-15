@@ -41,6 +41,13 @@ public struct ThemeRGBA: Equatable, Hashable, Sendable {
         return "#" + byte(r) + byte(g) + byte(b) + (a < 1 ? byte(a) : "")
     }
 
+    /// This colour moved `amount` (0...1) of the way towards `other`, channel by channel in the file's gamma-encoded space;
+    /// the alpha stays this colour's.
+    public func mixed(with other: ThemeRGBA, amount: Double) -> ThemeRGBA {
+        let t = min(max(amount, 0), 1)
+        return ThemeRGBA(r: r + (other.r - r) * t, g: g + (other.g - g) * t, b: b + (other.b - b) * t, a: a)
+    }
+
     private static func nibble(_ c: UInt8) -> Int? {
         switch c {
         case UInt8(ascii: "0")...UInt8(ascii: "9"): return Int(c) - Int(UInt8(ascii: "0"))

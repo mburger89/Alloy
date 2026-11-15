@@ -25,28 +25,28 @@ import Testing
         window.tick(); window.tick()
     }
 
-    /// The box is the field plus the 6 pt inset above and below; the field is 24 pt at one line and grows 16 pt per line to 136 (G18).
+    /// The box is the field plus the 6 pt inset above and below; the plain field is 16 pt at one line and grows 16 pt per line to 128 (G18).
     private func height(_ id: String, _ window: TestWindow) throws -> Float {
         try window.element(identifier: id).frame.size.height.value
     }
 
     @Test func emptyDraftIsOneLineHigh() async throws {
         let (_, _, window) = await rigWithSession()
-        #expect(try height("composer", window) == 24)
-        #expect(try height("composer-box", window) == 24 + 12)
+        #expect(try height("composer", window) == 16)
+        #expect(try height("composer-box", window) == 16 + 12)
     }
 
     @Test func threeLinesAreThreeLinesHigh() async throws {
         let (_, _, window) = await rigWithSession()
         try type(lines: 3, window: window)
-        #expect(try height("composer", window) == 56)
+        #expect(try height("composer", window) == 48)
     }
 
     @Test func fortyLinesAreCappedAtEightAndKeepAcceptingText() async throws {
         let (_, _, window) = await rigWithSession()
         try type(lines: 40, window: window)
-        #expect(try height("composer", window) == 136)
-        #expect(try height("composer-box", window) == 136 + 12)
+        #expect(try height("composer", window) == 128)
+        #expect(try height("composer-box", window) == 128 + 12)
         // Capped, yet the editor still holds (and scrolls to) the whole text.
         let value = try window.element(identifier: "composer").value ?? ""
         #expect(value.hasSuffix("line 39"))
@@ -59,17 +59,17 @@ import Testing
         window.typeText(String(repeating: "word ", count: 120))
         window.tick(); window.tick()
         let grown = try height("composer", window)
-        #expect(grown > 24)
-        #expect(grown <= 136)
+        #expect(grown > 16)
+        #expect(grown <= 128)
         #expect(!(try #require(window.element(identifier: "composer").value)).contains("\n"))
     }
 
-    @Test func aVeryLongWrappedLineCapsAt136AndScrolls() async throws {
+    @Test func aVeryLongWrappedLineCapsAt128AndScrolls() async throws {
         let (_, _, window) = await rigWithSession()
         try window.focus(window.element(identifier: "composer"))
         window.typeText(String(repeating: "word ", count: 2_000))
         window.tick(); window.tick()
-        #expect(try height("composer", window) == 136)
+        #expect(try height("composer", window) == 128)
         #expect(try window.element(identifier: "composer").isFocused)
     }
 

@@ -85,10 +85,13 @@ if let dumpURL = FrameTimingRecorder.install(on: window, environment: ProcessInf
 }
 
 // The app menu's Settings… (⌘,) and the Go menu; see alloyCommands.
-app.commands { alloyCommands(model: model) }
+let settingsWindow = SettingsWindowController { title, size, minSize, root in
+    try app.openWindow(title: title, size: size, minSize: minSize, windowStyle: .hiddenTitleBar) { settingsWindowElement(root) }
+}
+app.commands { alloyCommands(model: model, settings: settingsWindow, themes: themeController) }
 
 // Closing the window or quitting stops every claude process first.
-installWindowShutdown(on: window, model: model)
+installWindowShutdown(on: window, model: model, settings: settingsWindow)
 app.onTerminateRequest = { model.shutdownRequested { app.replyToTerminateRequest($0) } }
 
 // The panel asks for a folder; cancelling quits, a refused folder or a dialog error explains and asks again.

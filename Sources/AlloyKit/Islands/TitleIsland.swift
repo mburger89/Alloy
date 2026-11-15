@@ -2,8 +2,8 @@ import AlloyCore
 import Foundation
 import MetalUI
 
-/// The island across the top: room for the traffic lights, the project's folder name and branch, then the New Session,
-/// Quick Open and Settings pills. Equatable on the workspace, the quick-open model and the style, so the bodies that
+/// The island across the top: room for the traffic lights, the project's folder name and branch, then the New Session
+/// and Quick Open pills. Equatable on the workspace, the quick-open model and the style, so the bodies that
 /// read them (the branch) are its only reasons to re-run. The spacer reserves the lights' cluster up front and grows
 /// only for a wider reported one, so insets that arrive a frame late and fit the reserve move nothing.
 struct TitleIsland: Component, Equatable {
@@ -41,11 +41,6 @@ struct TitleIsland: Component, Equatable {
                     Text("Quick Open").font(size: 11)
                 } action: {
                     if quickOpen.isShowing { quickOpen.hide() } else { quickOpen.show(workspace: workspace) }
-                }
-                pill(style, label: "Settings", id: "title-settings") {
-                    Image(systemName: "gearshape").font(.system(size: 11))
-                } action: {
-                    workspace.openSettings?()
                 }
             }
             .padding(Edges(top: Pixels(0), right: Pixels(10), bottom: Pixels(0), left: Pixels(0)))

@@ -4,7 +4,7 @@ import Foundation
 enum ThemeTools {
     static let unavailable = MCPToolResult(text: "Alloy's theme tools are not available right now.", isError: true)
     static let author = "Made in an Alloy theme session"
-    static let format = "A theme file is a JSON object: {\"name\": text, \"appearance\": \"dark\"|\"light\", \"base\": optional theme id to inherit from, \"colors\": {slot: \"#RRGGBB\" or \"#RRGGBBAA\"}, \"sessionColors\": optional list of 6 to 12 hex colours, \"style\": optional {\"gutter\": 0 to 16, \"cornerRadius\": 0 to 20, \"islandOpacity\": 0.40 to 1.0, \"controlOpacity\": 0.40 to 1.0, \"controlBlur\": \"light\"|\"medium\"|\"heavy\", \"pillButtons\": true|false}}. A style key left out comes from the base theme."
+    static let format = "A theme file is a JSON object: {\"name\": text, \"appearance\": \"dark\"|\"light\", \"base\": optional theme id to inherit from, \"colors\": {slot: \"#RRGGBB\" or \"#RRGGBBAA\"}, \"sessionColors\": optional list of 6 to 12 hex colours, \"style\": optional {\"gutter\": 0 to 16, \"cornerRadius\": 0 to 20, \"islandOpacity\": 0.40 to 1.0, \"controlOpacity\": 0.40 to 1.0, \"controlBlur\": \"light\"|\"medium\"|\"heavy\", \"pillButtons\": true|false, \"backgroundGradient\": true|false, \"backgroundGradientStrength\": 0 to 0.40, \"backgroundImage\": file name or relative path in the themes folder, \"backgroundImageDim\": 0 to 0.80}}. A style key left out comes from the base theme."
 
     static func make(workspace: Workspace) -> [MCPTool] {
         let ref = WorkspaceRef(workspace)
@@ -34,7 +34,7 @@ enum ThemeTools {
         return value
     }
 
-    /// The six style keys of a theme file: `{key: {value, range, purpose}}`. `range` is `[min, max]` for numbers, the
+    /// The style keys of a theme file: `{key: {value, range, purpose}}`. `range` is `[min, max]` for numbers, the
     /// allowed words for `controlBlur` and `[false, true]` for `pillButtons`.
     static func styleDescription(_ s: AppearanceStyle) -> JSONValue {
         func number(_ value: Double, _ range: ClosedRange<Double>, _ purpose: String) -> JSONValue {
@@ -51,6 +51,12 @@ enum ThemeTools {
                                     "purpose": .string("How strongly the floating controls blur what is behind them.")]),
             "pillButtons": .object(["value": .bool(s.pillButtons), "range": .array([.bool(false), .bool(true)]),
                                     "purpose": .string("Fully round buttons when true; buttons use half the island radius when false.")]),
+            "backgroundGradient": .object(["value": .bool(s.backgroundGradient), "range": .array([.bool(false), .bool(true)]),
+                                           "purpose": .string("A diagonal gradient behind the islands, from windowBackground towards accent, instead of the flat windowBackground colour.")]),
+            "backgroundGradientStrength": number(s.backgroundGradientStrength, AppearanceStyle.gradientStrengthRange, "How much accent the gradient's far corner takes, as a fraction (0.18 is subtle)."),
+            "backgroundImage": .object(["value": .string(""), "range": .string("a file name or relative path, resolved against the themes folder"),
+                                        "purpose": .string("An image drawn behind the islands instead of the gradient, cropped to fill the window. The file must sit in the themes folder; a missing file is ignored. The user can pick a different image in Settings.")]),
+            "backgroundImageDim": number(s.backgroundImageDim, AppearanceStyle.imageDimRange, "How strongly windowBackground is laid over the background image, as an opacity, so text stays readable (0.30 by default)."),
         ])
     }
 

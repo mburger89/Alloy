@@ -113,6 +113,21 @@ struct LanguageServerTests {
         await h.server.shutdown()
     }
 
+    @Test func configurationAnswersBySection() {
+        let params = JSONValue.object(["items": .array([.object(["section": .string("eslint")]), .object([:])])])
+        let x = JSONValue.object(["run": .string("onSave")])
+        let result = LanguageServer.answer(method: "workspace/configuration", params: params,
+                                           root: FileManager.default.temporaryDirectory, configuration: ["": x])
+        #expect((try? result.get()) == .array([.null, x]))
+    }
+
+    @Test func configurationDefaultsToNull() {
+        let params = JSONValue.object(["items": .array([.object(["section": .string("a")]), .object([:])])])
+        let result = LanguageServer.answer(method: "workspace/configuration", params: params,
+                                           root: FileManager.default.temporaryDirectory, configuration: [:])
+        #expect((try? result.get()) == .array([.null, .null]))
+    }
+
     @Test func answersWorkspaceConfigurationWithNulls() async throws {
         let h = try Harness(script: ["serverRequests": .array([
             .object(["id": .number(900), "method": .string("workspace/configuration"),

@@ -4,6 +4,7 @@ import AlloyTestSupport
 import Foundation
 import MetalUI
 import MetalUITesting
+import Testing
 
 /// The app's real root element in a headless 1200x800 window, settled so lists have built their rows.
 @MainActor
@@ -29,17 +30,47 @@ extension TestWindow {
         return rects
     }
 
-    /// The menu bar as main.swift installs it: Settings… lives there.
-    func installAlloyMenu(_ workspace: Workspace) {
-        let model = LauncherModel(workspace: workspace)
-        testApp.app.commands { alloyCommands(model: model) }
+    /// The menu bar as main.swift installs it: Settings… lives there, and opens a Settings window of this test app.
+    /// `themes` is what the Settings window picks themes through; install the menu again once the controller exists.
+    func installAlloyMenu(_ workspace: Workspace, themes: ThemeController? = nil) {
+        installAlloyMenu(model: LauncherModel(workspace: workspace), themes: themes)
     }
 
-    /// Opens Settings through the application menu's "Settings…" item.
-    func openSettingsFromMenu() throws {
+    /// The same for a launcher model (without a project, Settings… is disabled).
+    func installAlloyMenu(model: LauncherModel, themes: ThemeController? = nil) {
+        let testApp = self.testApp
+        let rig = SettingsRig()
+        rig.controller = SettingsWindowController { title, size, minSize, root in
+            // As tall as every section needs, so the tests find all of them without scrolling.
+            let tall = Size(width: size.width, height: Pixels(2400))
+            let opened = try testApp.openWindow(title: title, size: tall, minSize: minSize, windowStyle: .hiddenTitleBar) { settingsWindowElement(root) }
+            opened.tick()
+            rig.windows.append(opened)
+            return opened.window
+        }
+        settingsRigs[ObjectIdentifier(testApp)] = rig
+        testApp.app.commands { alloyCommands(model: model, settings: rig.controller, themes: themes) }
+    }
+
+    /// The test app's Settings controller (from `installAlloyMenu`).
+    var settingsController: SettingsWindowController { settingsRigs[ObjectIdentifier(testApp)]!.controller }
+
+    /// Opens Settings through the application menu's "Settings…" item and returns its window (the open one, if it was).
+    @discardableResult
+    func openSettingsFromMenu() throws -> TestWindow {
         try testApp.performMenuBarItem(accessibilityIdentifier: "app-settings")
+        return try #require(settingsRigs[ObjectIdentifier(testApp)]?.windows.last)
     }
 }
+
+/// The Settings windows a test app opened, in order.
+@MainActor
+final class SettingsRig {
+    var controller: SettingsWindowController!
+    var windows: [TestWindow] = []
+}
+
+@MainActor private var settingsRigs: [ObjectIdentifier: SettingsRig] = [:]
 
 /// A workspace whose sessions run on `ScriptedTransport`s, collected in order.
 @MainActor

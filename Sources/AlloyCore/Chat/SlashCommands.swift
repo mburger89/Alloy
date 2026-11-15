@@ -6,6 +6,8 @@ public enum SlashRoute: Equatable, Sendable {
     case passThrough
     case setModel(String)
     case showModelPicker
+    /// `/effort <level>` with a known level; a bare `/effort` goes to the CLI.
+    case setEffort(String)
     case setMode(PermissionMode)
     case localHelp
     /// `/fork [name]`: a new session from this conversation.
@@ -15,6 +17,9 @@ public enum SlashRoute: Equatable, Sendable {
 }
 
 public enum SlashCommands {
+    /// The levels `--effort` accepts, lowest first.
+    public static let effortLevels = ["low", "medium", "high", "xhigh", "max"]
+
     /// Routes on the trimmed text. Only text starting with `/` is a command; its name runs up to the first whitespace.
     public static func route(_ text: String) -> SlashRoute {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -25,6 +30,7 @@ public enum SlashCommands {
         switch name {
         case "model": return argument.isEmpty ? .showModelPicker : .setModel(argument)
         // `/plan <prompt>` starts a plan with a prompt in the CLI; Alloy only owns the bare switch.
+        case "effort": return effortLevels.contains(argument) ? .setEffort(argument) : .passThrough
         case "plan": return argument.isEmpty ? .setMode(.plan) : .passThrough
         case "help": return .localHelp
         case "fork": return .fork(name: argument.isEmpty ? nil : argument)

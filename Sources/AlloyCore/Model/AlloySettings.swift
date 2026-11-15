@@ -42,12 +42,18 @@ public struct AlloySettings: Codable, Equatable, Sendable {
     /// The user's look overrides, applied over the theme's style.
     public var appearance: AppearanceOverrides
 
+    /// The background image each theme shows, by theme id: the stored file name under Alloy's Backgrounds folder, or the
+    /// empty string to hide the image the theme file names. A theme with no entry shows its file's own image, if any.
+    public var backgroundImages: [String: String]
+
     public init(claudePath: String? = nil, lastProjectPath: String? = nil,
                 shareKnowledge: Bool = true, shareAcrossProjects: Bool = true, askBeforeSharedNotes: Bool = false, followEdits: Bool = true,
                 themeMode: ThemeMode = .single, theme: String = "dracula",
                 lightTheme: String = "alloy-light", darkTheme: String = "dracula",
                 languageServers: [String: ServerConfigOverride] = [:],
-                appearance: AppearanceOverrides = AppearanceOverrides(), glass: Bool = true) {
+                appearance: AppearanceOverrides = AppearanceOverrides(), glass: Bool = true,
+                backgroundImages: [String: String] = [:]) {
+        self.backgroundImages = backgroundImages
         self.glass = glass
         self.appearance = appearance
         self.languageServers = languageServers
@@ -64,7 +70,7 @@ public struct AlloySettings: Codable, Equatable, Sendable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case claudePath, lastProjectPath, shareKnowledge, shareAcrossProjects, askBeforeSharedNotes, followEdits, themeMode, theme, lightTheme, darkTheme, languageServers, appearance, glass
+        case claudePath, lastProjectPath, shareKnowledge, shareAcrossProjects, askBeforeSharedNotes, followEdits, themeMode, theme, lightTheme, darkTheme, languageServers, appearance, glass, backgroundImages
     }
 
     /// Every key is optional, so a file written by an older Alloy still loads with its values intact.
@@ -84,6 +90,7 @@ public struct AlloySettings: Codable, Equatable, Sendable {
         darkTheme = (try? c.decodeIfPresent(String.self, forKey: .darkTheme)) ?? "dracula"
         appearance = (try? c.decodeIfPresent(AppearanceOverrides.self, forKey: .appearance)) ?? AppearanceOverrides()
         glass = try c.decodeIfPresent(Bool.self, forKey: .glass) ?? true
+        backgroundImages = (try? c.decodeIfPresent([String: String].self, forKey: .backgroundImages)) ?? [:]
         // Entry by entry: one malformed override is dropped without losing the others.
         let lossy = (try? c.decodeIfPresent([String: LossyOverride].self, forKey: .languageServers)) ?? nil
         languageServers = (lossy ?? [:]).compactMapValues(\.value)

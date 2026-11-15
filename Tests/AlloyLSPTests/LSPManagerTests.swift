@@ -6,7 +6,7 @@ import Testing
 @testable import AlloyLSP
 
 
-private struct Rig {
+struct Rig {
     let dir: URL
     let launches = Launches()
     let manager: LSPManager
@@ -16,7 +16,13 @@ private struct Rig {
         ServerConfig(id: id, name: "Fake \(id)", languageID: id, extensions: [ext], command: command, arguments: arguments)
     }
 
-    init(configs: [ServerConfig], scripts: [String: String] = [:]) throws {
+    static func linter(_ id: String, ext: String, requires: [String] = [], command: String = fakeServerPath) -> ServerConfig {
+        ServerConfig(id: id, name: "Lint \(id)", languageID: id, extensions: [ext], command: command,
+                     role: .linter, requiresConfigFiles: requires)
+    }
+
+    init(configs: [ServerConfig], scripts: [String: String] = [:], probe: ConfigProbe = .live,
+         linterIdleDelay: Duration = .zero) throws {
         dir = FileManager.default.temporaryDirectory.appendingPathComponent("alloy-mgr-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         let launches = launches, dir = dir
@@ -30,7 +36,7 @@ private struct Rig {
         }
         registry = ServerRegistry(builtIn: configs)
         manager = LSPManager(root: dir, registry: registry, locator: ServerLocator(loginPATH: { nil }, xcrunFind: { _ in nil }),
-                             launcher: launcher)
+                             launcher: launcher, probe: probe, linterIdleDelay: linterIdleDelay)
     }
 
     func methods(_ id: String) -> [String] {
@@ -47,12 +53,20 @@ private struct Rig {
             .compactMap { $0["params"]?["textDocument"]?["uri"]?.stringValue }
     }
 
+    func openedLanguageIDs(_ id: String) -> [String] {
+        let url = dir.appendingPathComponent("\(id).jsonl")
+        guard let text = try? String(contentsOf: url, encoding: .utf8) else { return [] }
+        return text.split(separator: "\n").compactMap { JSONValue.parse(Data($0.utf8)) }
+            .filter { $0["method"]?.stringValue == "textDocument/didOpen" }
+            .compactMap { $0["params"]?["textDocument"]?["languageId"]?.stringValue }
+    }
+
     func cleanup() { try? FileManager.default.removeItem(at: dir) }
 
     /// Runs `body`, then always stops the servers and removes the directory, also when `body` throws.
-    @MainActor static func run(_ configs: [ServerConfig], scripts: [String: String] = [:],
-                    _ body: @MainActor (Rig) async throws -> Void) async throws {
-        let rig = try Rig(configs: configs, scripts: scripts)
+    @MainActor static func run(_ configs: [ServerConfig], scripts: [String: String] = [:], probe: ConfigProbe = .live,
+                    linterIdleDelay: Duration = .zero, _ body: @MainActor (Rig) async throws -> Void) async throws {
+        let rig = try Rig(configs: configs, scripts: scripts, probe: probe, linterIdleDelay: linterIdleDelay)
         do { try await body(rig) } catch {
             await rig.manager.shutdownAll()
             rig.cleanup()
@@ -63,7 +77,7 @@ private struct Rig {
     }
 }
 
-@MainActor private func snap(_ text: String) -> CodeSnapshot { CodeBuffer(text).snapshot() }
+@MainActor func snap(_ text: String) -> CodeSnapshot { CodeBuffer(text).snapshot() }
 
 @Suite
 @MainActor

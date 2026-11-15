@@ -13,7 +13,10 @@ import Testing
     private struct Setup {
         let rig: Rig
         let window: TestWindow
+        /// The Settings window the menu opened.
+        let settings: TestWindow
         let controller: ThemeController
+        @MainActor func tick() { window.tick(); settings.tick() }
     }
 
     private func setup(openFile: Bool = false, reduceTransparency: Bool = false) async throws -> Setup {
@@ -28,18 +31,20 @@ import Testing
         let window = try TestWindow(size: Size(width: Pixels(1200), height: Pixels(900))) {
             rootView(workspace: rig.workspace, themes: holder.controller)
         }
-        window.installAlloyMenu(rig.workspace)
-        let controller = ThemeController(workspace: rig.workspace, host: window.window, watcher: ScriptedChangeSource())
+        // The app is the theme host, as in main.swift: the Settings window follows it as well as the main one.
+        let controller = ThemeController(workspace: rig.workspace, host: window.testApp.app, watcher: ScriptedChangeSource())
         holder.controller = controller
+        window.installAlloyMenu(rig.workspace, themes: controller)
         window.tick(); window.tick()
         if reduceTransparency { window.platformWindow.simulateReduceTransparencyChange(to: true) }
-        try window.openSettingsFromMenu()
-        try await window.runUntil { (try? window.element(identifier: "settings-appearance-section")) != nil }
-        return Setup(rig: rig, window: window, controller: controller)
+        let settings = try window.openSettingsFromMenu()
+        if reduceTransparency { settings.platformWindow.simulateReduceTransparencyChange(to: true) }
+        try await settings.runUntil { (try? settings.element(identifier: "settings-appearance-reset")) != nil }
+        return Setup(rig: rig, window: window, settings: settings, controller: controller)
     }
 
     private func increment(_ id: String, times: Int, _ t: Setup) throws {
-        for _ in 0..<times { try t.window.performAccessibilityAction(.increment, on: t.window.element(identifier: id)) }
+        for _ in 0..<times { try t.settings.performAccessibilityAction(.increment, on: t.settings.element(identifier: id)) }
     }
 
     @Test func slidersWriteOverrides() async throws {
@@ -70,7 +75,7 @@ import Testing
         let opacity = try #require(t.rig.workspace.settings.appearance.islandOpacity)
         #expect(abs(opacity - 0.60) < 1e-9)
         #expect(abs(t.controller.style.islandOpacity - 0.60) < 1e-9)
-        for _ in 0..<40 { try t.window.performAccessibilityAction(.decrement, on: t.window.element(identifier: "settings-appearance-see-through")) }
+        for _ in 0..<40 { try t.settings.performAccessibilityAction(.decrement, on: t.settings.element(identifier: "settings-appearance-see-through")) }
         #expect(t.rig.workspace.settings.appearance.islandOpacity == 1.0)
         #expect(!t.controller.style.windowSeeThrough)
         t.window.tick(); t.window.tick()
@@ -105,7 +110,7 @@ import Testing
         let after = paints()
         #expect(after == (try expected()), "the installed paints follow the slider")
         for i in after.indices { #expect(after[i] != before[i], "paint \(i) changed with the slider") }
-        for _ in 0..<40 { try t.window.performAccessibilityAction(.decrement, on: t.window.element(identifier: "settings-appearance-see-through")) }
+        for _ in 0..<40 { try t.settings.performAccessibilityAction(.decrement, on: t.settings.element(identifier: "settings-appearance-see-through")) }
         #expect(paints() == (try expected()))
         #expect(!t.controller.style.windowSeeThrough)
     }
@@ -114,14 +119,14 @@ import Testing
     @Test func sliderDragSavesOnce() async throws {
         let t = try await setup()
         defer { t.controller.stop() }
-        let slider = try t.window.element(identifier: "settings-appearance-gutter")
+        let slider = try t.settings.element(identifier: "settings-appearance-gutter")
         let f = slider.frame
         let y = (f.minY.value + f.maxY.value) / 2
         let saves = t.rig.workspace.settingsSaveCount
         var seen: [Double] = []
         let start = Point(x: Pixels(f.minX.value + 12), y: Pixels(y))
         let end = Point(x: Pixels(f.maxX.value - 12), y: Pixels(y))
-        t.window.drag(from: start, to: end, steps: 12)
+        t.settings.drag(from: start, to: end, steps: 12)
         seen.append(t.controller.style.gutter)
         #expect(t.controller.style.gutter != AppearanceStyle.defaults.gutter, "the drag changed the live style")
         #expect(t.rig.workspace.settingsSaveCount == saves + 1, "one save for the whole drag, got \(t.rig.workspace.settingsSaveCount - saves)")
@@ -142,9 +147,9 @@ import Testing
     @Test func blurPickerWritesOverride() async throws {
         let t = try await setup()
         defer { t.controller.stop() }
-        let picker = try t.window.element(identifier: "settings-appearance-blur")
-        let light = try #require(descendants(of: picker, in: t.window).first { $0.label == "Light" })
-        try t.window.click(light)
+        let picker = try t.settings.element(identifier: "settings-appearance-blur")
+        let light = try #require(descendants(of: picker, in: t.settings).first { $0.label == "Light" })
+        try t.settings.click(light)
         #expect(t.rig.workspace.settings.appearance.controlBlur == .light)
         #expect(t.controller.style.controlBlur == .light)
     }
@@ -154,8 +159,8 @@ import Testing
         defer { t.controller.stop() }
         try increment("settings-appearance-gutter", times: 2, t)
         #expect(!t.rig.workspace.settings.appearance.isEmpty)
-        #expect(try t.window.element(identifier: "settings-appearance-reset").label == "Reset to theme")
-        try t.window.click(t.window.element(identifier: "settings-appearance-reset"))
+        #expect(try t.settings.element(identifier: "settings-appearance-reset").label == "Reset to theme")
+        try t.settings.click(t.settings.element(identifier: "settings-appearance-reset"))
         #expect(t.rig.workspace.settings.appearance.isEmpty)
         #expect(t.controller.style.gutter == AppearanceStyle.defaults.gutter)
     }
@@ -165,7 +170,7 @@ import Testing
         defer { t.controller.stop() }
         try increment("settings-appearance-gutter", times: 2, t)
         #expect(!t.rig.workspace.settings.appearance.isEmpty)
-        try t.window.click(t.window.element(identifier: "settings-back-to-dracula"))
+        try t.settings.click(t.settings.element(identifier: "settings-back-to-dracula"))
         #expect(t.rig.workspace.settings.appearance.isEmpty)
         #expect(t.rig.workspace.settings.theme == "dracula")
     }
@@ -182,16 +187,16 @@ import Testing
         #expect(t.rig.workspace.openFilePath == "login.swift")
         #expect(doc.buffer.version == version)
         #expect(doc.buffer.snapshot().text == text)
-        #expect((try? t.window.element(identifier: "settings-view")) != nil)
+        #expect((try? t.settings.element(identifier: "settings-view")) != nil)
     }
 
     @Test func reduceTransparencyShowsTheNote() async throws {
         let off = try await setup()
         defer { off.controller.stop() }
-        #expect((try? off.window.element(identifier: "settings-appearance-reduce-transparency-note")) == nil)
+        #expect((try? off.settings.element(identifier: "settings-appearance-reduce-transparency-note")) == nil)
         let on = try await setup(reduceTransparency: true)
         defer { on.controller.stop() }
-        let note = try on.window.element(identifier: "settings-appearance-reduce-transparency-note")
+        let note = try on.settings.element(identifier: "settings-appearance-reduce-transparency-note")
         #expect((note.label ?? note.value ?? "").contains("Reduce Transparency is on in macOS, so glass is drawn solid."))
     }
 
@@ -215,11 +220,11 @@ import Testing
         #expect(t.controller.style.glass && t.controller.style.windowSeeThrough)
         #expect(GlassLook.resolve(style: t.controller.style, reduceTransparency: false) != .solid)
         #expect(backdrop() != .some(.none) && backdrop() != nil)
-        let toggle = try t.window.element(identifier: "settings-appearance-glass")
+        let toggle = try t.settings.element(identifier: "settings-appearance-glass")
         #expect(toggle.isEnabled)
 
-        try t.window.click(toggle)
-        for _ in 0..<4 { t.window.tick(); await Task.yield() }
+        try t.settings.click(toggle)
+        for _ in 0..<4 { t.tick(); await Task.yield() }
         #expect(!t.rig.workspace.settings.glass)
         #expect(!AlloySettings.load(appSupport: support).glass, "persisted")
         #expect(GlassLook.resolve(style: t.controller.style, reduceTransparency: false) == .solid)
@@ -228,17 +233,17 @@ import Testing
         // The values are kept while glass is off, and the two controls are disabled.
         #expect(t.rig.workspace.settings.appearance.isEmpty)
         #expect(t.controller.style.islandOpacity == AppearanceStyle.defaults.islandOpacity)
-        #expect(try !t.window.element(identifier: "settings-appearance-see-through").isEnabled)
-        #expect(try !t.window.element(identifier: "settings-appearance-blur").isEnabled)
-        #expect(try t.window.element(identifier: "settings-appearance-gutter").isEnabled)
+        #expect(try !t.settings.element(identifier: "settings-appearance-see-through").isEnabled)
+        #expect(try !t.settings.element(identifier: "settings-appearance-blur").isEnabled)
+        #expect(try t.settings.element(identifier: "settings-appearance-gutter").isEnabled)
 
-        try t.window.click(t.window.element(identifier: "settings-appearance-glass"))
-        for _ in 0..<4 { t.window.tick(); await Task.yield() }
+        try t.settings.click(t.settings.element(identifier: "settings-appearance-glass"))
+        for _ in 0..<4 { t.tick(); await Task.yield() }
         #expect(t.rig.workspace.settings.glass && AlloySettings.load(appSupport: support).glass)
         #expect(GlassLook.resolve(style: t.controller.style, reduceTransparency: false) != .solid)
         #expect(backdrop() != .some(.none) && backdrop() != nil, "the material is back")
-        #expect(try t.window.element(identifier: "settings-appearance-see-through").isEnabled)
-        #expect(try t.window.element(identifier: "settings-appearance-blur").isEnabled)
+        #expect(try t.settings.element(identifier: "settings-appearance-see-through").isEnabled)
+        #expect(try t.settings.element(identifier: "settings-appearance-blur").isEnabled)
     }
 
     @Test func reduceTransparencyStaysSolidWhateverGlassSays() {

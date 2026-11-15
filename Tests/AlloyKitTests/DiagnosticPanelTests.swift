@@ -98,12 +98,58 @@ struct DiagnosticLayoutTests {
             LSPDiagnostic(range: 4..<5, severity: .information, message: "fyi"),
         ]
         let layout = DiagnosticDecorations.layout(items, in: snapshot)
-        #expect(layout.rows.map(\.lines) == [["\u{26A0} broken"], ])
+        #expect(layout.rows.map(\.lines) == [["\u{26A0} broken", "\u{26A0} lint: careful"]])
         #expect(layout.rows.map(\.anchor) == [.after(line: 0)])
         // Rows 0 and 1 differ in severity (error vs information), so they get a decoration each.
         #expect(layout.lines.map(\.lines) == [0..<1, 1..<2])
         let warnings = DiagnosticDecorations.layout([items[0]], in: snapshot)
-        #expect(warnings.rows.first?.lines == ["\u{26A0} careful \u{2014} lint"])
+        #expect(warnings.rows.first?.lines == ["\u{26A0} lint: careful"])
+    }
+
+    private func stacked(_ items: [LSPDiagnostic]) -> [CodeVirtualRow] {
+        DiagnosticDecorations.layout(items, in: CodeBuffer("one\ntwo\n").snapshot()).rows
+    }
+
+    @Test func stacksUpToThreeMessagesPerLine() {
+        let items = (0..<5).map { LSPDiagnostic(range: 0..<1, severity: .error, message: "m\($0)", source: "s") }
+        let rows = stacked(items)
+        #expect(rows.count == 1)
+        #expect(rows[0].lines == ["\u{26A0} s: m0", "\u{26A0} s: m1", "\u{26A0} s: m2", "+2 more"])
+    }
+
+    @Test func mostSevereFirst() {
+        let items = [
+            LSPDiagnostic(range: 0..<1, severity: .warning, message: "w1", source: "s"),
+            LSPDiagnostic(range: 1..<2, severity: .error, message: "e1", source: "s"),
+            LSPDiagnostic(range: 2..<3, severity: .warning, message: "w2", source: "s"),
+            LSPDiagnostic(range: 0..<1, severity: .error, message: "e2", source: "s"),
+        ]
+        #expect(stacked(items)[0].lines == ["\u{26A0} s: e1", "\u{26A0} s: e2", "\u{26A0} s: w1", "+1 more"])
+    }
+
+    @Test func duplicatesFromOneSourceCollapse() {
+        let d = LSPDiagnostic(range: 0..<1, severity: .error, message: "dup", source: "ruff", code: "F401")
+        var other = d
+        other.range = 1..<2
+        #expect(stacked([d, other, d])[0].lines == ["\u{26A0} ruff F401: dup"])
+    }
+
+    @Test func samePlaceDifferentSourcesBothShow() {
+        let a = LSPDiagnostic(range: 0..<1, severity: .error, message: "same", source: "pyright")
+        var b = a
+        b.source = "ruff"
+        #expect(stacked([a, b])[0].lines == ["\u{26A0} pyright: same", "\u{26A0} ruff: same"])
+    }
+
+    @Test func rowTextIncludesSourceAndCode() {
+        let d = LSPDiagnostic(range: 0..<1, severity: .warning, message: "'os' imported but unused\nmore", source: "ruff", code: "F401")
+        #expect(DiagnosticDecorations.rowText(d) == "\u{26A0} ruff F401: 'os' imported but unused")
+    }
+
+    @Test func rowTextWithoutCode() {
+        let d = LSPDiagnostic(range: 0..<1, severity: .warning, message: "careful", source: "lint")
+        #expect(DiagnosticDecorations.rowText(d) == "\u{26A0} lint: careful")
+        #expect(DiagnosticDecorations.rowText(LSPDiagnostic(range: 0..<1, severity: .warning, message: "bare")) == "\u{26A0} bare")
     }
 
     @Test func virtualRowsCappedAt200() {
@@ -112,8 +158,8 @@ struct DiagnosticLayoutTests {
         let items = (0..<300).map { error(($0 * 5)..<($0 * 5 + 1), "e\($0)") }
         let layout = DiagnosticDecorations.layout(items, in: snapshot)
         #expect(layout.rows.count == 200)
-        #expect(layout.rows.first?.lines == ["\u{26A0} e0 \u{2014} fake"])
-        #expect(layout.rows.last?.lines == ["\u{26A0} e199 \u{2014} fake"])
+        #expect(layout.rows.first?.lines == ["\u{26A0} fake: e0"])
+        #expect(layout.rows.last?.lines == ["\u{26A0} fake: e199"])
         // All 300 rows still have their gutter bar (one decoration, as they are neighbours).
         #expect(layout.lines.map(\.lines) == [0..<300])
     }

@@ -37,6 +37,8 @@ private func json(_ s: String) throws -> JSONValue {
     @Test func controlShapes() throws {
         #expect(try decode(OutboundMessage.control(requestID: "r2", .interrupt).line()) == json(#"{"type":"control_request","request_id":"r2","request":{"subtype":"interrupt"}}"#))
         #expect(try decode(OutboundMessage.control(requestID: "r2", .setModel("sonnet")).line()) == json(#"{"type":"control_request","request_id":"r2","request":{"subtype":"set_model","model":"sonnet"}}"#))
+        #expect(try decode(OutboundMessage.control(requestID: "r3", .setEffort("high")).line()) == json(#"{"type":"control_request","request_id":"r3","request":{"subtype":"apply_flag_settings","settings":{"effortLevel":"high"}}}"#))
+        #expect(try decode(OutboundMessage.control(requestID: "r3", .setEffort(nil)).line()) == json(#"{"type":"control_request","request_id":"r3","request":{"subtype":"apply_flag_settings","settings":{"effortLevel":null}}}"#))
         #expect(try decode(OutboundMessage.control(requestID: "r2", .setPermissionMode("plan")).line()) == json(#"{"type":"control_request","request_id":"r2","request":{"subtype":"set_permission_mode","mode":"plan"}}"#))
     }
 

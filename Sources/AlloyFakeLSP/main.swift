@@ -7,6 +7,9 @@ import Foundation
 // FAKE_LSP_SCRIPT (JSON object, all keys optional):
 //   capabilities   object returned as InitializeResult.capabilities
 //   diagnostics    array published after didOpen/didChange (echoing the document version)
+//   publishOnSave  publish diagnostics after didSave only (not after didOpen/didChange)
+//   diagnosticsDelayMs  sleep before publishing diagnostics
+//   diagnosticsVersionLag  published version = document version minus this (never below 0): a result for older text
 //   definition     result for textDocument/definition
 //   semanticTokens result for textDocument/semanticTokens/full (and /full/delta unless semanticTokensDelta is set)
 //   semanticTokensDelta  result for textDocument/semanticTokens/full/delta (e.g. {resultId, edits})
@@ -214,11 +217,17 @@ struct FakeLSP {
             exit(0)
         case "textDocument/didOpen", "textDocument/didChange", "textDocument/didSave", "textDocument/didClose":
             trackDocument(method: method, params: params)
-            guard method != "textDocument/didSave", method != "textDocument/didClose",
+            let onSave = script["publishOnSave"]?.boolValue == true
+            guard method != "textDocument/didClose", (method == "textDocument/didSave") == onSave,
                   let diagnostics = script["diagnostics"], let doc = params?["textDocument"],
                   let uri = doc["uri"] else { return }
+            if let ms = script["diagnosticsDelayMs"]?.intValue, ms > 0 { Thread.sleep(forTimeInterval: Double(ms) / 1000) }
             var p: [String: JSONValue] = ["uri": uri, "diagnostics": diagnostics]
-            if let version = doc["version"] { p["version"] = version }
+            if let version = doc["version"] {
+                if let lag = script["diagnosticsVersionLag"]?.intValue, let v = version.intValue {
+                    p["version"] = .number(Double(max(0, v - lag)))
+                } else { p["version"] = version }
+            }
             send(.object(["jsonrpc": .string("2.0"), "method": .string("textDocument/publishDiagnostics"),
                           "params": .object(p)]))
         case "textDocument/diagnostic":

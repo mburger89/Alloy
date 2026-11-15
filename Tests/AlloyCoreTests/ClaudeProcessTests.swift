@@ -230,6 +230,16 @@ private final class Reader: @unchecked Sendable {
         #expect(!config().arguments().contains("--resume-session-at"))
     }
 
+    @Test func effortFlagFollowsTheLevel() {
+        var c = LaunchConfiguration(executable: URL(fileURLWithPath: "/bin/claude"), projectDirectory: URL(fileURLWithPath: "/tmp"),
+                                    sessionID: UUID(), resume: true)
+        #expect(!c.arguments().contains("--effort"))
+        c.effort = "high"
+        let args = c.arguments()
+        let i = args.firstIndex(of: "--effort")
+        #expect(i != nil && args[(i ?? 0) + 1] == "high")
+    }
+
     @Test func defaultsAddNoNewFlags() {
         let args = LaunchConfiguration(executable: URL(fileURLWithPath: "/bin/claude"), projectDirectory: URL(fileURLWithPath: "/tmp"),
                                        sessionID: UUID(), resume: false).arguments()

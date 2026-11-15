@@ -183,6 +183,18 @@ import Testing
         _ = session
     }
 
+    @Test func effortMenuSetsEffortAndShowsIt() async throws {
+        let rig = Rig()
+        let session = try await idleSession(rig)
+        let window = try alloyWindow(rig.workspace)
+        try window.click(window.element(identifier: "effort-menu"))
+        window.tick()
+        try window.chooseMenuItem(accessibilityIdentifier: "effort-choice-high")
+        try await pollSent(rig, window) { $0.contains { if case .control(_, .setEffort("high")) = $0 { true } else { false } } }
+        #expect(ComposerView.effortLabel(nil) == "Effort" && ComposerView.effortLabel("xhigh") == "Extra high")
+        _ = session
+    }
+
     /// G9: `/model` with no name opens the real model `Menu` (`model-menu`) through `.menuPresented`.
     @Test func slashModelOpensMenu() async throws {
         let rig = Rig()

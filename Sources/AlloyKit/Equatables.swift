@@ -38,7 +38,7 @@ extension ChatColumn: Equatable {
 }
 
 extension FileTabStrip: Equatable {
-    nonisolated static func == (a: Self, b: Self) -> Bool { a.workspace === b.workspace }
+    nonisolated static func == (a: Self, b: Self) -> Bool { a.workspace === b.workspace && a.style == b.style }
 }
 
 extension DiagnosticCountsBadge: Equatable {

@@ -14,12 +14,15 @@ public struct LSPDiagnostic: Sendable, Equatable {
     public var severity: Severity
     public var message: String
     public var source: String?
+    /// The server's rule or error code (`F401`, `6133`); a numeric code is stringified.
+    public var code: String?
 
-    public init(range: Range<Int>, severity: Severity, message: String, source: String? = nil) {
+    public init(range: Range<Int>, severity: Severity, message: String, source: String? = nil, code: String? = nil) {
         self.range = range
         self.severity = severity
         self.message = message
         self.source = source
+        self.code = code
     }
 }
 
@@ -51,10 +54,20 @@ public enum DiagnosticMapping {
             if bytes.isEmpty { bytes = widened(bytes.lowerBound, in: snapshot) }
             let severity = item["severity"]?.intValue.flatMap(Severity.init(rawValue:)) ?? .error
             result.append(LSPDiagnostic(range: bytes, severity: severity, message: item["message"]?.stringValue ?? "",
-                                        source: item["source"]?.stringValue))
+                                        source: item["source"]?.stringValue, code: codeString(item["code"])))
         }
         return result.enumerated().sorted { ($0.element.range.lowerBound, $0.offset) < ($1.element.range.lowerBound, $1.offset) }
             .map(\.element)
+    }
+
+    private static func codeString(_ value: JSONValue?) -> String? {
+        switch value {
+        case .string(let s): return s
+        case .number(let n):
+            if let i = value?.intValue, Double(i) == n { return String(i) }
+            return String(n)
+        default: return nil
+        }
     }
 
     private static func position(_ value: JSONValue?) -> LSPPosition? {

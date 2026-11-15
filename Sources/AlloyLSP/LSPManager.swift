@@ -12,6 +12,8 @@ public enum LSPResult: Sendable {
     case semanticTokens(path: String, version: Int, runs: [(Range<Int>, SyntaxToken)])
     /// Whether the server of `path` offers semantic tokens; sent when a probing request first learns it and when it changes.
     case semanticSupport(path: String, supported: Bool)
+    /// The linters that actually run for `path` (those that are enabled and whose config files exist), in order.
+    case linters(path: String, ids: [String])
 }
 
 /// Starts a server process: the config, the resolved executable path and the workspace root.
@@ -51,6 +53,14 @@ public actor LSPManager {
         /// Whether the server ever pushed diagnostics; a server that did is not asked to pull them.
         var pushed = false
         var pullTasks: [String: Task<Void, Never>] = [:]
+        /// The server's last reported state (set on the actor); a failed or missing linter is skipped for sync.
+        var state: ServerState?
+        var isDead: Bool {
+            switch state {
+            case .failed, .notInstalled: return true
+            default: return false
+            }
+        }
         init(config: ServerConfig, server: LanguageServer, sync: DocumentSync, representative: String) {
             self.config = config
             self.server = server
@@ -59,10 +69,81 @@ public actor LSPManager {
         }
     }
 
+    /// The replacements of the document since `base`, so a diagnostic set published for an older version can be moved
+    /// to a newer one (the main actor's buffer does the same for the single set v1 yields).
+    private struct EditLog {
+        struct Span { var start: Int; var end: Int; var length: Int }
+        var base: UInt64
+        var spans: [Span] = []
+        static let limit = 4096
+        /// Old spans go in chunks of this size, never one `removeFirst` per keystroke.
+        static let chunk = 512
+        static let trimChunk = 16
+        var tip: UInt64 { base + UInt64(spans.count) }
+
+        mutating func reset(to version: UInt64) {
+            base = version
+            if !spans.isEmpty { spans = [] }
+        }
+
+        mutating func append(_ edits: [CodeEdit], after: UInt64) {
+            for edit in edits {
+                guard edit.version == tip + 1 else { reset(to: after); return }
+                spans.append(Span(start: edit.range.lowerBound, end: edit.range.upperBound, length: edit.newText.utf8.count))
+            }
+            if tip != after { reset(to: after); return }
+            if spans.count > Self.limit + Self.chunk { drop(Self.chunk) }
+        }
+
+        private mutating func drop(_ count: Int) {
+            spans.removeFirst(count)
+            base += UInt64(count)
+        }
+
+        /// Forgets the spans before `version` (nothing older is still needed), once at least a chunk of them can go.
+        mutating func trim(before version: UInt64) {
+            guard version > base, version <= tip, version - base >= UInt64(Self.trimChunk) else { return }
+            drop(Int(version - base))
+        }
+
+        /// `offset` of `from` as of `to`; nil when the log does not reach (same rules as `CodeBuffer.map`).
+        func map(_ offset: Int, from: UInt64, to: UInt64, after: Bool) -> Int? {
+            guard from <= to, from >= base, to <= tip else { return nil }
+            var o = offset
+            for i in Int(from - base)..<Int(to - base) {
+                let e = spans[i]
+                if o < e.start { continue }
+                if o >= e.end && !(o == e.start && e.start == e.end) { o += e.length - (e.end - e.start) }
+                else if e.start == e.end { o = after ? e.start + e.length : e.start }
+                else if o == e.start { o = e.start }
+                else { o = after ? e.start + e.length : e.start }
+            }
+            return o
+        }
+    }
+
     private struct Tracked {
-        var serverID: String
+        /// The main server; nil for a file only linters apply to.
+        var serverID: String?
+        var linterIDs: [String] = []
         var languageID: String
         var snapshot: CodeSnapshot
+        var log: EditLog
+        /// The main server first, then the linters.
+        var members: [String] { (serverID.map { [$0] } ?? []) + linterIDs }
+        init(serverID: String?, linterIDs: [String] = [], languageID: String, snapshot: CodeSnapshot, log: EditLog? = nil) {
+            self.serverID = serverID
+            self.linterIDs = linterIDs
+            self.languageID = languageID
+            self.snapshot = snapshot
+            self.log = log ?? EditLog(base: snapshot.version)
+        }
+    }
+
+    /// What one server last published for a document: the version it was for, and the items at that version.
+    private struct ServerSet {
+        var version: Int
+        var items: [LSPDiagnostic]
     }
 
     public nonisolated let results: AsyncStream<LSPResult>
@@ -73,15 +154,38 @@ public actor LSPManager {
     private let launcher: ServerLauncher
     private var entries: [String: Entry] = [:]
     private var tracked: [String: Tracked] = [:]
+    /// path -> server id -> the set that server last published (already converted with v1's version mapping).
+    private var diagnostics: [String: [String: ServerSet]] = [:]
+    private let probe: ConfigProbe
+    /// (folder, server id) -> whether the linter's config files exist; cleared on `reload`.
+    private var probed: [String: Bool] = [:]
     /// Servers whose command could not be found, reported once until the next `reload`.
     private var missing: Set<String> = []
     private var isShutDown = false
     /// Servers being stopped after a reload; their documents wait for the stop to finish before the replacement starts.
     private var restarting: Set<String> = []
     /// Stops running off the command path (a slow server must not hold up the others).
-    private var pendingStops: [Task<Void, Never>] = []
+    private var pendingStops: [Int: Task<Void, Never>] = [:]
+    private var nextStopToken = 0
+    /// Unused linters waiting out the idle delay before they stop.
+    private var idleStops: [String: Task<Void, Never>] = [:]
+    /// Linters that failed; not launched again until the next `reload`.
+    private var failedLinters: Set<String> = []
+    /// The effective linter ids last reported per path.
+    private var reportedLinters: [String: [String]] = [:]
+    /// How long an unused linter keeps running before it is stopped (a file using it may reopen meanwhile).
+    private let linterIdleDelay: Duration
 
-    public init(root: URL, registry: ServerRegistry, locator: ServerLocator, launcher: ServerLauncher) {
+    /// Test hook: the number of stops not yet pruned.
+    func pendingStopCount() -> Int { pendingStops.count }
+
+    /// Test hook: whether a server entry for `id` exists.
+    func hasEntry(id: String) -> Bool { entries[id] != nil }
+
+    public init(root: URL, registry: ServerRegistry, locator: ServerLocator, launcher: ServerLauncher,
+                probe: ConfigProbe = .live, linterIdleDelay: Duration = .seconds(10)) {
+        self.linterIdleDelay = linterIdleDelay
+        self.probe = probe
         self.root = root
         self.registry = registry
         self.locator = locator
@@ -93,7 +197,9 @@ public actor LSPManager {
 
     public func documentOpened(path: String, snapshot: CodeSnapshot) async {
         guard !isShutDown else { return }
-        guard let config = registry.server(forPath: path), let languageID = registry.languageID(forPath: path) else {
+        let languageID = registry.languageID(forPath: path)
+        let main = languageID == nil ? nil : registry.server(forPath: path)
+        guard main != nil || !registry.linters(forPath: path).isEmpty else {
             await untrack(path)
             return
         }
@@ -101,50 +207,209 @@ public actor LSPManager {
             await untrack(path)   // too large for a server (and a tracked one that grew leaves it)
             return
         }
-        if let old = tracked[path], old.serverID != config.id {
+        let old = tracked[path]
+        if let old, let oldID = old.serverID, oldID != main?.id {
             semantic[path]?.base = nil
-            await entries[old.serverID]?.sync.close(uri: uri(path))
+            diagnostics[path]?[oldID] = nil
+            await entries[oldID]?.sync.close(uri: uri(path))
         }
-        tracked[path] = Tracked(serverID: config.id, languageID: languageID, snapshot: snapshot)
-        guard !restarting.contains(config.id), let entry = await entry(for: config, path: path) else { return }
-        // The lookup suspended this actor: the document may be gone, or moved to another server, meanwhile.
-        guard !isShutDown, let latest = tracked[path], latest.serverID == config.id else { return }
-        await entry.sync.open(uri: uri(path), languageID: languageID, snapshot: latest.snapshot)
-        schedulePull(path: path, entry: entry)
+        // A fresh open is a resync: the edit log starts over. The old linters stay until they are reconciled below.
+        tracked[path] = Tracked(serverID: main?.id, linterIDs: old?.linterIDs ?? [], languageID: languageID ?? "", snapshot: snapshot)
+        if let config = main, let languageID, !restarting.contains(config.id), let entry = await entry(for: config, path: path) {
+            // The lookup suspended this actor: the document may be gone, or moved to another server, meanwhile.
+            guard !isShutDown, let latest = tracked[path], latest.serverID == config.id else { return }
+            await entry.sync.open(uri: uri(path), languageID: languageID, snapshot: latest.snapshot)
+            schedulePull(path: path, entry: entry)
+        }
+        await reconcileLinters(path: path, onlyNew: false)
     }
 
     public func documentChanged(path: String, change: DocumentChange) async {
-        guard var doc = tracked[path] else { return }
-        switch change {
-        case .edits(_, let after): doc.snapshot = after
-        case .resync(let snapshot): doc.snapshot = snapshot
+        guard tracked[path] != nil else { return }
+        // Only a document with two or more live servers needs the log (to move an older set forward); a member that is
+        // missing, failed or dead costs nothing here. The log is changed in place: a copy of `tracked[path]` would copy
+        // its spans on every keystroke, so no copy may be alive when it is appended to.
+        let needsLog: Bool
+        let targets: [Entry]
+        do {
+            let current = tracked[path]!
+            needsLog = liveMemberCount(current) >= 2
+            targets = syncTargets(current)
         }
-        tracked[path] = doc
+        switch change {
+        case .edits(let edits, let after):
+            tracked[path]!.snapshot = after
+            if needsLog { tracked[path]!.log.append(edits, after: after.version) } else { tracked[path]!.log.reset(to: after.version) }
+        case .resync(let snapshot):
+            tracked[path]!.snapshot = snapshot
+            tracked[path]!.log.reset(to: snapshot.version)
+        }
         // Tokens of the old text are no use; the view asks again after its debounce.
         if let state = semantic[path] {
             // A document that has not yet learned whether its server offers tokens asks again at once (the wait for a
             // server that is still starting costs nothing); the others wait for the view's debounce.
             if state.reportedSupport == nil { requestSemanticTokens(path: path) } else { state.task?.cancel() }
         }
-        guard let entry = entries[doc.serverID] else { return }
-        await entry.sync.apply(uri: uri(path), change: change)
-        schedulePull(path: path, entry: entry)
+        for entry in targets {
+            await entry.sync.apply(uri: uri(path), change: change)
+            schedulePull(path: path, entry: entry)
+        }
     }
 
     public func documentSaved(path: String) async {
-        guard let doc = tracked[path], let entry = entries[doc.serverID] else { return }
-        await entry.sync.saved(uri: uri(path))
+        guard let doc = tracked[path] else { return }
+        for entry in syncTargets(doc) { await entry.sync.saved(uri: uri(path)) }
     }
 
     public func documentClosed(path: String) async {
         await untrack(path)
     }
 
+    /// The running entries that take sync for `doc`: the main server's, then each linter's that is not failed.
+    private func syncTargets(_ doc: Tracked) -> [Entry] {
+        var list: [Entry] = []
+        if let id = doc.serverID, let main = entries[id] { list.append(main) }
+        for id in doc.linterIDs { if let linter = entries[id], !linter.isDead { list.append(linter) } }
+        return list
+    }
+
+    private func isLive(_ id: String) -> Bool {
+        guard let entry = entries[id] else { return false }
+        return !entry.isDead
+    }
+
+    /// How many of `doc`'s servers are running and not dead (no allocation: this runs per keystroke).
+    private func liveMemberCount(_ doc: Tracked) -> Int {
+        var n = 0
+        if let id = doc.serverID, isLive(id) { n += 1 }
+        for id in doc.linterIDs where isLive(id) { n += 1 }
+        return n
+    }
+
     private func untrack(_ path: String) async {
+        reportedLinters[path] = nil
         dropSemantic(path: path)
+        diagnostics[path] = nil
         guard let doc = tracked.removeValue(forKey: path) else { return }
-        entries[doc.serverID]?.pullTasks.removeValue(forKey: path)?.cancel()
-        await entries[doc.serverID]?.sync.close(uri: uri(path))
+        for id in doc.members {
+            entries[id]?.pullTasks.removeValue(forKey: path)?.cancel()
+            await entries[id]?.sync.close(uri: uri(path))
+        }
+        for id in doc.linterIDs { releaseIfUnused(id) }
+    }
+
+    /// A linter no tracked path lists any more stops once it has been unused for `linterIdleDelay` (a file using it may
+    /// reopen meanwhile, which cancels the stop); a later open starts it again once the stop has finished.
+    private func releaseIfUnused(_ id: String) {
+        guard let entry = entries[id], entry.config.role == .linter, !isListed(id), idleStops[id] == nil else { return }
+        let delay = linterIdleDelay
+        idleStops[id] = Task { [weak self] in
+            try? await Task.sleep(for: delay)
+            guard !Task.isCancelled else { return }
+            await self?.stopIdle(id, entry)
+        }
+    }
+
+    private func isListed(_ id: String) -> Bool { tracked.values.contains { $0.linterIDs.contains(id) } }
+
+    private func cancelIdleStop(_ id: String) { idleStops.removeValue(forKey: id)?.cancel() }
+
+    private func stopIdle(_ id: String, _ entry: Entry) {
+        guard !Task.isCancelled, !isShutDown else { return }
+        idleStops[id] = nil
+        guard entries[id] === entry, !isListed(id) else { return }
+        entries[id] = nil
+        restarting.insert(id)
+        scheduleStop(entry)
+    }
+
+    /// Stops `entry` off the command path, then starts its replacement for the documents that still belong to it. The
+    /// task removes itself from `pendingStops` when done, so the table does not grow.
+    private func scheduleStop(_ entry: Entry) {
+        let id = entry.config.id
+        let token = nextStopToken
+        nextStopToken += 1
+        pendingStops[token] = Task { [weak self] in
+            await self?.stop([entry])
+            await self?.finishRestart(id)
+            await self?.stopFinished(token)
+        }
+    }
+
+    private func stopFinished(_ token: Int) { pendingStops[token] = nil }
+
+    // MARK: - Linters
+
+    private func linterLanguageID(_ config: ServerConfig, path: String) -> String {
+        let name = (path as NSString).lastPathComponent
+        if config.fileNames.contains(name) { return config.languageID }
+        let ext = (name as NSString).pathExtension.lowercased()
+        if let id = config.languageIDs[ext] { return id }
+        // A linter that names no ids of its own (efm) sends the id the registry knows for the file, not its own default.
+        if config.languageIDs.isEmpty, let known = registry.languageID(forPath: path) { return known }
+        return config.languageID
+    }
+
+    /// The linters of `path` that are enabled and whose config files exist. Filesystem checks run off this actor and
+    /// are cached per (folder, server id); nothing suspends when every answer is known.
+    private func applicableLinters(path: String) async -> [ServerConfig] {
+        await configuredLinters(path: path).filter { !missing.contains($0.id) }
+    }
+
+    /// The linters whose config files exist, including those whose command is missing (the header still names them).
+    private func configuredLinters(path: String) async -> [ServerConfig] {
+        let candidates = registry.linters(forPath: path)
+        guard !candidates.isEmpty else { return [] }
+        let folder = uri(path).deletingLastPathComponent().path
+        func key(_ c: ServerConfig) -> String { folder + "\u{0}" + c.id }
+        let unknown = candidates.filter { !$0.requiresConfigFiles.isEmpty && probed[key($0)] == nil }
+        if !unknown.isEmpty {
+            let probe = probe, root = root, generation = resolveGeneration
+            let found = await Task.detached(priority: .userInitiated) {
+                unknown.map { ($0.id, probe.hasConfig(for: path, names: $0.requiresConfigFiles, root: root)) }
+            }.value
+            if generation == resolveGeneration {
+                for (id, hit) in found { probed[folder + "\u{0}" + id] = hit }
+            }
+        }
+        return candidates.filter { $0.requiresConfigFiles.isEmpty || probed[key($0)] == true }
+    }
+
+    /// Brings the linters of `path` in line with the registry: those that no longer apply get `didClose` and lose their
+    /// diagnostics; the others are opened (`onlyNew`: only those the document did not have, or that have no server yet).
+    private func reconcileLinters(path: String, onlyNew: Bool) async {
+        guard tracked[path] != nil else { return }
+        let generation = resolveGeneration
+        let configured = await configuredLinters(path: path)
+        // A reload during the probe has its own pass over this path with the new registry.
+        guard !isShutDown, generation == resolveGeneration, let doc = tracked[path] else { return }
+        reportLinters(path: path, ids: configured.map(\.id))
+        let wanted = configured.filter { !missing.contains($0.id) }
+        let ids = wanted.map(\.id)
+        let previous = doc.linterIDs
+        tracked[path]?.linterIDs = ids
+        for id in previous where !ids.contains(id) {
+            if let live = entries[id] {
+                live.pullTasks.removeValue(forKey: path)?.cancel()
+                await live.sync.close(uri: uri(path))
+            }
+            clearDiagnostics(path: path, server: id)
+            releaseIfUnused(id)
+        }
+        for config in wanted {
+            cancelIdleStop(config.id)
+            if onlyNew, previous.contains(config.id), entries[config.id] != nil || restarting.contains(config.id) { continue }
+            guard !restarting.contains(config.id), let entry = await entry(for: config, path: path), !entry.isDead else { continue }
+            guard !isShutDown, let latest = tracked[path], latest.linterIDs.contains(config.id) else { return }
+            await entry.sync.open(uri: uri(path), languageID: linterLanguageID(config, path: path), snapshot: latest.snapshot)
+            schedulePull(path: path, entry: entry)
+        }
+    }
+
+    private func reportLinters(path: String, ids: [String]) {
+        guard reportedLinters[path] != ids else { return }   // the first report of a path counts, even an empty one
+        reportedLinters[path] = ids
+        continuation.yield(.linters(path: path, ids: ids))
     }
 
     // MARK: - Lifecycle
@@ -155,8 +420,12 @@ public actor LSPManager {
         let all = Array(entries.values)
         entries = [:]
         tracked = [:]
-        let earlier = pendingStops
-        pendingStops = []
+        diagnostics = [:]
+        let earlier = Array(pendingStops.values)
+        pendingStops = [:]
+        for task in idleStops.values { task.cancel() }
+        idleStops = [:]
+        reportedLinters = [:]
         await stop(all)
         for task in earlier { await task.value }
     }
@@ -169,40 +438,56 @@ public actor LSPManager {
         locator.invalidate()
         resolvedCommands = [:]
         resolveGeneration += 1
+        probed = [:]
         registry = new
         missing = []
+        failedLinters = []
         var stale: [Entry] = []
-        for (id, entry) in entries where new.all.first(where: { $0.id == id }) != entry.config {
+        // A failed linter is forgotten here: its dead entry goes too, so it gets a fresh start.
+        for (id, entry) in entries where new.all.first(where: { $0.id == id }) != entry.config
+            || (entry.config.role == .linter && entry.isDead) {
+            cancelIdleStop(id)
             stale.append(entry)
             entries[id] = nil
             restarting.insert(id)
         }
         for (path, doc) in tracked.sorted(by: { $0.key < $1.key }) {
-            guard let config = new.server(forPath: path), let languageID = new.languageID(forPath: path) else {
+            let languageID = new.languageID(forPath: path)
+            let config = languageID == nil ? nil : new.server(forPath: path)
+            guard config != nil || !new.linters(forPath: path).isEmpty else {
                 tracked[path] = nil
+                diagnostics[path] = nil
+                reportedLinters[path] = nil
                 dropSemantic(path: path)
-                if let live = entries[doc.serverID] { await live.sync.close(uri: uri(path)) }
+                for id in doc.members { if let live = entries[id] { await live.sync.close(uri: uri(path)) } }
+                for id in doc.linterIDs { releaseIfUnused(id) }
                 continue
             }
             // Same server: running (kept) or waiting for its restart. One that was missing gets another try below.
-            if config.id == doc.serverID, entries[config.id] != nil || restarting.contains(config.id) { continue }
-            if config.id != doc.serverID, let live = entries[doc.serverID] { await live.sync.close(uri: uri(path)) }
-            tracked[path] = Tracked(serverID: config.id, languageID: languageID, snapshot: doc.snapshot)
-            if !restarting.contains(config.id), let entry = await entry(for: config, path: path),
+            if config?.id == doc.serverID, config == nil || entries[config!.id] != nil || restarting.contains(config!.id) {
+                await reconcileLinters(path: path, onlyNew: true)
+                continue
+            }
+            if let oldID = doc.serverID, oldID != config?.id {
+                diagnostics[path]?[oldID] = nil
+                if let live = entries[oldID] { await live.sync.close(uri: uri(path)) }
+                semantic[path]?.base = nil
+            }
+            if var current = tracked[path] {
+                current.serverID = config?.id
+                current.languageID = languageID ?? ""
+                tracked[path] = current
+            }
+            if let oldID = doc.serverID, oldID != config?.id { yieldUnion(path: path) }
+            if let config, let languageID, !restarting.contains(config.id), let entry = await entry(for: config, path: path),
                let latest = tracked[path], latest.serverID == config.id {
                 await entry.sync.open(uri: uri(path), languageID: languageID, snapshot: latest.snapshot)
                 // The other server never issued the old one's result ids.
                 if semantic[path] != nil { semantic[path]?.base = nil; requestSemanticTokens(path: path) }
             }
+            await reconcileLinters(path: path, onlyNew: true)
         }
-        for entry in stale {
-            let id = entry.config.id
-            let task = Task { [weak self] in
-                await self?.stop([entry])
-                await self?.finishRestart(id)
-            }
-            pendingStops.append(task)
-        }
+        for entry in stale { scheduleStop(entry) }
     }
 
     /// The old instance of `id` is gone: start its replacement for the documents that still belong to it.
@@ -212,14 +497,19 @@ public actor LSPManager {
             // A reload during an await below may have stopped the instance made here and marked `id` as restarting again;
             // its own `finishRestart` takes over, and this one must not make a second instance meanwhile.
             guard !isShutDown, !restarting.contains(id) else { return }
-            guard let doc = tracked[path], doc.serverID == id, let config = registry.server(forPath: path), config.id == id,
-                  let languageID = registry.languageID(forPath: path) else { continue }
-            guard let entry = await entry(for: config, path: path) else { continue }
+            guard let doc = tracked[path], doc.members.contains(id) else { continue }
+            let isMain = doc.serverID == id
+            let found = isMain ? registry.server(forPath: path) : registry.linters(forPath: path).first { $0.id == id }
+            guard let config = found, config.id == id else { continue }
+            let languageID = isMain ? registry.languageID(forPath: path) : linterLanguageID(config, path: path)
+            guard let languageID else { continue }
+            guard let entry = await entry(for: config, path: path), !entry.isDead else { continue }
             guard !isShutDown, !restarting.contains(id), entries[id] === entry,
-                  let latest = tracked[path], latest.serverID == id else { continue }
+                  let latest = tracked[path], latest.members.contains(id) else { continue }
             await entry.sync.open(uri: uri(path), languageID: languageID, snapshot: latest.snapshot)
+            schedulePull(path: path, entry: entry)
             // The new instance never issued the old one's result ids.
-            if semantic[path] != nil { semantic[path]?.base = nil; requestSemanticTokens(path: path) }
+            if isMain, semantic[path] != nil { semantic[path]?.base = nil; requestSemanticTokens(path: path) }
             await restartGate?()
         }
         // Documents the registry no longer gives to any server were dropped at reload; nothing else to do.
@@ -309,7 +599,7 @@ public actor LSPManager {
         return nil
     }
 
-    private func runSemantic(path: String, serverID: String, sequence: Int) async {
+    private func runSemantic(path: String, serverID: String?, sequence: Int) async {
         guard !Task.isCancelled, let target = requestTarget(path: path), tracked[path]?.serverID == serverID else { return }
         guard let rpc = await Self.readyConnection(target.server), !Task.isCancelled,
               let caps = await target.server.capabilities else { return }
@@ -410,7 +700,7 @@ public actor LSPManager {
     /// server's command cannot be found, or when the state changed while it was looked up.
     private func entry(for config: ServerConfig, path: String) async -> Entry? {
         if let existing = entries[config.id] { return existing }
-        if missing.contains(config.id) { return nil }
+        if missing.contains(config.id) || failedLinters.contains(config.id) { return nil }
         let found = await resolveCommand(config.command)
         // The lookup suspended this actor: a reload, a quit or another caller may have changed the picture.
         guard !isShutDown, !restarting.contains(config.id), registry.all.contains(config) else { return nil }
@@ -428,12 +718,13 @@ public actor LSPManager {
         let entry = Entry(config: config, server: server, sync: sync, representative: path)
         entries[config.id] = entry
         let cont = continuation, name = config.name, id = config.id
-        entry.observer = Task {
+        entry.observer = Task { [weak self, weak entry] in
             var first = true
             for await state in await server.stateChanges {
                 defer { first = false }
                 if first && state == .stopped { continue }
                 cont.yield(.status(path: path, serverID: id, serverName: name, state: state))
+                if let entry { await self?.noteState(state, of: entry) }
             }
         }
         let (incoming, inbox) = AsyncStream<JSONValue>.makeStream()
@@ -444,7 +735,7 @@ public actor LSPManager {
                 await self.publish(params, from: entry)
             }
         }
-        entry.starter = Task {
+        entry.starter = Task { [weak self, weak entry] in
             let serverID = config.id
             await server.setOnNotification { [weak self] method, params in
                 if method == "textDocument/publishDiagnostics", let params { inbox.yield(params) }
@@ -465,20 +756,83 @@ public actor LSPManager {
 
     // MARK: - Diagnostics
 
+    /// A server's state changed. One that went dead (failed, or missing) loses its diagnostics at once and the union
+    /// of the others is yielded again; a failed linter is not launched again until the next `reload`.
+    private func noteState(_ state: ServerState, of entry: Entry) {
+        guard entries[entry.config.id] === entry else { return }
+        entry.state = state
+        guard entry.isDead else { return }
+        if entry.config.role == .linter, case .failed = state { failedLinters.insert(entry.config.id) }
+        for path in diagnostics.keys.sorted() where diagnostics[path]?[entry.config.id] != nil {
+            clearDiagnostics(path: path, server: entry.config.id)
+        }
+    }
+
     /// A `publishDiagnostics` of `entry`'s server: mapped with the snapshot of the version it names and reported.
     private func publish(_ params: JSONValue, from entry: Entry) async {
         entry.pushed = true
         guard let text = params["uri"]?.stringValue, let url = URL(string: text)?.standardizedFileURL,
-              let path = tracked.first(where: { $0.value.serverID == entry.config.id && uri($0.key) == url })?.key else { return }
+              let path = tracked.first(where: { $0.value.members.contains(entry.config.id) && uri($0.key) == url })?.key else { return }
         await deliver(params["diagnostics"]?.arrayValue ?? [], version: params["version"]?.intValue, path: path, entry: entry)
     }
 
     private func deliver(_ raw: [JSONValue], version: Int?, path: String, entry: Entry) async {
-        guard let doc = tracked[path], doc.serverID == entry.config.id else { return }
-        guard let items = await DiagnosticMapping.map(raw, version: version, sync: entry.sync, uri: uri(path),
+        guard !entry.isDead, entries[entry.config.id] === entry,
+              let doc = tracked[path], doc.members.contains(entry.config.id) else { return }
+        guard var items = await DiagnosticMapping.map(raw, version: version, sync: entry.sync, uri: uri(path),
                                                        current: doc.snapshot) else { return }   // evicted: cannot be placed
-        guard !isShutDown, tracked[path]?.serverID == entry.config.id else { return }
-        continuation.yield(.diagnostics(path: path, version: version ?? Int(doc.snapshot.version), items: items))
+        guard !isShutDown, !entry.isDead, entries[entry.config.id] === entry,
+              tracked[path]?.members.contains(entry.config.id) == true else { return }
+        for i in items.indices where items[i].source == nil { items[i].source = entry.config.name }
+        diagnostics[path, default: [:]][entry.config.id] = ServerSet(version: version ?? Int(doc.snapshot.version), items: items)
+        trimLog(path: path)
+        yieldUnion(path: path)
+    }
+
+    /// Once every live member has published, nothing older than the oldest set can be asked for again. (A member that
+    /// publishes only on save keeps the log at its size limit; a dead or missing one is not waited for.)
+    private func trimLog(path: String) {
+        guard let doc = tracked[path], let sets = diagnostics[path] else { return }
+        let live = doc.members.filter { isLive($0) }
+        guard live.count >= 2, live.allSatisfy({ sets[$0] != nil }),
+              let oldest = live.compactMap({ sets[$0]?.version }).min() else { return }
+        tracked[path]?.log.trim(before: UInt64(max(0, oldest)))
+    }
+
+    /// Test hook: how many edits the log of `path` holds.
+    func editLogCount(path: String) -> Int? { tracked[path]?.log.spans.count }
+
+    private func clearDiagnostics(path: String, server id: String) {
+        guard diagnostics[path]?[id] != nil else { return }
+        diagnostics[path]?[id] = nil
+        yieldUnion(path: path)
+    }
+
+    /// Every server's set for `path`, main first then the linters in order, at the newest version among them: an older
+    /// set moves forward through the edits since (and is left out when the edit log no longer reaches it).
+    private func yieldUnion(path: String) {
+        guard let doc = tracked[path] else { return }
+        let sets = diagnostics[path] ?? [:]
+        let present = doc.members.compactMap { id in sets[id].map { (id, $0) } }
+        guard let target = present.map(\.1.version).max() else {
+            continuation.yield(.diagnostics(path: path, version: Int(doc.snapshot.version), items: []))
+            return
+        }
+        var union: [LSPDiagnostic] = []
+        for (_, set) in present {
+            if set.version == target { union += set.items; continue }
+            let from = UInt64(max(0, set.version)), to = UInt64(target)
+            for item in set.items {
+                guard let lower = doc.log.map(item.range.lowerBound, from: from, to: to, after: true),
+                      let upper = doc.log.map(item.range.upperBound, from: from, to: to, after: false) else { continue }
+                let range = lower..<max(lower, upper)
+                guard !range.isEmpty else { continue }
+                var moved = item
+                moved.range = range
+                union.append(moved)
+            }
+        }
+        continuation.yield(.diagnostics(path: path, version: target, items: union))
     }
 
     /// Pull diagnostics: only for a server that advertises `diagnosticProvider` and has not pushed, 300 ms after the
@@ -495,11 +849,11 @@ public actor LSPManager {
 
     /// After a restart the new server has pushed nothing yet: ask again for every document of `entry`.
     private func pullAll(_ entry: Entry) {
-        for (path, doc) in tracked where doc.serverID == entry.config.id { schedulePull(path: path, entry: entry) }
+        for (path, doc) in tracked where doc.members.contains(entry.config.id) { schedulePull(path: path, entry: entry) }
     }
 
     private func pull(path: String, entry: Entry) async {
-        guard !entry.pushed, let doc = tracked[path], doc.serverID == entry.config.id else { return }
+        guard !entry.pushed, let doc = tracked[path], doc.members.contains(entry.config.id) else { return }
         // Wait for the server (no polling: `connection()` resumes when it is ready), then ask only a server that
         // offers pull, and only once it has the text it will be asked about.
         guard let rpc = try? await entry.server.connection(), !Task.isCancelled,
@@ -526,7 +880,7 @@ public actor LSPManager {
     }
 
     func requestTarget(path: String) -> RequestTarget? {
-        guard let doc = tracked[path], let entry = entries[doc.serverID] else { return nil }
+        guard let doc = tracked[path], let id = doc.serverID, let entry = entries[id] else { return nil }
         return RequestTarget(server: entry.server, sync: entry.sync, uri: uri(path), snapshot: doc.snapshot, root: root)
     }
 

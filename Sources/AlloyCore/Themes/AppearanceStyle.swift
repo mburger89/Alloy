@@ -8,6 +8,12 @@ public struct AppearanceStyle: Equatable, Sendable {
     public static let gutterRange: ClosedRange<Double> = 0...16
     public static let cornerRadiusRange: ClosedRange<Double> = 0...20
     public static let opacityRange: ClosedRange<Double> = 0.40...1.0
+    public static let gradientStrengthRange: ClosedRange<Double> = 0...0.40
+    /// The default share of the accent in the gradient's far corner: subtle, so island and text contrast are unaffected.
+    public static let defaultGradientStrength = 0.18
+    public static let imageDimRange: ClosedRange<Double> = 0...0.80
+    /// The default share of the window colour laid over a background image, so the islands and text keep their contrast.
+    public static let defaultImageDim = 0.30
 
     public var gutter: Double
     public var cornerRadius: Double
@@ -18,10 +24,26 @@ public struct AppearanceStyle: Equatable, Sendable {
     /// Glass on: blurred controls and a see-through window. Off (the Glass setting, or `ALLOY_GLASS=0`) draws solid
     /// controls and an opaque window and islands; the opacity and blur values stay as they are.
     public var glass: Bool
+    /// A diagonal gradient behind the islands instead of the flat window colour (on by default): the window colour towards
+    /// the same colour blended with the accent by ``backgroundGradientStrength``.
+    public var backgroundGradient: Bool
+    /// How far the gradient's far corner is blended from the window colour towards the accent, as a fraction.
+    public var backgroundGradientStrength: Double
+    /// How strongly the window colour is laid over a background image, as an opacity.
+    public var backgroundImageDim: Double
+    /// The background image in effect for the shown theme (the user's choice, else the theme file's), or nil. Filled in
+    /// by the theme controller, never by a theme file.
+    public var backgroundImage: BackgroundImage?
 
     public init(gutter: Double, cornerRadius: Double, islandOpacity: Double, controlOpacity: Double,
-                controlBlur: ControlBlur, pillButtons: Bool, glass: Bool = true) {
+                controlBlur: ControlBlur, pillButtons: Bool, glass: Bool = true, backgroundGradient: Bool = true,
+                backgroundGradientStrength: Double = AppearanceStyle.defaultGradientStrength,
+                backgroundImageDim: Double = AppearanceStyle.defaultImageDim, backgroundImage: BackgroundImage? = nil) {
+        self.backgroundImageDim = backgroundImageDim
+        self.backgroundImage = backgroundImage
         self.glass = glass
+        self.backgroundGradient = backgroundGradient
+        self.backgroundGradientStrength = backgroundGradientStrength
         self.gutter = gutter
         self.cornerRadius = cornerRadius
         self.islandOpacity = islandOpacity
@@ -75,6 +97,11 @@ public struct AppearanceStyle: Equatable, Sendable {
         func mix(_ c: Double) -> Double { (sheen + (1 - sheen) * opacity * c) / alpha }
         return ThemeRGBA(r: mix(fill.r), g: mix(fill.g), b: mix(fill.b), a: alpha)
     }
+    /// The window background's far (bottom-trailing) gradient colour: the window colour blended towards the accent by
+    /// ``backgroundGradientStrength``, folded with the tint and shade like ``windowPaint``.
+    public func windowPaintEnd(window: ThemeRGBA, accent: ThemeRGBA) -> ThemeRGBA {
+        windowPaint(window.mixed(with: accent, amount: backgroundGradientStrength))
+    }
     /// The alpha of the black shade over the tinted window background: ``windowShade`` while see-through, else none.
     public var windowShadeOpacity: Double { windowSeeThrough ? Self.windowShade : 0 }
     /// The alpha of the white sheen over an island's fill: ``islandSheen`` while see-through, else none.
@@ -87,7 +114,7 @@ public struct AppearanceStyle: Equatable, Sendable {
     /// (before the bar's measured height arrives): the content estimate plus the gutters.
     public var filePanelBarHeightEstimate: Double { Self.filePanelBarContentEstimate + 2 * gutter }
     /// The composer's glass bar content (one line of text, the mode row) before it is measured.
-    public static let composerBarContentEstimate = 86.0
+    public static let composerBarContentEstimate = 78.0
     /// The composer's glass bar height with a gutter above and below, as the transcript's bottom margin on a column's first frame.
     public var composerBarHeightEstimate: Double { Self.composerBarContentEstimate + 2 * gutter }
     /// The title island's height.
@@ -130,6 +157,8 @@ public struct AppearanceStyle: Equatable, Sendable {
         s.cornerRadius = Self.clamp(cornerRadius, Self.cornerRadiusRange)
         s.islandOpacity = Self.clamp(islandOpacity, Self.opacityRange)
         s.controlOpacity = Self.clamp(controlOpacity, Self.opacityRange)
+        s.backgroundGradientStrength = Self.clamp(backgroundGradientStrength, Self.gradientStrengthRange)
+        s.backgroundImageDim = Self.clamp(backgroundImageDim, Self.imageDimRange)
         return s
     }
 
@@ -141,6 +170,8 @@ public struct AppearanceStyle: Equatable, Sendable {
         if let v = o.islandOpacity { s.islandOpacity = v }
         if let v = o.controlOpacity { s.controlOpacity = v }
         if let v = o.controlBlur { s.controlBlur = v }
+        if let v = o.backgroundGradient { s.backgroundGradient = v }
+        if let v = o.backgroundImageDim { s.backgroundImageDim = v }
         return s.clamped()
     }
 
@@ -157,9 +188,20 @@ public struct AppearanceStyleFile: Equatable, Sendable {
     public var controlOpacity: Double?
     public var controlBlur: ControlBlur?
     public var pillButtons: Bool?
+    public var backgroundGradient: Bool?
+    public var backgroundGradientStrength: Double?
+    /// A file name or relative path, resolved against the folder of the theme file that names it.
+    public var backgroundImage: String?
+    public var backgroundImageDim: Double?
 
     public init(gutter: Double? = nil, cornerRadius: Double? = nil, islandOpacity: Double? = nil,
-                controlOpacity: Double? = nil, controlBlur: ControlBlur? = nil, pillButtons: Bool? = nil) {
+                controlOpacity: Double? = nil, controlBlur: ControlBlur? = nil, pillButtons: Bool? = nil,
+                backgroundGradient: Bool? = nil, backgroundGradientStrength: Double? = nil,
+                backgroundImage: String? = nil, backgroundImageDim: Double? = nil) {
+        self.backgroundImage = backgroundImage
+        self.backgroundImageDim = backgroundImageDim
+        self.backgroundGradient = backgroundGradient
+        self.backgroundGradientStrength = backgroundGradientStrength
         self.gutter = gutter
         self.cornerRadius = cornerRadius
         self.islandOpacity = islandOpacity
@@ -178,11 +220,15 @@ public struct AppearanceStyleFile: Equatable, Sendable {
         islandOpacity = number("islandOpacity")
         controlOpacity = number("controlOpacity")
         controlBlur = (dict["controlBlur"] as? String).flatMap { ControlBlur(rawValue: $0) }
-        if let n = dict["pillButtons"] as? NSNumber, CFGetTypeID(n) == CFBooleanGetTypeID() {
-            pillButtons = n.boolValue
-        } else {
-            pillButtons = nil
+        func flag(_ key: String) -> Bool? {
+            guard let n = dict[key] as? NSNumber, CFGetTypeID(n) == CFBooleanGetTypeID() else { return nil }
+            return n.boolValue
         }
+        pillButtons = flag("pillButtons")
+        backgroundGradient = flag("backgroundGradient")
+        backgroundGradientStrength = number("backgroundGradientStrength")
+        backgroundImageDim = number("backgroundImageDim")
+        backgroundImage = (dict["backgroundImage"] as? String).flatMap { $0.isEmpty ? nil : $0 }
     }
 
     var json: [String: Any] {
@@ -193,6 +239,10 @@ public struct AppearanceStyleFile: Equatable, Sendable {
         if let controlOpacity { d["controlOpacity"] = controlOpacity }
         if let controlBlur { d["controlBlur"] = controlBlur.rawValue }
         if let pillButtons { d["pillButtons"] = pillButtons }
+        if let backgroundGradient { d["backgroundGradient"] = backgroundGradient }
+        if let backgroundGradientStrength { d["backgroundGradientStrength"] = backgroundGradientStrength }
+        if let backgroundImage { d["backgroundImage"] = backgroundImage }
+        if let backgroundImageDim { d["backgroundImageDim"] = backgroundImageDim }
         return d
     }
 }
@@ -204,9 +254,16 @@ public struct AppearanceOverrides: Equatable, Sendable, Codable {
     public var islandOpacity: Double?
     public var controlOpacity: Double?
     public var controlBlur: ControlBlur?
+    /// The Background gradient checkbox: nil follows the theme.
+    public var backgroundGradient: Bool?
+    /// The Image dim slider: nil follows the theme.
+    public var backgroundImageDim: Double?
 
     public init(gutter: Double? = nil, cornerRadius: Double? = nil, islandOpacity: Double? = nil,
-                controlOpacity: Double? = nil, controlBlur: ControlBlur? = nil) {
+                controlOpacity: Double? = nil, controlBlur: ControlBlur? = nil, backgroundGradient: Bool? = nil,
+                backgroundImageDim: Double? = nil) {
+        self.backgroundImageDim = backgroundImageDim
+        self.backgroundGradient = backgroundGradient
         self.gutter = gutter
         self.cornerRadius = cornerRadius
         self.islandOpacity = islandOpacity
@@ -216,7 +273,7 @@ public struct AppearanceOverrides: Equatable, Sendable, Codable {
 
     public var isEmpty: Bool { self == AppearanceOverrides() }
 
-    private enum CodingKeys: String, CodingKey { case gutter, cornerRadius, islandOpacity, controlOpacity, controlBlur }
+    private enum CodingKeys: String, CodingKey { case gutter, cornerRadius, islandOpacity, controlOpacity, controlBlur, backgroundGradient, backgroundImageDim }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -225,5 +282,7 @@ public struct AppearanceOverrides: Equatable, Sendable, Codable {
         islandOpacity = (try? c.decodeIfPresent(Double.self, forKey: .islandOpacity)) ?? nil
         controlOpacity = (try? c.decodeIfPresent(Double.self, forKey: .controlOpacity)) ?? nil
         controlBlur = (try? c.decodeIfPresent(ControlBlur.self, forKey: .controlBlur)) ?? nil
+        backgroundGradient = (try? c.decodeIfPresent(Bool.self, forKey: .backgroundGradient)) ?? nil
+        backgroundImageDim = (try? c.decodeIfPresent(Double.self, forKey: .backgroundImageDim)) ?? nil
     }
 }

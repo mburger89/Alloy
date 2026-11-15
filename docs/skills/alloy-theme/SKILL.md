@@ -87,5 +87,9 @@ A theme is a JSON file in the themes folder (`~/Library/Application Support/Allo
 - `sessionColors` is 6 to 12 colours.
 - `style` is optional and sets the layout and glass look; a key left out comes from the base. `gutter` 0 to 16,
   `cornerRadius` 0 to 20, `islandOpacity` and `controlOpacity` fractions 0.40 to 1.0, `controlBlur` `light`,
-  `medium` or `heavy`, `pillButtons` true or false. `theme_slots` lists the keys with ranges.
+  `medium` or `heavy`, `pillButtons` true or false, `backgroundGradient` true or false (a diagonal gradient from `windowBackground`
+  towards `accent` behind the islands), `backgroundGradientStrength` 0 to 0.40 (default 0.18), `backgroundImage` (a file name
+  or relative path of an image that sits in the themes folder next to the theme file; drawn cropped to fill behind the islands
+  instead of the gradient; a missing file is ignored), `backgroundImageDim` 0 to 0.80 (default 0.30; how strongly `windowBackground`
+  is laid over the image to keep text readable). `theme_slots` lists the keys with ranges.
 - Keep text readable: 4.5:1 for text, 3:1 for glyphs and outlines.

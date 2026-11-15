@@ -66,6 +66,7 @@ struct ComposerView: Component {
                         Text(m.displayName).tag(m)
                     }
                 }
+                .buttonBorderShape(style.buttonShape)
                 .accessibilityIdentifier("mode-picker")
                 Menu(session.model ?? "Model") {
                     Button("Sonnet") { model.setModel("sonnet") }
@@ -76,7 +77,24 @@ struct ComposerView: Component {
                         .accessibilityIdentifier("model-choice-haiku")
                 }
                 .menuPresented(pickerOpen)   // `/model` with no name opens it (G9)
+                .buttonBorderShape(style.buttonShape)
                 .accessibilityIdentifier("model-menu")
+                Menu(Self.effortLabel(session.effort)) {
+                    Button("Default") { model.setEffort(nil) }
+                        .accessibilityIdentifier("effort-choice-default")
+                    Button("Low") { model.setEffort("low") }
+                        .accessibilityIdentifier("effort-choice-low")
+                    Button("Medium") { model.setEffort("medium") }
+                        .accessibilityIdentifier("effort-choice-medium")
+                    Button("High") { model.setEffort("high") }
+                        .accessibilityIdentifier("effort-choice-high")
+                    Button("Extra high") { model.setEffort("xhigh") }
+                        .accessibilityIdentifier("effort-choice-xhigh")
+                    Button("Max") { model.setEffort("max") }
+                        .accessibilityIdentifier("effort-choice-max")
+                }
+                .buttonBorderShape(style.buttonShape)
+                .accessibilityIdentifier("effort-menu")
                 if working {
                     Button("Stop") { Task { await workspace.interrupt(sessionID) } }
                         .buttonStyle(PillButtonStyle(style: style))
@@ -102,6 +120,7 @@ struct ComposerView: Component {
             }
             HStack(alignment: .bottom, spacing: Pixels(8)) {
                 TextField("Message Claude", text: draft, selectedOffsets: caret, prompt: Text("Message Claude").foregroundColor(.mutedInk), axis: .vertical)
+                    .textFieldStyle(.plain)
                     .lineLimit(1...8)
                     .accessibilityIdentifier("composer")
                     .focused($fieldFocused)
@@ -116,10 +135,7 @@ struct ComposerView: Component {
                     }, validator: { clipboard.hasContent(of: .text) ? [] : $0 })
                     // G18: the field grows from one line to eight (wrapped lines count), then scrolls inside.
                     .frame(maxWidth: .infinity, alignment: .topLeading)
-                    .padding(inset(8, 6))
-                    .background(Color.surface)
-                    .cornerRadius(Pixels(6))
-                    .border(Color.controlBorder, width: Pixels(1))
+                    .padding(inset(Float(style.composerFieldPaddingHorizontal), Float(style.composerFieldPaddingVertical)))
                     .accessibilityElement(children: .contain)
                     .accessibilityIdentifier("composer-box")
                     .suggestionOverlay(isPresented: open, edge: .top, alignment: .leading) {
@@ -127,13 +143,19 @@ struct ComposerView: Component {
                             model.acceptSuggestion(at: $0)
                         }
                     }
-                if session.status == .dormant {
-                    Button("Resume") { Task { await workspace.wake(sessionID) } }
-                        .buttonStyle(PillButtonStyle(style: style))
-                        .accessibilityIdentifier("resume")
+                    .composerBox(style: style, focused: fieldFocused)
+                // An up arrow in a circle, as tall as the one-line message box so the two line up.
+                Button { model.send(priority: model.defaultPriority) } label: {
+                    // Resizable, so the circle is exactly that tall: a symbol set by font size is a fraction taller than the size.
+                    Image(systemName: "arrow.up.circle.fill")
+                        .resizable()
+                        .frame(width: Pixels(Float(style.composerFieldOneLineHeight)),
+                               height: Pixels(Float(style.composerFieldOneLineHeight)))
+                        .foregroundColor(Color(.accent))
                 }
-                Button("Send") { model.send(priority: model.defaultPriority) }
-                    .buttonStyle(PillButtonStyle(style: style))
+                    .buttonStyle(.plain)
+                    .help("Send")
+                    .accessibilityLabel("Send")
                     .keyboardShortcut(.return)
                     .accessibilityIdentifier("send")
             }
@@ -156,6 +178,18 @@ struct ComposerView: Component {
     }
 
     /// "640×480 · 1.2 MB".
+    /// The effort menu's title: the current level, or "Effort" for the CLI default.
+    static func effortLabel(_ level: String?) -> String {
+        switch level {
+        case "low": "Low"
+        case "medium": "Medium"
+        case "high": "High"
+        case "xhigh": "Extra high"
+        case "max": "Max"
+        default: "Effort"
+        }
+    }
+
     static func chipLabel(_ attachment: ImageAttachment) -> String {
         let size = ByteCountFormatter.string(fromByteCount: Int64(attachment.byteCount), countStyle: .file)
         guard let (w, h) = attachment.pixelSize else { return size }

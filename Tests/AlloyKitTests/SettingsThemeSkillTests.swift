@@ -28,15 +28,15 @@ import Testing
         let window = try TestWindow(size: Size(width: Pixels(1200), height: Pixels(800))) {
             rootView(workspace: rig.workspace, themes: holder.controller)
         }
-        window.installAlloyMenu(rig.workspace)
-        let controller = ThemeController(workspace: rig.workspace, host: window.window, watcher: ScriptedChangeSource())
+        let controller = ThemeController(workspace: rig.workspace, host: window.testApp.app, watcher: ScriptedChangeSource())
         controller.skillInstaller = installer
         holder.controller = controller
+        window.installAlloyMenu(rig.workspace, themes: controller)
         try prepare(installer, ThemeSkill.files(themesFolder: controller.themesFolderPath))
         window.tick(); window.tick()
-        try window.openSettingsFromMenu()
-        try await window.runUntil { (try? window.element(identifier: "settings-theme-section")) != nil }
-        return Setup(rig: rig, window: window, controller: controller, installer: installer,
+        let settings = try window.openSettingsFromMenu()
+        try await settings.runUntil { (try? settings.element(identifier: "settings-theme-section")) != nil }
+        return Setup(rig: rig, window: settings, controller: controller, installer: installer,
                      files: ThemeSkill.files(themesFolder: controller.themesFolderPath))
     }
 
@@ -113,13 +113,13 @@ import Testing
         let window = try TestWindow(size: Size(width: Pixels(1200), height: Pixels(800))) {
             rootView(workspace: rig.workspace, themes: holder.controller)
         }
-        window.installAlloyMenu(rig.workspace)
-        let controller = ThemeController(workspace: rig.workspace, host: window.window, watcher: ScriptedChangeSource())
+        let controller = ThemeController(workspace: rig.workspace, host: window.testApp.app, watcher: ScriptedChangeSource())
         defer { controller.stop() }
         holder.controller = controller
+        window.installAlloyMenu(rig.workspace, themes: controller)
         window.tick(); window.tick()
-        try window.openSettingsFromMenu()
-        try await window.runUntil { (try? window.element(identifier: "settings-theme-section")) != nil }
-        #expect((try? window.element(identifier: "settings-install-theme-skill")) == nil)
+        let settings = try window.openSettingsFromMenu()
+        try await settings.runUntil { (try? settings.element(identifier: "settings-theme-section")) != nil }
+        #expect((try? settings.element(identifier: "settings-install-theme-skill")) == nil)
     }
 }

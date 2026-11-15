@@ -101,11 +101,16 @@ private final class FakeWorkshop: ThemeWorkshop {
         let r = rig()
         let o = try object(await call(r, "theme_slots", [:]))
         let style = try #require(o["style"])
-        let keys = ["gutter", "cornerRadius", "islandOpacity", "controlOpacity", "controlBlur", "pillButtons"]
+        let keys = ["gutter", "cornerRadius", "islandOpacity", "controlOpacity", "controlBlur", "pillButtons", "backgroundGradient", "backgroundGradientStrength", "backgroundImage", "backgroundImageDim"]
         #expect(Set(try #require(style.objectValue).keys) == Set(keys))
         for key in keys {
             #expect(style[key]?["value"] != nil && style[key]?["value"] != .null, "\(key) value")
-            #expect(style[key]?["range"]?.arrayValue?.isEmpty == false, "\(key) range")
+            if key == "backgroundImage" {
+                // A free-form file name: its range is a description, not a list.
+                #expect(style[key]?["range"]?.stringValue?.isEmpty == false, "\(key) range")
+            } else {
+                #expect(style[key]?["range"]?.arrayValue?.isEmpty == false, "\(key) range")
+            }
             #expect(style[key]?["purpose"]?.stringValue?.isEmpty == false, "\(key) purpose")
         }
         #expect(style["gutter"]?["range"] == .array([.number(0), .number(16)]))

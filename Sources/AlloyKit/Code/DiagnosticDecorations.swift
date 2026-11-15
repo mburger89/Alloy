@@ -9,6 +9,8 @@ import MetalUICodeBuffer
 enum DiagnosticDecorations {
     /// The most message rows a file gets.
     static let maxVirtualRows = 200
+    /// The most messages stacked under one line; more are summed up as `+N more`.
+    static let maxMessagesPerRow = 3
 
     /// The row decorations and message rows of the diagnostics, in the rows of one buffer version.
     struct Layout {
@@ -59,13 +61,12 @@ enum DiagnosticDecorations {
     /// The row decorations and message rows for `items` (ranges in the coordinates of `snapshot`).
     static func layout(_ items: [LSPDiagnostic], in snapshot: CodeSnapshot) -> Layout {
         var worst: [Int: Severity] = [:]
-        var message: [Int: LSPDiagnostic] = [:]
+        var messages: [Int: [LSPDiagnostic]] = [:]
         for item in items where item.severity != .hint {
             let row = snapshot.point(at: min(item.range.lowerBound, snapshot.utf8Count)).row
             if worst[row].map({ item.severity.rawValue < $0.rawValue }) ?? true { worst[row] = item.severity }
             guard item.severity == .error || item.severity == .warning else { continue }
-            // The most severe message of the row, the first of equals.
-            if message[row].map({ item.severity.rawValue < $0.severity.rawValue }) ?? true { message[row] = item }
+            messages[row, default: []].append(item)
         }
         var layout = Layout()
         // Neighbouring rows of one severity share a decoration.
@@ -84,19 +85,32 @@ enum DiagnosticDecorations {
             }
         }
         flush()
-        for row in message.keys.sorted().prefix(maxVirtualRows) {
-            let item = message[row]!
-            guard let tint = color(item.severity) else { continue }
-            layout.rows.append(CodeVirtualRow(anchor: .after(line: row), lines: [rowText(item)], gutterBar: tint,
+        for row in messages.keys.sorted().prefix(maxVirtualRows) {
+            let distinct = distinctMessages(messages[row]!)
+            guard let tint = color(distinct[0].severity) else { continue }
+            var lines = distinct.prefix(maxMessagesPerRow).map(rowText)
+            if distinct.count > maxMessagesPerRow { lines.append("+\(distinct.count - maxMessagesPerRow) more") }
+            layout.rows.append(CodeVirtualRow(anchor: .after(line: row), lines: lines, gutterBar: tint,
                                               background: tint.opacity(diagnosticTintAlpha)))
         }
         return layout
     }
 
-    /// `"⚠ message — source"`; the message up to its first line break.
+    /// `items` without repeats of one `(source, code, message)`, most severe first, arrival order among equals.
+    private static func distinctMessages(_ items: [LSPDiagnostic]) -> [LSPDiagnostic] {
+        struct Key: Hashable { var source: String?; var code: String?; var message: String }
+        var seen: Set<Key> = []
+        let unique = items.filter { seen.insert(Key(source: $0.source, code: $0.code, message: $0.message)).inserted }
+        return unique.enumerated().sorted { ($0.element.severity.rawValue, $0.offset) < ($1.element.severity.rawValue, $1.offset) }
+            .map(\.element)
+    }
+
+    /// `"⚠ <source> <code>: <message>"`; the message up to its first line break, `<code>` and `<source>` left out when
+    /// the server sent none.
     static func rowText(_ item: LSPDiagnostic) -> String {
         let first = item.message.split(omittingEmptySubsequences: false, whereSeparator: \.isNewline).first.map(String.init) ?? ""
-        return "\u{26A0} " + first + (item.source.map { " \u{2014} " + $0 } ?? "")
+        let label = [item.source, item.code].compactMap { $0 }.joined(separator: " ")
+        return "\u{26A0} " + (label.isEmpty ? "" : label + ": ") + first
     }
 
     /// The problem after (`direction` 1) or before (`-1`) `selection`, wrapping. Problems are ordered by start, then

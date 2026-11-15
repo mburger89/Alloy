@@ -8,6 +8,8 @@ public enum ControlSubtype: Sendable, Equatable {
     case interrupt
     case setPermissionMode(String)
     case setModel(String)
+    /// `apply_flag_settings` with `effortLevel`; nil clears it (JSON null).
+    case setEffort(String?)
     case initialize
 }
 
@@ -79,6 +81,9 @@ public enum OutboundMessage: Sendable, Equatable {
             case .interrupt: req = ["subtype": .string("interrupt")]
             case .initialize: req = ["subtype": .string("initialize")]
             case .setModel(let m): req = ["subtype": .string("set_model"), "model": .string(m)]
+            case .setEffort(let level):
+                req = ["subtype": .string("apply_flag_settings"),
+                       "settings": .object(["effortLevel": level.map { JSONValue.string($0) } ?? .null])]
             case .setPermissionMode(let m): req = ["subtype": .string("set_permission_mode"), "mode": .string(m)]
             }
             tree = .object(["type": .string("control_request"), "request_id": .string(id), "request": .object(req)])

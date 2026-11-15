@@ -35,9 +35,11 @@ public final class LSPCoordinator {
     private var resultsTask: Task<Void, Never>?
     private var pump: Task<Void, Never>?
     /// Documents currently reported open, for the status model.
-    private var openPaths: Set<String> = []
+    var openPaths: Set<String> = []   // internal for tests that feed results without a manager
     /// The latest state per server id (not name: two configs may share a display name).
     private var serverStates: [String: ServerState] = [:]
+    /// The linters the manager says actually run for a path (after its config probe); unknown until it has reported.
+    private var effectiveLinters: [String: Set<String>] = [:]
     private var shutDown = false
     /// Tells the panel's views that a document was saved (they flush their pending edits first, to keep order).
     var savedHandler: ((String) -> Void)?
@@ -81,8 +83,12 @@ public final class LSPCoordinator {
     /// Whether the manager (and so any server machinery) exists yet.
     var hasManager: Bool { manager != nil }
 
-    /// Whether a server handles `path`.
-    func wants(_ path: String) -> Bool { !shutDown && registry.server(forPath: path) != nil }
+    /// Whether a server (the main one or a linter) handles `path`.
+    func wants(_ path: String) -> Bool { !shutDown && Self.handles(registry, path) }
+
+    private static func handles(_ registry: ServerRegistry, _ path: String) -> Bool {
+        registry.server(forPath: path) != nil || !registry.linters(forPath: path).isEmpty
+    }
 
     // MARK: - Document reports (main actor, cheap)
 
@@ -108,6 +114,7 @@ public final class LSPCoordinator {
 
     func closed(path: String) {
         guard openPaths.remove(path) != nil else { return }
+        effectiveLinters[path] = nil
         status.remove(path: path)
         diagnostics.remove(path: path)
         send(.close(path))
@@ -124,7 +131,7 @@ public final class LSPCoordinator {
         send(.saved(path))
     }
 
-    private func reload(overrides: [String: ServerConfigOverride]) {
+    func reload(overrides: [String: ServerConfigOverride]) {
         let before = Dictionary(uniqueKeysWithValues: openPaths.map { ($0, registry.server(forPath: $0)?.id) })
         registry = ServerRegistry(builtIn: builtIn, overrides: overrides)
         // A path that now belongs to another server (or none) keeps nothing of the old one's. (Keyed by path here, not by
@@ -132,11 +139,21 @@ public final class LSPCoordinator {
         for path in openPaths where (before[path] ?? nil) != nil && registry.server(forPath: path)?.id != (before[path] ?? nil) {
             if diagnostics.remove(path: path) { diagnosticsHandler?(path) }
         }
-        for path in openPaths where registry.server(forPath: path) == nil {
+        for path in openPaths where !Self.handles(registry, path) {
             openPaths.remove(path)
+            effectiveLinters[path] = nil
             status.remove(path: path)
             if diagnostics.remove(path: path) { diagnosticsHandler?(path) }
         }
+        for path in openPaths where registry.server(forPath: path) == nil && status.byPath[path] != nil {
+            status.removeMain(path: path)   // only linters apply now
+        }
+        for path in openPaths {
+            let current = Set(registry.linters(forPath: path).map(\.id))
+            for entry in status.linters[path] ?? [] where !current.contains(entry.id) { status.removeLinter(path: path, id: entry.id) }
+        }
+        // A linter that now applies to an open path may already have a known state.
+        for path in openPaths { applyKnownState(to: path) }
         send(.reload(registry))
         reloadHandler?()
     }
@@ -154,6 +171,7 @@ public final class LSPCoordinator {
         status.removeAll()
         diagnostics.removeAll()
         openPaths = []
+        effectiveLinters = [:]
     }
 
     // MARK: - Requests
@@ -217,18 +235,36 @@ public final class LSPCoordinator {
         case .semanticSupport(let path, let supported):
             guard openPaths.contains(path) else { return }
             semanticSupportHandler?(path, supported)
+        case .linters(let path, let ids):
+            guard openPaths.contains(path) else { return }
+            effectiveLinters[path] = Set(ids)
+            for entry in status.linters[path] ?? [] where !ids.contains(entry.id) { status.removeLinter(path: path, id: entry.id) }
+            for linter in registry.linters(forPath: path) where ids.contains(linter.id) {
+                if let state = serverStates[linter.id] { status.setLinter(path: path, id: linter.id, name: linter.name, state: state) }
+            }
         case .status(_, let id, let name, let state):
             if state == .stopped { serverStates[id] = nil } else { serverStates[id] = state }
+            for path in openPaths where runsLinter(id, on: path) {
+                if state == .stopped { status.removeLinter(path: path, id: id) } else { status.setLinter(path: path, id: id, name: name, state: state) }
+            }
             for path in openPaths where registry.server(forPath: path)?.id == id {
-                if state == .stopped { status.remove(path: path) } else { status.set(path: path, name: name, state: state) }
-                // A server that gave up reports nothing more. (A stopped one is not cleared: its late `.stopped` can
-                // arrive after the replacement already published.)
-                if case .failed = state, diagnostics.remove(path: path) { diagnosticsHandler?(path) }
+                // Only the main server's row goes; the linters stay in the header while it restarts.
+                if state == .stopped { status.removeMain(path: path) } else { status.set(path: path, name: name, state: state) }
+                // A failed server's findings are dropped by the manager (the linters' stay), not here.
             }
         }
     }
 
+    /// Whether linter `id` is listed for `path`: configured, and (once the manager has reported) actually running there.
+    private func runsLinter(_ id: String, on path: String) -> Bool {
+        guard registry.linters(forPath: path).contains(where: { $0.id == id }) else { return false }
+        return effectiveLinters[path]?.contains(id) ?? true
+    }
+
     private func applyKnownState(to path: String) {
+        for linter in registry.linters(forPath: path) where runsLinter(linter.id, on: path) {
+            if let state = serverStates[linter.id] { status.setLinter(path: path, id: linter.id, name: linter.name, state: state) }
+        }
         guard let server = registry.server(forPath: path), let state = serverStates[server.id] else { return }
         status.set(path: path, name: server.name, state: state)
     }

@@ -1101,6 +1101,51 @@ private let original = "import Foundation\n\nfunc login(user: String, password: 
         #expect(a.model == "claude-opus-5-5")
     }
 
+    @Test func setEffortSendsControlAndKeepsTheLevelOnSuccessOnly() async throws {
+        let h = Harness()
+        let ws = makeWorkspace(root: dirs.make(), appSupport: dirs.make(), harness: h)
+        let a = await ws.newSession(name: "A")
+        await ws.setEffort("high", for: a.id)
+        let rid = try #require(await controlID(h) { $0 == .setEffort("high") })
+        #expect(a.effort == nil)
+        await h.transports[0].emit(.controlResponse(requestID: rid, result: .success(.object([:]))))
+        await waitUntil("effort") { a.effort == "high" }
+        #expect(noticeTexts(a, .commandOutput) == ["Effort: high"])
+        // The CLI refuses: a notice, and the stored level stays.
+        await ws.setEffort("max", for: a.id)
+        let rid2 = try #require(await controlID(h) { $0 == .setEffort("max") })
+        await h.transports[0].emit(.controlResponse(requestID: rid2, result: .error(
+            message: "apply_flag_settings: CLAUDE_CODE_EFFORT_LEVEL overrides effort for this session", code: nil)))
+        await waitUntil("error notice") { !self.noticeTexts(a, .error).isEmpty }
+        #expect(noticeTexts(a, .error) == ["apply_flag_settings: CLAUDE_CODE_EFFORT_LEVEL overrides effort for this session"])
+        #expect(a.effort == "high")
+    }
+
+    @Test func dormantSessionStoresEffortForItsWake() async throws {
+        let root = dirs.make(), support = dirs.make()
+        let h1 = Harness()
+        let ws1 = makeWorkspace(root: root, appSupport: support, harness: h1)
+        let a = await ws1.newSession(name: "A")
+        await ws1.setEffort("xhigh", for: a.id)
+        let rid = try #require(await controlID(h1) { $0 == .setEffort("xhigh") })
+        await h1.transports[0].emit(.controlResponse(requestID: rid, result: .success(.object([:]))))
+        await waitUntil("effort") { a.effort == "xhigh" }
+        await ws1.stopAll()
+        let h2 = Harness()
+        let ws2 = makeWorkspace(root: root, appSupport: support, harness: h2)
+        await ws2.restore()
+        let b = try #require(ws2.sessions.first { $0.id == a.id })
+        #expect(b.status == .dormant && b.effort == "xhigh" && h2.transports.isEmpty)
+        // Dormant: stored, nothing launched, and the next wake passes it.
+        await ws2.setEffort("low", for: b.id)
+        #expect(b.effort == "low" && h2.transports.isEmpty)
+        await ws2.wake(b.id)
+        #expect(h2.configs.first?.effort == "low")
+        #expect(h2.configs.first?.arguments().contains("low") == true)
+        await ws2.setEffort(nil, for: b.id)
+        await ws2.stopAll()
+    }
+
     @Test func setModeSendsControl() async throws {
         let h = Harness()
         let ws = makeWorkspace(root: dirs.make(), appSupport: dirs.make(), harness: h)

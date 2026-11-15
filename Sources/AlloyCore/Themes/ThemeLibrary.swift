@@ -31,6 +31,10 @@ public struct ResolvedTheme: Equatable, Sendable {
     public var colors: [String: ThemeRGBA]
     public var sessionColors: [ThemeRGBA]
     public var style: AppearanceStyle = .defaults
+    /// The `backgroundImage` style key as written, and the file it names, resolved against the folder of the theme file
+    /// that sets it (nil for a built-in theme or an unusable name).
+    public var backgroundImageName: String?
+    public var backgroundImageURL: URL?
 }
 
 public struct ThemeLibrary: Equatable, Sendable {
@@ -39,8 +43,11 @@ public struct ThemeLibrary: Equatable, Sendable {
     public var builtIns: [ThemeEntry]
     public var user: [ThemeEntry]
     public var errors: [ThemeLoadError]
+    /// The folder user themes are read from; a draft's `backgroundImage` resolves against it.
+    public var userDirectory: URL?
 
-    public init(builtIns: [ThemeEntry] = [], user: [ThemeEntry] = [], errors: [ThemeLoadError] = []) {
+    public init(builtIns: [ThemeEntry] = [], user: [ThemeEntry] = [], errors: [ThemeLoadError] = [], userDirectory: URL? = nil) {
+        self.userDirectory = userDirectory
         self.builtIns = builtIns
         self.user = user
         self.errors = errors
@@ -95,8 +102,21 @@ public struct ThemeLibrary: Equatable, Sendable {
         var colors: [String: ThemeRGBA] = [:]
         for link in links.reversed() { colors.merge(link.file.colors) { _, new in new } }
         let sessionColors = links.lazy.compactMap { $0.file.sessionColors }.first ?? []
-        return ResolvedTheme(id: start.id, name: start.file.name, appearance: start.file.appearance,
-                             colors: colors, sessionColors: sessionColors, style: Self.style(along: links))
+        var resolved = ResolvedTheme(id: start.id, name: start.file.name, appearance: start.file.appearance,
+                                     colors: colors, sessionColors: sessionColors, style: Self.style(along: links))
+        if let link = links.first(where: { $0.file.style?.backgroundImage != nil }), let name = link.file.style?.backgroundImage {
+            resolved.backgroundImageName = name
+            resolved.backgroundImageURL = imageURL(name, definedBy: link)
+        }
+        return resolved
+    }
+
+    /// `name` next to the theme file `link`, or the user themes folder for a draft. Absolute and home-relative names are not
+    /// followed: the key names a file that ships with the theme.
+    private func imageURL(_ name: String, definedBy link: ThemeEntry) -> URL? {
+        guard !name.hasPrefix("/"), !name.hasPrefix("~") else { return nil }
+        let folder = link.url?.deletingLastPathComponent() ?? (link.isBuiltIn ? nil : userDirectory)
+        return folder?.appendingPathComponent(name)
     }
 
     /// The nearest value per key along the chain (`links` is entry first), then the defaults, clamped.
@@ -109,6 +129,9 @@ public struct ThemeLibrary: Equatable, Sendable {
         s.controlOpacity = files.lazy.compactMap(\.controlOpacity).first ?? s.controlOpacity
         s.controlBlur = files.lazy.compactMap(\.controlBlur).first ?? s.controlBlur
         s.pillButtons = files.lazy.compactMap(\.pillButtons).first ?? s.pillButtons
+        s.backgroundGradient = files.lazy.compactMap(\.backgroundGradient).first ?? s.backgroundGradient
+        s.backgroundGradientStrength = files.lazy.compactMap(\.backgroundGradientStrength).first ?? s.backgroundGradientStrength
+        s.backgroundImageDim = files.lazy.compactMap(\.backgroundImageDim).first ?? s.backgroundImageDim
         return s.clamped()
     }
 
@@ -204,7 +227,7 @@ public struct ThemeLibrary: Equatable, Sendable {
             return order == .orderedSame ? $0.id < $1.id : order == .orderedAscending
         }
 
-        var library = ThemeLibrary(builtIns: builtIns, user: entries, errors: errors)
+        var library = ThemeLibrary(builtIns: builtIns, user: entries, errors: errors, userDirectory: userDirectory)
 
         // Warn about unknown bases (they resolve via the appearance fallback).
         for entry in library.user {

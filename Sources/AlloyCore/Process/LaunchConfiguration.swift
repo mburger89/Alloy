@@ -20,6 +20,8 @@ public struct LaunchConfiguration: Sendable, Equatable {
     /// With `resume` and `forkSession`, the message uuid to fork at (`--resume-session-at`, an undocumented flag the
     /// CLI accepts; see protocol-notes-plan5.md). Without it a fork starts from the source's latest message.
     public var resumeSessionAt: String?
+    /// The CLI effort level (`--effort`); nil passes no flag.
+    public var effort: String?
 
     public init(executable: URL, projectDirectory: URL, sessionID: UUID, resume: Bool, resumeID: String? = nil,
                 extraSettingsJSON: String? = nil, mcpConfigJSON: String? = nil, loginPATH: String? = nil,
@@ -50,6 +52,7 @@ public struct LaunchConfiguration: Sendable, Equatable {
         if let extraSettingsJSON { args += ["--settings", extraSettingsJSON] }
         if let mcpConfigJSON { args += ["--mcp-config", mcpConfigJSON] }
         if let appendSystemPrompt { args += ["--append-system-prompt", appendSystemPrompt, "--system-prompt-snapshot", "off"] }
+        if let effort { args += ["--effort", effort] }
         if !allowedTools.isEmpty { args += ["--allowedTools", allowedTools.joined(separator: ",")] }
         return args
     }

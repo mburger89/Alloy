@@ -152,6 +152,10 @@ public final class ThemeController: ThemeWorkshop {
         var next = (shownTheme?.style ?? .defaults).applying(currentSettings.appearance)
         // The Glass setting, unless `ALLOY_GLASS=0` forces glass off. Read here, where the style is resolved, so it adds no element.
         next.glass = currentSettings.glass && GlassLook.glassEnabledAtLaunch
+        // The shown theme's image: the user's per-theme choice over the theme file's own key.
+        next.backgroundImage = shownTheme.flatMap {
+            BackgroundImageStore(appSupport: appSupport).resolve(theme: $0, choices: currentSettings.backgroundImages)
+        }
         if next != style {
             style = next
             // The window and island paints derive from the style: install the themes again (apply() installs its own).
@@ -219,6 +223,35 @@ public final class ThemeController: ThemeWorkshop {
         if let theme { s.theme = theme }
         if let light { s.lightTheme = light }
         if let dark { s.darkTheme = dark }
+        try commit(s)
+    }
+
+    /// Makes a copy of `file` the background image of the theme showing now, replacing that theme's earlier copy. The theme
+    /// file itself is never touched; the choice is kept in the settings.
+    public func setBackgroundImage(from file: URL) throws {
+        guard let id = shownTheme?.id else { return }
+        var s = currentSettings
+        let store = BackgroundImageStore(appSupport: appSupport)
+        let name = try store.adopt(file, themeID: id, replacing: s.backgroundImages[id])
+        s.backgroundImages[id] = name
+        try commit(s)
+    }
+
+    /// Removes the image of the theme showing now: its copy is deleted, and an image the theme file names is hidden.
+    public func removeBackgroundImage() throws {
+        guard let shown = shownTheme else { return }
+        var s = currentSettings
+        let store = BackgroundImageStore(appSupport: appSupport)
+        if let stored = s.backgroundImages[shown.id] { store.delete(stored) }
+        if shown.backgroundImageName != nil {
+            s.backgroundImages[shown.id] = BackgroundImageStore.hidden
+        } else {
+            s.backgroundImages[shown.id] = nil
+        }
+        try commit(s)
+    }
+
+    private func commit(_ s: AlloySettings) throws {
         if let workspace {
             // `updateSettings` tells the workshop, whose `refreshStyle()` would install the themes; `apply()` below does it once.
             isApplying = true

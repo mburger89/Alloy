@@ -26,7 +26,15 @@ import Testing
     /// FilePanelBar and IslandRow elements, less the removed spacer and plain background): 134, measured as 2680 requests
     /// over the 20 counted frames. The contrast shade and sheen are folded into the window and island fills (one element
     /// each, no overlay), so they add none.
-    private static let steadyFrameRequests = 134
+    /// Re-measured on MetalUI 990e074b (#294 closed menus/alerts replay, #297 dropDestination replays): 92, measured as 1840
+    /// requests over the 20 counted frames, with no "presentation" or "dragAndDrop" ineligible reasons left, so ComposerView
+    /// needs no split.
+    /// Re-measured on MetalUI 2758dfc3 (#305 journals window preferences): 91, measured as 1820 requests over the 20
+    /// counted frames, and the "windowMetadata" ineligible reason (40) is gone; only codeCaretBlink remains.
+    /// Settings moved to its own window and the title island lost its gear pill (one element per frame): 90, measured as
+    /// 1800 requests over the 20 counted frames.
+    /// History: 110 pre-islands, 134 post-islands, 92 after #294/#297, 91 after #305, 90 now.
+    private static let steadyFrameRequests = 90
 
     @Test func typingLeavesSidebarScreenAndChatAlone() async throws {
         let (rig, _) = try await editedRig()
@@ -62,20 +70,21 @@ import Testing
         let work = window.frameWork
         let requests = work.reduce(0) { $0 + $1.elementRequests }, prepaints = work.reduce(0) { $0 + $1.elementPrepaints }
         let hits = work.reduce(0) { $0 + $1.retainedHits }, misses = work.reduce(0) { $0 + $1.retainedMisses }
+        let redos = work.reduce(0) { $0 + $1.retainedRedos }, backoff = work.reduce(0) { $0 + $1.retainedBackoffFrames }
         let ineligible = work.reduce(into: [String: Int]()) { $0.merge($1.retainedIneligibleReasons, uniquingKeysWith: +) }
         // Before: 4377 requests / 0 retained hits over these 20 keystrokes. Retained sidebar and chat pay the build
         // recursion only; the editor pane stays ineligible (caret blink).
         // Pre-islands: 2254 requests (commit 72744a1, measured isolated and without the warm-up above, so it includes
         // that commit's own cold frames). Islands add wrapper elements to every frame: the island backdrop and its
         // stroke behind each of the sidebar, chat and code islands, the glass backdrops of the composer and the
-        // code-panel bars, and the title island with its three pill buttons. Warmed up, a frame costs `steadyFrameRequests`.
+        // code-panel bars, and the title island with its two pill buttons. Warmed up, a frame costs `steadyFrameRequests`.
         // Every counted frame is held to that plus 2, so one extra unretained element per frame fails; the total is the
         // secondary check (steady * 20 plus 2%).
         let perFrame = work.map(\.elementRequests)
         #expect(perFrame.allSatisfy { $0 <= Self.steadyFrameRequests + 2 }, "per-frame element requests \(perFrame)")
         #expect(requests <= Self.steadyFrameRequests * 20 * 102 / 100, "element requests \(requests)")
         #expect(hits > 0)
-        print("FRAMEWORK frames=\(work.count) requests=\(requests) prepaints=\(prepaints) hits=\(hits) misses=\(misses) ineligible=\(ineligible)")
+        print("FRAMEWORK frames=\(work.count) requests=\(requests) prepaints=\(prepaints) hits=\(hits) misses=\(misses) redos=\(redos) backoffFrames=\(backoff) ineligible=\(ineligible)")
         #expect(doc.buffer.snapshot().text.count == textLength + typedWarmingUp + 20)
         // The header and tab strip show the dirty dot: one re-run for clean to dirty, none per keystroke after that.
         for n in ["FilePanelHeader", "FileTabStrip"] { #expect(reruns[n]! <= 1, "\(n)") }
@@ -172,18 +181,15 @@ import Testing
         #expect(shown("1 queued"))
     }
 
-    @Test func settingsButtonFollowsStateClosedElsewhere() async throws {
+    @Test func settingsWindowOpensAndClosesRepeatedly() async throws {
         let rig = Rig()
         let window = try alloyWindow(rig.workspace)
-        func shown() -> Bool { (try? window.element(identifier: "settings-view")) != nil }
         for round in 0..<2 {
-            try window.openSettingsFromMenu()
-            try await window.runUntil { shown() }
-            // Closed from SettingsView, not from the sidebar that owns the button.
-            try window.click(window.element(identifier: "settings-close"))
-            try await window.runUntil { !shown() }
-            for _ in 0..<3 { window.tick(); await Task.yield() }
-            #expect(!shown(), "round \(round)")
+            let settings = try window.openSettingsFromMenu()
+            try await settings.runUntil { (try? settings.element(identifier: "settings-view")) != nil }
+            settings.typeKey(.escape)
+            try await window.runUntil { !window.settingsController.isOpen }
+            #expect((try? window.element(identifier: "settings-view")) == nil, "round \(round)")
         }
     }
 }

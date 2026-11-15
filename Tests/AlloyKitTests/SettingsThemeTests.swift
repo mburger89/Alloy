@@ -12,12 +12,12 @@ import Testing
 
     private struct Setup {
         let rig: Rig
+        /// The Settings window the menu opened (its own window, themed through the app).
         let window: TestWindow
+        let main: TestWindow
         let controller: ThemeController
         let watcher: ScriptedChangeSource
         let opened = OpenedBox()
-        /// Glyph origins on screen before Settings opened: text of the chat underneath, which the panel covers.
-        let underneath: Set<[Float]>
     }
 
     private final class OpenedBox { var urls: [URL] = [] }
@@ -30,16 +30,15 @@ import Testing
         let window = try TestWindow(size: Size(width: width, height: Pixels(800))) {
             rootView(workspace: rig.workspace, themes: holder.controller)
         }
-        window.installAlloyMenu(rig.workspace)
         let watcher = ScriptedChangeSource()
-        let controller = ThemeController(workspace: rig.workspace, host: window.window, watcher: watcher)
+        // The app is the theme host, as in main.swift.
+        let controller = ThemeController(workspace: rig.workspace, host: window.testApp.app, watcher: watcher)
         holder.controller = controller
+        window.installAlloyMenu(rig.workspace, themes: controller)
         window.tick(); window.tick()
-        let underneath = Set(window.allGlyphs.map { [$0.bounds.origin.x, $0.bounds.origin.y] })
-        let s = Setup(rig: rig, window: window, controller: controller, watcher: watcher, underneath: underneath)
-        try window.openSettingsFromMenu()
-        try await window.runUntil { (try? window.element(identifier: "settings-theme-section")) != nil }
-        return s
+        let settings = try window.openSettingsFromMenu()
+        try await settings.runUntil { (try? settings.element(identifier: "settings-theme-section")) != nil }
+        return Setup(rig: rig, window: settings, main: window, controller: controller, watcher: watcher)
     }
 
     private func rowIDs(_ window: TestWindow, prefix: String) -> [String] {
@@ -75,7 +74,7 @@ import Testing
         let oneDark = ThemeApplier.theme(for: try #require(t.controller.library.resolve("one-dark")))
         #expect(t.window.window.darkTheme != oneDark)
         try t.window.click(t.window.element(identifier: "theme-row-one-dark"))
-        try await t.window.runUntil { t.window.window.darkTheme == oneDark }
+        try await t.window.runUntil { t.window.window.darkTheme == oneDark && t.main.window.darkTheme == oneDark }
         let text = try String(contentsOf: t.rig.root.appendingPathComponent("support/Alloy/settings.json"), encoding: .utf8)
         #expect(text.contains("\"theme\":\"one-dark\"") || text.contains("\"theme\" : \"one-dark\""), "\(text)")
         try await t.window.runUntil { (try? t.window.element(identifier: "theme-row-one-dark"))?.isSelected == true }
@@ -172,7 +171,7 @@ import Testing
         let t = try await setup()
         defer { t.controller.stop() }
         try t.window.click(t.window.element(identifier: "settings-make-theme"))
-        try await t.window.runUntil { (try? t.window.element(identifier: "settings-view")) == nil }
+        try await t.main.runUntil { !t.main.settingsController.isOpen }
         await waitFor("the theme session exists") { t.rig.workspace.sessions.contains { $0.name == "Theme: new" } }
         await t.rig.workspace.settle()
         let session = try #require(t.rig.workspace.sessions.first { $0.id == t.rig.workspace.selectedSessionID })
@@ -193,9 +192,11 @@ import Testing
     }
 
     @Test func rowsFitAtMinimumWidth() async throws {
-        // The window's minimum is 900 pt; the split view then gives the chat column about 460 pt at the minimum sidebar.
-        let t = try await setup(width: Pixels(900), settings: AlloySettings(themeMode: .matchSystem))
+        // The Settings window at its minimum size.
+        let t = try await setup(settings: AlloySettings(themeMode: .matchSystem))
         defer { t.controller.stop() }
+        t.window.resize(to: SettingsWindowController.minimumSize)
+        for _ in 0..<3 { t.window.tick() }
         let dir = themesDirectory(t.rig)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         try #"{"name":"A Rather Long Custom Theme Name Indeed","author":"Somebody With A Long Name","appearance":"light"}"#
@@ -210,7 +211,6 @@ import Testing
             // Five 12 pt swatches and four 3 pt gaps, after the row's 6 pt padding: no label starts inside the strip.
             let stripEnd = Float(row.frame.minX.value) + Float(6 + 5 * 12 + 4 * 3)
             let glyphs = window.allGlyphs.filter {
-                !t.underneath.contains([$0.bounds.origin.x, $0.bounds.origin.y]) &&
                 $0.bounds.origin.y >= Float(row.frame.minY.value) && $0.bounds.origin.y + $0.bounds.size.height <= Float(row.frame.maxY.value)
                     && $0.bounds.origin.x >= Float(row.frame.minX.value) - 1 && $0.bounds.origin.x < Float(row.frame.maxX.value)
             }

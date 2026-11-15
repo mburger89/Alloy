@@ -3,8 +3,8 @@ import AlloyLSP
 import Foundation
 import MetalUI
 
-/// Every app-wide setting, in a full-panel view over the chat column (`settings-view`). Closes on the close button
-/// (`settings-close`) or Esc. The toggles save at once; the Claude path saves with Save.
+/// Every app-wide setting, the content of the Settings window (`settings-view`). Closes on Esc or the window's
+/// own close button. The toggles save at once; the Claude path saves with Save.
 struct SettingsView: Component {
     let workspace: Workspace
     /// Picks the theme; nil hides the theme section.
@@ -21,16 +21,6 @@ struct SettingsView: Component {
         let workspace = workspace
         ScrollView {
         VStack(alignment: .leading, spacing: Pixels(14)) {
-            HStack(spacing: 0) {
-                Text("Settings").font(size: 16).accessibilityIdentifier("settings-title")
-                Spacer()
-                Button { close() } label: {
-                    Image(systemName: "xmark").font(.system(size: 13)).padding(Pixels(4))
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Close settings")
-                .accessibilityIdentifier("settings-close")
-            }
             if let themes {
                 ThemeSection(themes: themes, workspace: workspace, close: close)
                 Divider()
@@ -92,7 +82,7 @@ struct SettingsView: Component {
         }
         .padding(Pixels(20))
         .frame(maxWidth: .infinity, alignment: .topLeading)
-        // The text buttons are pills; the close button and the theme rows set `.plain` themselves.
+        // The text buttons are pills; the theme rows set `.plain` themselves.
         .buttonStyle(PillButtonStyle(style: themes?.style ?? .defaults))
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -106,10 +96,6 @@ struct SettingsView: Component {
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Settings")
         .accessibilityIdentifier("settings-view")
-        // The chat island's shape, so the overlay keeps the island's rounded corners.
-        .background(alignment: .center) {
-            RoundedRectangle(cornerRadius: Pixels(Float((themes?.style ?? .defaults).cornerRadius))).fill(Color.panelFill)
-        }
     }
 
     /// Editing the path takes back "Saved" and any save error.
@@ -170,18 +156,22 @@ struct LanguageServersSection: Component {
 
     var content: some ElementGroup {
         let workspace = workspace
-        let servers = ServerRegistry(builtIn: builtIn, overrides: workspace.settings.languageServers).all
+        let all = ServerRegistry(builtIn: builtIn, overrides: workspace.settings.languageServers).all
+        let servers = all.filter { $0.role == .main }
+        let linters = all.filter { $0.role == .linter }
         VStack(alignment: .leading, spacing: Pixels(8)) {
             Text("Language servers").font(size: 12).foregroundColor(.mutedInk)
             ForEach(servers, id: \.id) { server in
-                HStack(spacing: Pixels(8)) {
-                    Toggle(isOn: enabled(server.id, default: server.enabled)) { Text(verbatim: server.name).font(size: 13) }
-                        .accessibilityIdentifier("settings-lsp-\(server.id)")
-                    Text(verbatim: Self.extensions(server)).font(size: 11).foregroundColor(.mutedInk)
-                    Spacer()
-                    Text(verbatim: found[server.id].map { $0 ? "Found" : "Not found" } ?? "\u{2026}").font(size: 11)
-                        .foregroundColor(found[server.id] == false ? .warningInk : .mutedInk)
-                        .accessibilityIdentifier("settings-lsp-status-\(server.id)")
+                serverRow(server, prefix: "settings-lsp")
+                if server.id == "rust-analyzer" {
+                    Toggle(isOn: clippy(server.id, default: server.clippy)) { Text("Use Clippy").font(size: 12) }
+                        .accessibilityIdentifier("settings-lsp-rust-analyzer-clippy")
+                }
+            }
+            if !linters.isEmpty {
+                Text("Linters").font(size: 12).foregroundColor(.mutedInk).accessibilityIdentifier("settings-linters-heading")
+                ForEach(linters, id: \.id) { linter in
+                    serverRow(linter, prefix: "settings-linter")
                 }
             }
             Text("Alloy never installs or downloads a server; it runs the ones you have.").font(size: 11).foregroundColor(.mutedInk)
@@ -189,9 +179,33 @@ struct LanguageServersSection: Component {
                 Text(verbatim: failure).font(size: 11).foregroundColor(.errorInk).accessibilityIdentifier("settings-lsp-error")
             }
         }
-        .onAppear { lookUp(servers) }
+        .onAppear { lookUp(all) }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("settings-lsp-section")
+    }
+
+    private func serverRow(_ server: ServerConfig, prefix: String) -> some ElementGroup {
+        HStack(spacing: Pixels(8)) {
+            Toggle(isOn: enabled(server.id, default: server.enabled)) { Text(verbatim: server.name).font(size: 13) }
+                .accessibilityIdentifier("\(prefix)-\(server.id)")
+            Text(verbatim: Self.extensions(server)).font(size: 11).foregroundColor(.mutedInk)
+            Spacer()
+            Text(verbatim: found[server.id].map { $0 ? "Found" : "Not found" } ?? "\u{2026}").font(size: 11)
+                .foregroundColor(found[server.id] == false ? .warningInk : .mutedInk)
+                .accessibilityIdentifier("\(prefix)-status-\(server.id)")
+        }
+    }
+
+    private func clippy(_ id: String, default value: Bool) -> Binding<Bool> {
+        let workspace = workspace
+        return Binding(get: { workspace.settings.languageServers[id]?.clippy ?? value },
+                       set: { on in
+                           var s = workspace.settings
+                           var o = s.languageServers[id] ?? ServerConfigOverride()
+                           o.clippy = on
+                           s.languageServers[id] = o
+                           do { try workspace.updateSettings(s); failure = nil } catch { failure = "Could not save: \(error.localizedDescription)" }
+                       })
     }
 
     static func extensions(_ server: ServerConfig) -> String {
@@ -405,6 +419,7 @@ struct AppearanceSection: Component {
     let themes: ThemeController
     let workspace: Workspace
     @State var failure: String?
+    @State var choosingImage = false
     @Environment(\.accessibilityReduceTransparency) var reduceTransparency
 
     var content: some ElementGroup {
@@ -414,6 +429,26 @@ struct AppearanceSection: Component {
             Toggle(isOn: glassBinding) { Text("Glass").font(size: 13) }
                 .accessibilityIdentifier("settings-appearance-glass")
             Text("Off draws solid controls and an opaque window. Lighter on battery and GPU.").font(size: 11).foregroundColor(.mutedInk)
+            Toggle(isOn: gradientBinding) { Text("Background gradient").font(size: 13) }
+                .accessibilityIdentifier("settings-appearance-background-gradient")
+            HStack(spacing: Pixels(8)) {
+                Button("Background image…") { choosingImage = true }
+                    .accessibilityIdentifier("settings-appearance-background-image")
+                if style.backgroundImage != nil {
+                    Button("Remove") { removeImage() }
+                        .accessibilityIdentifier("settings-appearance-background-image-remove")
+                }
+            }
+            if let image = style.backgroundImage {
+                Text(verbatim: image.exists ? image.name : "Image not found: \(image.name)").font(size: 11)
+                    .foregroundColor(image.exists ? .mutedInk : .errorInk)
+                    .accessibilityIdentifier("settings-appearance-background-image-name")
+                if image.exists {
+                    sliderRow("Image dim", id: "settings-appearance-image-dim", value: style.backgroundImageDim * 100,
+                              range: (AppearanceStyle.imageDimRange.lowerBound * 100)...(AppearanceStyle.imageDimRange.upperBound * 100),
+                              unit: "%") { $0.backgroundImageDim = $1 / 100 }
+                }
+            }
             sliderRow("Gutter", id: "settings-appearance-gutter", value: style.gutter, range: AppearanceStyle.gutterRange,
                       unit: "") { $0.gutter = $1 }
             sliderRow("Corners", id: "settings-appearance-corners", value: style.cornerRadius, range: AppearanceStyle.cornerRadiusRange,
@@ -446,6 +481,18 @@ struct AppearanceSection: Component {
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("settings-appearance-section")
+        .fileImporter(isPresented: $choosingImage, allowedContentTypes: [.image]) { result in
+            if case .success(let url) = result { chooseImage(url) }
+        }
+    }
+
+    /// Copies the chosen file in as the shown theme's background image.
+    private func chooseImage(_ url: URL) {
+        do { try themes.setBackgroundImage(from: url); failure = nil } catch { failure = "Could not use that image: \(error.localizedDescription)" }
+    }
+
+    private func removeImage() {
+        do { try themes.removeBackgroundImage(); failure = nil } catch { failure = "Could not save: \(error.localizedDescription)" }
     }
 
     private func sliderRow(_ title: String, id: String, value: Double, range: ClosedRange<Double>, unit: String, disabled: Bool = false,
@@ -474,6 +521,12 @@ struct AppearanceSection: Component {
             s.glass = on
             do { try workspace.updateSettings(s); failure = nil } catch { failure = "Could not save: \(error.localizedDescription)" }
         })
+    }
+
+    /// The Background gradient checkbox: an appearance override (nil follows the theme), saved at once.
+    private var gradientBinding: Binding<Bool> {
+        let themes = themes
+        return Binding(get: { themes.style.backgroundGradient }, set: { on in write { $0.backgroundGradient = on } })
     }
 
     private var blurBinding: Binding<ControlBlur> {

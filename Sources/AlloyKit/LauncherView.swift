@@ -45,11 +45,15 @@ public final class LauncherModel {
     }
 }
 
-/// Closing the window stops every session before the window goes.
+/// Closing the window stops every session before the window goes. The Settings window goes first, so the app, with
+/// no window left, quits.
 @MainActor
-public func installWindowShutdown(on window: Window, model: LauncherModel) {
+public func installWindowShutdown(on window: Window, model: LauncherModel, settings: SettingsWindowController? = nil) {
     window.onCloseRequest = { [unowned window] in
-        model.shutdownRequested { window.replyToCloseRequest($0) }
+        model.shutdownRequested {
+            if $0 { settings?.close() }
+            window.replyToCloseRequest($0)
+        }
     }
 }
 

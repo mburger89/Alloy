@@ -30,15 +30,68 @@ struct WindowBackdropView: Component, Equatable {
 
     nonisolated static func == (a: Self, b: Self) -> Bool { a.style == b.style }
 
+    /// The diagonal gradient, top-leading to bottom-trailing: a static fill, rasterised once per size.
+    private func gradient(_ start: Color, _ end: Color) -> LinearGradient {
+        LinearGradient(colors: [start, end], startPoint: .topLeading, endPoint: .bottomTrailing)
+    }
+
     var content: some ElementGroup {
         let _ = BodyProbe.hit("WindowBackdropView")
         let seeThrough = style.windowSeeThrough
-        if seeThrough {
+        if let image = style.backgroundImage, image.exists {
+            // The image replaces the gradient, and under Glass the see-through desktop: it is drawn opaque.
+            BackgroundImageLayer(image: image, dim: style.backgroundImageDim).equatable()
+        } else if seeThrough {
             // One fill: the tint and the shade folded into the window paint (an opaque colour under Reduce Transparency).
-            (reduceTransparency ? Color.windowBackground : Color.windowPaint)
-                .containerBackground(.thinMaterial, for: .window)
+            if style.backgroundGradient {
+                // The gradient is the same tint layer: tinted and shaded at both ends, opaque colours under Reduce Transparency.
+                gradient(reduceTransparency ? .windowBackground : .windowPaint, reduceTransparency ? .windowBackgroundEnd : .windowPaintEnd)
+                    .containerBackground(.thinMaterial, for: .window)
+            } else {
+                (reduceTransparency ? Color.windowBackground : Color.windowPaint)
+                    .containerBackground(.thinMaterial, for: .window)
+            }
+        } else if style.backgroundGradient {
+            gradient(.windowBackground, .windowBackgroundEnd)
         } else {
             Color.windowBackground
+        }
+    }
+}
+
+/// Long edge, in pixels, the background image is decoded at: it fills a window under a dim and glass, so 2560 covers a full-screen Retina window's visible detail.
+let alloyBackgroundImageMaxPixelSize = 2560
+
+/// The theme's background image, cropped to fill the window and dimmed by the window colour. A static fill: it re-runs only
+/// when the file, the dim or the style changes, never while typing or streaming. The file is decoded off the main thread, once
+/// per file; until it arrives the window colour shows.
+struct BackgroundImageLayer: Component, Equatable {
+    let image: BackgroundImage
+    let dim: Double
+    @State var bitmap: ImageBitmap?
+
+    nonisolated static func == (a: Self, b: Self) -> Bool { a.image == b.image && a.dim == b.dim }
+
+    /// The file decoded no larger than `alloyBackgroundImageMaxPixelSize` on its long edge (never upscaled).
+    nonisolated static func decode(path: String) -> ImageBitmap? {
+        ImageBitmap(contentsOfFile: path, maxPixelSize: alloyBackgroundImageMaxPixelSize)
+    }
+
+    var content: some ElementGroup {
+        let _ = BodyProbe.hit("BackgroundImageLayer")
+        let path = image.path
+        ZStack {
+            Color.windowBackground
+            if let bitmap {
+                Image(decorative: bitmap, scale: 1).resizable().scaledToFill()
+            }
+            Color.windowBackground.opacity(dim)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .clipped()
+        .task(id: image) {
+            let decoded = await Task.detached(priority: .utility) { Self.decode(path: path) }.value
+            if !Task.isCancelled { bitmap = decoded }
         }
     }
 }
@@ -53,55 +106,20 @@ struct AlloyScreen: Component {
     @State var panel = CodePanelStore()
     /// Quick-open (⌘P), shared by the global keys and the file panel.
     @State var quickOpen = QuickOpenModel()
-    /// The Settings view, shown over the chat column.
-    @State var showSettings = false
-    /// The message field had the keyboard when Settings opened.
-    @State var settingsRestoresComposer = false
-
-    /// Opening Settings remembers whether the message field had the keyboard; closing gives it back.
-    private var settingsBinding: Binding<Bool> {
-        let workspace = workspace, store = store
-        let shown = $showSettings
-        return Binding(get: { shown.wrappedValue }, set: { open in
-            let composer = workspace.sessions.first { $0.id == workspace.selectedSessionID }
-                .map { store.entry(for: $0, workspace: workspace).composer }
-            if open, !shown.wrappedValue { settingsRestoresComposer = composer?.hasFocus ?? false }
-            if !open, shown.wrappedValue, settingsRestoresComposer { composer?.focusRequest += 1 }
-            shown.wrappedValue = open
-        })
-    }
-
     var content: some ElementGroup {
         let _ = BodyProbe.hit("AlloyScreen")
         let workspace = workspace, quickOpen = quickOpen
-        let settingsShown = settingsBinding
-        // The app menu's "Settings…" (⌘,) opens the view the sidebar's gear used to: detect `claude` on first open, and
-        // leave an open Settings open.
-        let _: Void = workspace.openSettings = {
-            if !settingsShown.wrappedValue { Task { await workspace.detectClaude() } }
-            settingsShown.wrappedValue = true
-        }
         let style = themes?.style ?? .defaults
         ZStack {
             VStack(spacing: 0) {
                 TitleIsland(workspace: workspace, quickOpen: quickOpen, style: style).equatable()
                 IslandRow(workspace: workspace, store: store, panel: panel, quickOpen: quickOpen, themes: themes,
-                          showSettings: showSettings, closeSettings: { settingsShown.wrappedValue = false }, style: style)
+                          style: style)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .windowTitleBarMetrics(height: Pixels(Float(style.titleBandHeight)),
                                    controlsLeading: Pixels(Float(style.titleControlsLeading)))
             GlobalKeys(workspace: workspace, quickOpen: quickOpen)
-            // Esc closes Settings wherever the focus is (a click on a session row focuses the list), after the focused
-            // view declined the key.
-            if showSettings {
-                Button("Close Settings") { settingsShown.wrappedValue = false }
-                    .keyboardShortcut(.cancelAction)
-                    .frame(width: Pixels(0), height: Pixels(0))
-                    .opacity(0)
-                    .allowsHitTesting(false)
-                    .accessibilityHidden(true)
-            }
         }
     }
 }
@@ -114,12 +132,9 @@ struct IslandRow: Component {
     let panel: CodePanelStore
     let quickOpen: QuickOpenModel
     var themes: ThemeController?
-    let showSettings: Bool
-    let closeSettings: @MainActor @Sendable () -> Void
     let style: AppearanceStyle
 
     var content: some ElementGroup {
-        let closeSettings = closeSettings
         let gutter = Pixels(Float(style.gutter))
         HSplitView {
             SidebarView(workspace: workspace).equatable()
@@ -128,10 +143,7 @@ struct IslandRow: Component {
             VStack(spacing: 0) {
                 if let themes { ThemeBar(themes: themes) }
                 CoordinationNotice(workspace: workspace)
-                ZStack {
-                    ChatView(workspace: workspace, store: store, themes: themes).equatable()
-                    if showSettings { SettingsView(workspace: workspace, themes: themes, close: closeSettings) }
-                }
+                ChatView(workspace: workspace, store: store, themes: themes).equatable()
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
             .island(style: style, identifier: "island-chat")

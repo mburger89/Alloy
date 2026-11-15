@@ -6,6 +6,7 @@ import AlloyLSPTestSupport
 import Foundation
 import MetalUI
 import MetalUITesting
+import Observation
 import Testing
 
 
@@ -111,15 +112,15 @@ struct LSPStatusTests {
             try await r.wait(window, "ready") { statusText(window) == "Fake" }
             #expect(r.processes.running == 1)
 
-            try window.openSettingsFromMenu()
-            try await window.runUntil { (try? window.element(identifier: "settings-view")) != nil }
-            try await window.runUntil { (try? window.element(identifier: "settings-lsp-fake")) != nil }
-            try window.click(window.element(identifier: "settings-lsp-fake"))
+            let settings = try window.openSettingsFromMenu()
+            try await settings.runUntil { (try? settings.element(identifier: "settings-view")) != nil }
+            try await settings.runUntil { (try? settings.element(identifier: "settings-lsp-fake")) != nil }
+            try settings.click(settings.element(identifier: "settings-lsp-fake"))
             #expect(r.rig.workspace.settings.languageServers["fake"]?.enabled == false)
 
             try await r.wait(window, "server stopped") { r.processes.running == 0 && r.coordinator.status.byPath.isEmpty }
-            window.typeKey(.escape)
-            try await window.runUntil { (try? window.element(identifier: "settings-view")) == nil }
+            settings.typeKey(.escape)
+            try await window.runUntil { !window.settingsController.isOpen }
             #expect(statusText(window) == nil)
 
             // The setting reaches disk.
@@ -147,5 +148,147 @@ struct LSPStatusTests {
             }
             for n in names { #expect(reruns[n] == 0, "\(n) re-ran \(reruns[n]!) times") }
         }
+    }
+}
+
+
+@MainActor
+@Suite
+struct LSPLinterStatusTests {
+    typealias Linter = (id: String, name: String, state: ServerState)
+
+    @Test func headerListsReadyLinters() {
+        let main = (name: "Pyright", state: ServerState.ready)
+        let linters: [Linter] = [("ruff", "Ruff", .ready)]
+        #expect(ServerStatusLabel.text(main: main, linters: linters) == "Pyright \u{00B7} Ruff")
+        #expect(ServerStatusLabel.text(main: main, linters: []) == "Pyright")
+        #expect(ServerStatusLabel.text(main: nil, linters: linters) == "Ruff")
+    }
+
+    @Test func headerShowsFailedLinter() {
+        let linters: [Linter] = [("ruff", "Ruff", .failed(reason: "boom")), ("flake", "Flake", .ready)]
+        #expect(ServerStatusLabel.failedLinters(linters) == ["Ruff failed"])
+        #expect(ServerStatusLabel.text(main: (name: "Pyright", state: .ready), linters: linters) == "Pyright \u{00B7} Flake")
+    }
+
+    @Test func missingLinterNotInHeader() {
+        let linters: [Linter] = [("a", "A", .notInstalled(command: "a")), ("b", "B", .starting), ("c", "C", .stopped)]
+        #expect(ServerStatusLabel.text(main: (name: "Pyright", state: .ready), linters: linters) == "Pyright")
+        #expect(ServerStatusLabel.failedLinters(linters).isEmpty)
+        #expect(ServerStatusLabel.text(main: nil, linters: linters) == nil)
+    }
+
+    @Test func modelLintersDontNotifyOnNoOps() {
+        let model = LSPStatusModel()
+        final class Count: @unchecked Sendable { var n = 0 }
+        let count = Count()
+        var changes: Int { count.n }
+        func watch() {
+            withObservationTracking { _ = model.linters } onChange: { count.n += 1 }
+        }
+        watch()
+        model.setLinter(path: "a.py", id: "ruff", name: "Ruff", state: .ready)
+        #expect(changes == 1)
+        watch()
+        model.setLinter(path: "a.py", id: "ruff", name: "Ruff", state: .ready)
+        #expect(changes == 1)
+        model.removeLinter(path: "a.py", id: "nope")
+        #expect(changes == 1)
+        model.removeLinter(path: "a.py", id: "ruff")
+        #expect(changes == 2)
+        #expect(model.linters["a.py"] == nil)
+    }
+
+    @Test func coordinatorRoutesLinterStatusByServerID() {
+        let configs = [
+            ServerConfig(id: "main", name: "Main", languageID: "python", extensions: ["py"], command: "x"),
+            ServerConfig(id: "lint", name: "Lint", languageID: "python", extensions: ["py"], command: "x", role: .linter),
+        ]
+        let coordinator = LSPCoordinator(root: URL(fileURLWithPath: "/tmp"), builtIn: configs,
+                                         locator: ServerLocator(loginPATH: { nil }, xcrunFind: { _ in nil }),
+                                         launcher: ServerLauncher { _, _, _ in throw CancellationError() })
+        coordinator.openPaths.insert("a.py")
+        coordinator.handle(.status(path: "a.py", serverID: "lint", serverName: "Lint", state: .ready))
+        #expect(coordinator.status.byPath["a.py"] == nil)
+        #expect(coordinator.status.linters["a.py"]?.map(\.name) == ["Lint"])
+        coordinator.handle(.status(path: "a.py", serverID: "main", serverName: "Main", state: .ready))
+        #expect(coordinator.status.byPath["a.py"]?.name == "Main")
+        coordinator.handle(.status(path: "a.py", serverID: "lint", serverName: "Lint", state: .failed(reason: "x")))
+        #expect(ServerStatusLabel.failedLinters(coordinator.status.linters["a.py"] ?? []) == ["Lint failed"])
+        coordinator.handle(.status(path: "a.py", serverID: "lint", serverName: "Lint", state: .stopped))
+        #expect(coordinator.status.linters["a.py"] == nil)
+        // A server that does not serve the path is ignored.
+        coordinator.handle(.status(path: "a.py", serverID: "other", serverName: "Other", state: .ready))
+        #expect(coordinator.status.linters["a.py"] == nil)
+    }
+
+    @Test func coordinatorLintsAFileNoMainServerClaims() {
+        let configs = [ServerConfig(id: "lint", name: "Lint", languageID: "shellscript", extensions: ["sh"], command: "x", role: .linter)]
+        let coordinator = LSPCoordinator(root: URL(fileURLWithPath: "/tmp"), builtIn: configs,
+                                         locator: ServerLocator(loginPATH: { nil }, xcrunFind: { _ in nil }),
+                                         launcher: ServerLauncher { _, _, _ in throw CancellationError() })
+        #expect(coordinator.wants("a.sh"))
+        #expect(!coordinator.wants("a.txt"))
+        coordinator.opened(path: "a.sh", snapshot: CodeBuffer("x\n").snapshot())
+        #expect(coordinator.openPaths.contains("a.sh"))
+        coordinator.handle(.status(path: "a.sh", serverID: "lint", serverName: "Lint", state: .ready))
+        #expect(coordinator.status.byPath["a.sh"] == nil)
+        #expect(coordinator.status.linters["a.sh"]?.map(\.name) == ["Lint"])
+        #expect(ServerStatusLabel.text(main: nil, linters: coordinator.status.linters["a.sh"] ?? []) == "Lint")
+    }
+
+    @Test func reloadShowsKnownStateOfANewlyApplyingLinter() {
+        let main = ServerConfig(id: "main", name: "Main", languageID: "python", extensions: ["py"], command: "x")
+        var lint = ServerConfig(id: "lint", name: "Lint", languageID: "python", extensions: ["py"], command: "x", role: .linter)
+        lint.enabled = false
+        let coordinator = LSPCoordinator(root: URL(fileURLWithPath: "/tmp"), builtIn: [main, lint],
+                                         locator: ServerLocator(loginPATH: { nil }, xcrunFind: { _ in nil }),
+                                         launcher: ServerLauncher { _, _, _ in throw CancellationError() })
+        coordinator.opened(path: "a.py", snapshot: CodeBuffer("x\n").snapshot())
+        // The linter is running for another file, so its state is known.
+        coordinator.handle(.status(path: "b.py", serverID: "lint", serverName: "Lint", state: .ready))
+        #expect(coordinator.status.linters["a.py"] == nil)
+        coordinator.reload(overrides: ["lint": ServerConfigOverride(enabled: true)])
+        #expect(coordinator.status.linters["a.py"]?.map(\.name) == ["Lint"])
+    }
+
+    private func makeCoordinator() -> LSPCoordinator {
+        let main = ServerConfig(id: "main", name: "Main", languageID: "python", extensions: ["py"], command: "x")
+        let lint = ServerConfig(id: "lint", name: "Lint", languageID: "python", extensions: ["py"], command: "x", role: .linter)
+        return LSPCoordinator(root: URL(fileURLWithPath: "/tmp"), builtIn: [main, lint],
+                              locator: ServerLocator(loginPATH: { nil }, xcrunFind: { _ in nil }),
+                              launcher: ServerLauncher { _, _, _ in throw CancellationError() })
+    }
+
+    @Test func mainStoppedKeepsLintersInHeader() {
+        let coordinator = makeCoordinator()
+        coordinator.openPaths.insert("a.py")
+        coordinator.handle(.status(path: "a.py", serverID: "main", serverName: "Main", state: .ready))
+        coordinator.handle(.status(path: "a.py", serverID: "lint", serverName: "Lint", state: .ready))
+        coordinator.handle(.status(path: "a.py", serverID: "main", serverName: "Main", state: .stopped))
+        #expect(coordinator.status.byPath["a.py"] == nil)
+        #expect(coordinator.status.linters["a.py"]?.map(\.name) == ["Lint"])
+    }
+
+    @Test func mainFailureLeavesDiagnosticsToTheManager() {
+        let coordinator = makeCoordinator()
+        coordinator.openPaths.insert("a.py")
+        let item = LSPDiagnostic(range: 0..<1, severity: .warning, message: "l", source: "Lint")
+        coordinator.handle(.diagnostics(path: "a.py", version: 1, items: [item]))
+        coordinator.handle(.status(path: "a.py", serverID: "main", serverName: "Main", state: .failed(reason: "x")))
+        #expect(coordinator.diagnostics.entry(for: "a.py")?.items.count == 1)
+    }
+
+    @Test func headerListsOnlyTheLintersThatRunForThePath() {
+        let coordinator = makeCoordinator()
+        coordinator.openPaths.insert("a.py")
+        coordinator.handle(.status(path: "a.py", serverID: "lint", serverName: "Lint", state: .ready))
+        #expect(coordinator.status.linters["a.py"]?.map(\.name) == ["Lint"])
+        coordinator.handle(.linters(path: "a.py", ids: []))
+        #expect(coordinator.status.linters["a.py"] == nil)
+        coordinator.handle(.status(path: "a.py", serverID: "lint", serverName: "Lint", state: .ready))
+        #expect(coordinator.status.linters["a.py"] == nil)
+        coordinator.handle(.linters(path: "a.py", ids: ["lint"]))
+        #expect(coordinator.status.linters["a.py"]?.map(\.name) == ["Lint"])
     }
 }

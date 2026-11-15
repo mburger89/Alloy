@@ -428,6 +428,11 @@ final class ComposerModel {
         }
     }
 
+    func setEffort(_ level: String?) {
+        let workspace = workspace, id = sessionID
+        Task { await workspace.setEffort(level, for: id) }
+    }
+
     func setModel(_ alias: String) {
         session?.requestModelPicker = false
         let workspace = workspace, id = sessionID

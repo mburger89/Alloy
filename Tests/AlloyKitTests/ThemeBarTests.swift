@@ -25,9 +25,9 @@ import Testing
         let window = try TestWindow(size: Size(width: Pixels(1200), height: Pixels(800))) {
             rootView(workspace: rig.workspace, themes: holder.controller)
         }
-        window.installAlloyMenu(rig.workspace)
-        let controller = ThemeController(workspace: rig.workspace, host: window.window, watcher: nil)
+        let controller = ThemeController(workspace: rig.workspace, host: window.testApp.app, watcher: nil)
         holder.controller = controller
+        window.installAlloyMenu(rig.workspace, themes: controller)
         window.tick(); window.tick()
         return Setup(rig: rig, window: window, controller: controller)
     }
@@ -52,9 +52,10 @@ import Testing
         return "user/murky"
     }
 
-    private func openSettings(_ t: Setup) async throws {
-        try t.window.openSettingsFromMenu()
-        try await t.window.runUntil { (try? t.window.element(identifier: "settings-theme-section")) != nil }
+    private func openSettings(_ t: Setup) async throws -> TestWindow {
+        let settings = try t.window.openSettingsFromMenu()
+        try await settings.runUntil { (try? settings.element(identifier: "settings-theme-section")) != nil }
+        return settings
     }
 
     @Test func noBarWithoutPreviewOrWarning() async throws {
@@ -156,21 +157,21 @@ import Testing
         let id = try await writeBadTheme(t)
         let count = ThemeContrast.findings(try #require(t.controller.library.resolve(id))).count
         #expect(count > 1)
-        try await openSettings(t)
-        try await t.window.runUntil { (try? t.window.element(identifier: "theme-row-\(id)")) != nil }
-        try t.window.click(t.window.element(identifier: "theme-row-\(id)"))
+        let s = try await openSettings(t)
+        try await s.runUntil { (try? s.element(identifier: "theme-row-\(id)")) != nil }
+        try s.click(s.element(identifier: "theme-row-\(id)"))
         try await t.window.runUntil { (try? t.window.element(identifier: "theme-activation-warning")) != nil }
         let warning = try t.window.element(identifier: "theme-activation-warning")
         let all = ([warning] + descendants(of: warning, in: t.window)).map(text)
         #expect(all.contains("\(count) colour pairs are hard to read"), "\(all)")
         #expect(t.controller.currentSettings.theme == "dracula")
         try t.window.click(t.window.element(identifier: "theme-activation-use"))
-        try await t.window.runUntil { t.controller.currentSettings.theme == id }
+        try await s.runUntil { t.controller.currentSettings.theme == id }
         #expect((try? t.window.element(identifier: "theme-activation-warning")) == nil)
 
         // Second try: Cancel applies nothing.
         try t.controller.choose(theme: "dracula")
-        try t.window.click(t.window.element(identifier: "theme-row-\(id)"))
+        try s.click(s.element(identifier: "theme-row-\(id)"))
         try await t.window.runUntil { (try? t.window.element(identifier: "theme-activation-cancel")) != nil }
         try t.window.click(t.window.element(identifier: "theme-activation-cancel"))
         try await t.window.runUntil { (try? t.window.element(identifier: "theme-activation-warning")) == nil }

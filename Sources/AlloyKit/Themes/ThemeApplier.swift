@@ -23,6 +23,10 @@ public enum ThemeApplier {
         // The see-through window and island fills, folded into single layers for this theme and its effective style.
         let style = resolved.style.applying(overrides)
         if let window = resolved.colors["windowBackground"] { theme[WindowPaintKey.self] = Color(style.windowPaint(window).hsla) }
+        if let window = resolved.colors["windowBackground"], let accent = resolved.colors["accent"] {
+            theme[WindowBackgroundEndKey.self] = Color(window.mixed(with: accent, amount: style.backgroundGradientStrength).hsla)
+            theme[WindowPaintEndKey.self] = Color(style.windowPaintEnd(window: window, accent: accent).hsla)
+        }
         if let fill = resolved.colors["islandFill"] { theme[IslandPaintKey.self] = Color(style.islandPaint(fill).hsla) }
         let list = resolved.sessionColors
         if !list.isEmpty {

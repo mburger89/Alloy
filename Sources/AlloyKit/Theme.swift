@@ -88,6 +88,14 @@ struct WindowBackgroundKey: ThemeColorKey {
 struct WindowPaintKey: ThemeColorKey {
     static let defaultValue = WindowBackgroundKey.defaultValue
 }
+/// The far (bottom-trailing) colour of the window background gradient, derived like ``WindowPaintKey``.
+struct WindowPaintEndKey: ThemeColorKey {
+    static let defaultValue = WindowBackgroundKey.defaultValue
+}
+/// The same far colour, opaque (no tint or shade), for Glass off and Reduce Transparency.
+struct WindowBackgroundEndKey: ThemeColorKey {
+    static let defaultValue = WindowBackgroundKey.defaultValue
+}
 struct IslandPaintKey: ThemeColorKey {
     static let defaultValue = IslandFillKey.defaultValue
 }
@@ -220,6 +228,9 @@ extension Color {
     static let glassRim = Color(GlassRimKey.self)
     /// The window background folded with its tint and shade (see `AppearanceStyle.windowPaint`), set per theme by ThemeApplier.
     static let windowPaint = Color(WindowPaintKey.self)
+    /// The gradient's far colour: the window paint blended towards the accent (see `AppearanceStyle.windowPaintEnd`).
+    static let windowPaintEnd = Color(WindowPaintEndKey.self)
+    static let windowBackgroundEnd = Color(WindowBackgroundEndKey.self)
     /// An island's fill folded with its opacity and sheen (see `AppearanceStyle.islandPaint`), set per theme by ThemeApplier.
     static let islandPaint = Color(IslandPaintKey.self)
     static let markdownCodeFill = Color(MarkdownCodeFill.self)

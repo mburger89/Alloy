@@ -2,7 +2,7 @@ import Foundation
 import MetalUICodeBuffer
 import Observation
 
-private enum PendingControlKind { case initialize, setModel(String), setMode(String) }
+private enum PendingControlKind { case initialize, setModel(String), setMode(String), setEffort(String?) }
 
 public typealias TransportFactory = @Sendable (LaunchConfiguration) -> any SessionTransport
 
@@ -13,6 +13,8 @@ struct SessionRecord: Codable {
     var hasConversation: Bool = false
     var cliSessionID: String?
     var model: String?
+    /// The CLI effort level (`--effort`); nil is the CLI default.
+    var effort: String?
     var permissionMode: String?
     /// The last command list the CLI gave, so `/` suggests on a restored session before its process starts.
     var slashCommands: [SlashCommandInfo]?
@@ -26,7 +28,8 @@ struct SessionRecord: Codable {
     init(id: UUID, name: String, colorIndex: Int, hasConversation: Bool,
          cliSessionID: String? = nil, model: String? = nil, permissionMode: String? = nil,
          slashCommands: [SlashCommandInfo]? = nil, forkSource: String? = nil, forkPoint: String? = nil,
-         purpose: SessionPurpose? = nil) {
+         purpose: SessionPurpose? = nil, effort: String? = nil) {
+        self.effort = effort
         self.purpose = purpose
         self.forkSource = forkSource
         self.forkPoint = forkPoint
@@ -43,6 +46,7 @@ struct SessionRecord: Codable {
         hasConversation = try c.decodeIfPresent(Bool.self, forKey: .hasConversation) ?? false
         cliSessionID = try c.decodeIfPresent(String.self, forKey: .cliSessionID)
         model = try c.decodeIfPresent(String.self, forKey: .model)
+        effort = try c.decodeIfPresent(String.self, forKey: .effort)
         permissionMode = try c.decodeIfPresent(String.self, forKey: .permissionMode)
         slashCommands = try c.decodeIfPresent([SlashCommandInfo].self, forKey: .slashCommands)
         forkSource = try c.decodeIfPresent(String.self, forKey: .forkSource)
@@ -372,9 +376,6 @@ public final class Workspace {
     @ObservationIgnored public var onStop: (@MainActor () async -> Void)?
     /// Go to Definition for the active tab's caret (set by the code panel; the menu and F12 call it).
     @ObservationIgnored public var goToDefinition: (@MainActor () -> Void)?
-    /// Opens the Settings view over the chat column (set by the root view; the app menu's "Settings…" calls it).
-    /// Settings already open stays open.
-    @ObservationIgnored public var openSettings: (@MainActor () -> Void)?
     /// An opaque slot for the UI layer's language-server coordinator (AlloyCore cannot name that type).
     @ObservationIgnored public var languageServices: AnyObject?
     /// Set by `stopAll()` and never cleared: from then on nothing launches a process.
@@ -679,7 +680,7 @@ public final class Workspace {
         let fork = Session(id: UUID(), name: trimmed.isEmpty ? "\(source.name) (fork)" : allowedName(trimmed, for: nil),
                            colorIndex: records.count % 12, projectRoot: projectRoot,
                            hasConversation: true, model: source.model, permissionMode: source.permissionMode,
-                           forkSource: source.forkSource ?? source.cliSessionID, forkPoint: point, purpose: source.purpose)
+                           forkSource: source.forkSource ?? source.cliSessionID, forkPoint: point, purpose: source.purpose, effort: source.effort)
         if Self.isReserved(trimmed) { fork.transcript.appendNotice(kind: .commandOutput, text: Self.reservedNotice(for: fork.name)) }
         sessions.append(fork)
         // Before the selection: selecting a session with pending history is what loads it, at the fork point.
@@ -783,6 +784,7 @@ public final class Workspace {
                                                 resumeID: resume ? (forkFrom ?? s.cliSessionID) : nil,
                                                 loginPATH: cachedLoginPATH ?? nil)
         configuration.forkSession = forkFrom != nil
+        configuration.effort = s.effort
         configuration.resumeSessionAt = forkFrom != nil ? forkAt : nil
         if configuration.resumeSessionAt != nil { launchedAtForkPoint.insert(s.id) } else { launchedAtForkPoint.remove(s.id) }
         if let token, let url = serverURL {
@@ -1003,6 +1005,7 @@ public final class Workspace {
         case .passThrough: break
         case .setModel(let name): await setModel(name, for: id); return
         case .setMode(let mode): await setPermissionMode(mode, for: id); return
+        case .setEffort(let level): await setEffort(level, for: id); return
         case .showModelPicker: s.requestModelPicker = true; return
         case .fork(let name): await fork(id, name: name); return
         case .theme(let description): await newThemeSession(description: description); return
@@ -1148,17 +1151,20 @@ public final class Workspace {
             let model = body["model"]?.stringValue ?? requested
             s.model = model
             s.transcript.appendNotice(kind: .modelChanged, text: "Model: \(model)")
+        case (.setEffort(let level), .success):
+            s.effort = level
+            s.transcript.appendNotice(kind: .commandOutput, text: "Effort: \(level ?? "default")")
         case (.setMode, .success):
             // The `status` message that follows carries the new mode and the notice.
             break
-        case (.setModel, .error(let message, _)), (.setMode, .error(let message, _)):
+        case (.setModel, .error(let message, _)), (.setMode, .error(let message, _)), (.setEffort, .error(let message, _)):
             s.transcript.appendNotice(kind: .error, text: message.isEmpty ? "Request failed" : message)
         }
         persistSessions()
     }
 
     private func persistedState(_ s: Session) -> [String?] {
-        [s.hasConversation ? "1" : "0", s.cliSessionID, s.forkSource, s.forkPoint, s.model, s.permissionMode,
+        [s.hasConversation ? "1" : "0", s.cliSessionID, s.forkSource, s.forkPoint, s.model, s.effort, s.permissionMode,
          s.slashCommands.map { "\($0.name):\($0.description)" }.joined(separator: "\n")]
     }
 
@@ -1174,6 +1180,20 @@ public final class Workspace {
         guard !isShuttingDown, let s = session(id) else { return }
         guard let t = live[id]?.transport else { await deferControl(.model(model), for: s); return }
         await sendControl(.setModel(model), kind: .setModel(model), via: t, to: s)
+    }
+
+    /// Sets the CLI's effort level. A live session is told and keeps the level once the CLI accepts it; any other
+    /// session just stores it for its next launch (`--effort`), and a launch already under way is redone with it.
+    public func setEffort(_ level: String?, for id: Session.ID) async {
+        await afterEarlierSends(id)
+        guard !isShuttingDown, let s = session(id) else { return }
+        guard let t = live[id]?.transport else {
+            s.effort = level
+            persistSessions()
+            if s.status == .starting { relaunchWhenIdle(id) }
+            return
+        }
+        await sendControl(.setEffort(level), kind: .setEffort(level), via: t, to: s)
     }
 
     public func setPermissionMode(_ mode: PermissionMode, for id: Session.ID) async {
@@ -2078,7 +2098,7 @@ public final class Workspace {
             let r = SessionRecord(id: s.id, name: s.name, colorIndex: s.colorIndex, hasConversation: s.hasConversation,
                                   cliSessionID: s.cliSessionID, model: s.model, permissionMode: s.permissionMode,
                                   slashCommands: s.slashCommands.isEmpty ? nil : s.slashCommands, forkSource: s.forkSource, forkPoint: s.forkPoint,
-                                  purpose: s.purpose == .coding ? nil : s.purpose)
+                                  purpose: s.purpose == .coding ? nil : s.purpose, effort: s.effort)
             if let i = records.firstIndex(where: { $0.id == s.id }) { records[i] = r } else { records.append(r) }
         }
         do {
@@ -2170,7 +2190,7 @@ public final class Workspace {
             let s = Session(id: r.id, name: r.name, colorIndex: r.colorIndex, projectRoot: projectRoot,
                             hasConversation: r.hasConversation, cliSessionID: r.cliSessionID,
                             model: r.model, permissionMode: r.permissionMode, forkSource: r.forkSource, forkPoint: r.forkPoint,
-                            purpose: r.purpose ?? .coding)
+                            purpose: r.purpose ?? .coding, effort: r.effort)
             s.status = .dormant
             // A name saved before "Alloy" was reserved.
             if Self.isReserved(r.name) {

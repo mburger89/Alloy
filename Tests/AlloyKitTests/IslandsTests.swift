@@ -46,7 +46,7 @@ import Testing
         window.installAlloyMenu(rig.workspace)
         window.window.windowStyle = .hiddenTitleBar
         func rects() throws -> [Bounds<Pixels>] {
-            try ["island-title", "title-project", "title-new-session", "title-settings"].map { try window.element(identifier: $0).frame }
+            try ["island-title", "title-project", "title-new-session", "title-quick-open"].map { try window.element(identifier: $0).frame }
         }
         func same(_ a: Bounds<Pixels>, _ b: Bounds<Pixels>) -> Bool {
             a.minX == b.minX && a.minY == b.minY && a.maxX == b.maxX && a.maxY == b.maxY
@@ -118,9 +118,15 @@ import Testing
         try t.window.click(t.window.element(identifier: "title-quick-open"))
         for _ in 0..<4 { t.window.tick(); await Task.yield() }
         #expect((try? t.window.element(identifier: "quick-open-field")) != nil)
-        try t.window.click(t.window.element(identifier: "title-settings"))
-        for _ in 0..<4 { t.window.tick(); await Task.yield() }
-        #expect((try? t.window.element(identifier: "settings-view")) != nil)
+    }
+
+    /// Settings is the app menu's window now: the title island has no gear.
+    @Test func titleIslandHasNoSettingsButton() throws {
+        let t = try setup()
+        #expect((try? t.window.element(identifier: "title-settings")) == nil)
+        for id in ["title-new-session", "title-quick-open"] { _ = try t.window.element(identifier: id) }
+        let pills = try t.window.elements(where: { ($0.identifier ?? "").hasPrefix("title-") && $0.role == .button })
+        #expect(Set(pills.compactMap(\.identifier)) == ["title-new-session", "title-quick-open"])
     }
 
     @Test func titleShowsProjectAndBranch() throws {
@@ -144,22 +150,6 @@ import Testing
 }
 
 extension IslandsTests {
-    /// The Settings overlay keeps the island radius, opens, and closes on Esc.
-    @MainActor @Test func settingsOverlayOpensAndEscCloses() async throws {
-        let rig = Rig()
-        let window = try TestWindow(size: Size(width: Pixels(1200), height: Pixels(800))) { rootView(workspace: rig.workspace) }
-        window.installAlloyMenu(rig.workspace)
-        for _ in 0..<3 { window.tick() }
-        try window.click(window.element(identifier: "title-settings"))
-        for _ in 0..<4 { window.tick(); await Task.yield() }
-        #expect((try? window.element(identifier: "settings-view")) != nil)
-        window.typeKey(.escape, modifierFlags: [])
-        for _ in 0..<4 { window.tick(); await Task.yield() }
-        #expect((try? window.element(identifier: "settings-view")) == nil)
-    }
-}
-
-extension IslandsTests {
     /// The window root (launcherRoot, as the app opens it) paints the theme's window background behind the gutters.
     @MainActor @Test func windowRootPaintsTheWindowBackground() throws {
         let rig = Rig()
@@ -170,13 +160,10 @@ extension IslandsTests {
         window.window.darkTheme = ThemeApplier.theme(for: theme)
         window.window.setNeedsRedraw()
         for _ in 0..<4 { window.tick() }
-        // The window background folded with its tint and shade into one fill.
-        let style = AppearanceStyle.defaults
-        let expected = style.windowPaint(try #require(ThemeRGBA(hex: "#1A1B24"))).hsla
-        let full = window.scene.rects.filter { $0.bounds.size.width >= 1199 && $0.bounds.size.height >= 799 && $0.background.a > 0 }
-        let last = try #require(full.last)
-        #expect(abs(last.background.l - expected.l) < 0.01 && abs(last.background.h - expected.h) < 0.01
-                && abs(last.background.a - expected.a) < 0.01, "\(last.background) vs \(expected)")
+        // The default look is the gradient: one full-window gradient fill instead of the flat window colour (the flat fill
+        // and the gradient's colours are checked in BackgroundGradientTests).
+        let full = window.allImages.filter { $0.bounds.size.width >= 1199 && $0.bounds.size.height >= 799 }
+        #expect(!full.isEmpty, "the window backdrop is drawn as a full-window gradient")
     }
 
     /// The title text clears the traffic lights (which MetalUI reports as zero insets headless, so the fallback width applies).

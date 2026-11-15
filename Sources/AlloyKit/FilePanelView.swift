@@ -134,11 +134,12 @@ struct FilePanelBar: Component {
         let height = height
         VStack(spacing: 0) {
             VStack(alignment: .leading, spacing: 0) {
-                if !workspace.tabs.isEmpty { FileTabStrip(workspace: workspace).equatable() }
+                if !workspace.tabs.isEmpty { FileTabStrip(workspace: workspace, style: style).equatable() }
                 if let path { FilePanelHeader(workspace: workspace, path: path, document: document, view: view).equatable() }
             }
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("file-panel-bar")
+            .segmentedPickerShape(style.buttonShape)
             .glassControl(style: style, cornerRadius: style.cornerRadius)
         }
         .padding(style.gutterInsets)
@@ -153,6 +154,8 @@ struct FilePanelBar: Component {
 /// `tab-close-<path>`; the strip is the group "Tabs" and the container is `file-tabs`.
 struct FileTabStrip: Component {
     let workspace: Workspace
+    /// The selected tab's shape follows the style's pill buttons; part of the identity.
+    let style: AppearanceStyle
 
     var content: some ElementGroup {
         let _ = BodyProbe.hit("FileTabStrip")
@@ -169,6 +172,10 @@ struct FileTabStrip: Component {
                                         set: { workspace.activeTab = $0 })
         VStack(spacing: 0) {
             TabStrip(selection: selection, tabs: items)
+                .selectedTabShape(style.tabSelectionShape)
+                // Inside the glass bar: no band of its own, and the selected tab is a pill like the buttons.
+                .stripBackground(.clear)
+                .selectedTabFill(.color(Color.glassRim))
                 .onCloseTab { path in workspace.requestClose(path) }
                 .onMoveTab { from, to in workspace.moveTab(from: from, to: to) }
         }
@@ -207,7 +214,9 @@ struct FilePanelHeader: Component {
     var content: some ElementGroup {
         let _ = BodyProbe.hit("FilePanelHeader")
         HStack(spacing: Pixels(8)) {
-            Text(verbatim: path).font(size: 12).accessibilityIdentifier("file-panel-path")
+            // The path gives up space first (priority 0, the rest 1) and truncates in the middle, so the file name stays.
+            Text(verbatim: path).font(size: 12).lineLimit(1).truncationMode(.middle)
+                .accessibilityIdentifier("file-panel-path")
             if document?.tabDirty == true {
                 Circle().fill(Color.mutedInk).frame(width: Pixels(7), height: Pixels(7))
                     .accessibilityIdentifier("file-panel-dirty")
@@ -215,7 +224,8 @@ struct FilePanelHeader: Component {
             if let view { DefinitionMessage(view: view).equatable() }
             Spacer()
             if case .readOnly(let reason)? = document?.state {
-                Text(verbatim: "Read-only \u{2014} \(reason)").font(size: 11).foregroundColor(.mutedInk)
+                Text(verbatim: "Read-only \u{2014} \(reason)").font(size: 11).foregroundColor(.mutedInk).lineLimit(1)
+                    .layoutPriority(1)
                     .accessibilityIdentifier("file-panel-read-only")
             }
             ServerStatusLabel(workspace: workspace, path: path).equatable()
@@ -225,6 +235,7 @@ struct FilePanelHeader: Component {
                     Image(systemName: "magnifyingglass").font(.system(size: 13)).padding(Pixels(3))
                 }
                 .buttonStyle(.plain)
+                .layoutPriority(1)
                 .help("Find")
                 .accessibilityLabel("Find")
                 .accessibilityIdentifier("find-button")
@@ -234,6 +245,7 @@ struct FilePanelHeader: Component {
                 }
                 .pickerStyle(.segmented)
                 .labelsHidden()
+                .layoutPriority(1)
                 .accessibilityIdentifier("diff-mode-toggle")
             }
         }
@@ -253,11 +265,11 @@ struct DiagnosticCountsBadge: Component {
         let counts = (workspace.languageServices as? LSPCoordinator)?.diagnostics.counts.counts(for: path)
         HStack(spacing: Pixels(6)) {
             if let counts, counts.errors > 0 {
-                Text(verbatim: counts.errors == 1 ? "1 error" : "\(counts.errors) errors").font(size: 11).foregroundColor(.errorInk)
+                Text(verbatim: counts.errors == 1 ? "1 error" : "\(counts.errors) errors").font(size: 11).foregroundColor(.errorInk).lineLimit(1)
                     .accessibilityIdentifier("file-panel-errors")
             }
             if let counts, counts.warnings > 0 {
-                Text(verbatim: counts.warnings == 1 ? "1 warning" : "\(counts.warnings) warnings").font(size: 11).foregroundColor(.warningInk)
+                Text(verbatim: counts.warnings == 1 ? "1 warning" : "\(counts.warnings) warnings").font(size: 11).foregroundColor(.warningInk).lineLimit(1)
                     .accessibilityIdentifier("file-panel-warnings")
             }
         }
@@ -273,10 +285,37 @@ struct ServerStatusLabel: Component {
 
     var content: some ElementGroup {
         let _ = BodyProbe.hit("ServerStatusLabel")
-        if let entry = (workspace.languageServices as? LSPCoordinator)?.status.byPath[path], let text = Self.text(entry.name, entry.state) {
-            Text(verbatim: text).font(size: 11).foregroundColor(Self.isProblem(entry.state) ? .warningInk : .mutedInk)
+        let lsp = workspace.languageServices as? LSPCoordinator
+        let main = lsp?.status.byPath[path]
+        let linters = lsp?.status.linters[path] ?? []
+        let isProblem = main.map { Self.isProblem($0.state) } ?? false
+        if let text = Self.text(main: main, linters: linters) {
+            Text(verbatim: text).font(size: 11).foregroundColor(isProblem ? .warningInk : .mutedInk)
+                .lineLimit(1).layoutPriority(1)
                 .accessibilityIdentifier("file-panel-lsp-status")
         }
+        ForEach(Self.failedLinterEntries(linters), id: \.id) { entry in
+            Text(verbatim: entry.text).font(size: 11).foregroundColor(.errorInk).lineLimit(1).layoutPriority(1)
+                .accessibilityIdentifier("file-panel-linter-failed")
+        }
+    }
+
+    /// The main server's text, then ` \u{00B7} ` and the names of the ready linters (`Pyright \u{00B7} Ruff`); nil when there is nothing.
+    static func text(main: (name: String, state: ServerState)?, linters: [(id: String, name: String, state: ServerState)]) -> String? {
+        var parts: [String] = []
+        if let main, let text = text(main.name, main.state) { parts.append(text) }
+        parts += linters.filter { $0.state == .ready }.map(\.name)
+        return parts.isEmpty ? nil : parts.joined(separator: " \u{00B7} ")
+    }
+
+    /// `"Ruff failed"` for each failed linter. Starting, missing and stopped linters show nothing.
+    static func failedLinters(_ linters: [(id: String, name: String, state: ServerState)]) -> [String] {
+        failedLinterEntries(linters).map(\.text)
+    }
+
+    /// The failed linters with their ids: two linters may share a display name, so the id keys the rows.
+    static func failedLinterEntries(_ linters: [(id: String, name: String, state: ServerState)]) -> [(id: String, text: String)] {
+        linters.compactMap { if case .failed = $0.state { (id: $0.id, text: "\($0.name) failed") } else { nil } }
     }
 
     static func text(_ name: String, _ state: ServerState) -> String? {
@@ -305,7 +344,7 @@ struct DefinitionMessage: Component {
     var content: some ElementGroup {
         let _ = BodyProbe.hit("DefinitionMessage")
         if let text = view.definitionMessage {
-            Text(verbatim: text).font(size: 11).foregroundColor(.mutedInk)
+            Text(verbatim: text).font(size: 11).foregroundColor(.mutedInk).lineLimit(1).layoutPriority(1)
                 .accessibilityIdentifier("file-panel-definition-message")
         }
     }

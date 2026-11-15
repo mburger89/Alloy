@@ -159,6 +159,18 @@ import Testing
         #expect(BodyProbe.count("TranscriptView") - builds == 1, "built \(BodyProbe.count("TranscriptView") - builds) times: the estimate \(AppearanceStyle.defaults.composerBarHeightEstimate) is off")
     }
 
+    /// The Send circle is as tall as the one-line message box (a symbol sized by font is taller than its point size).
+    @Test func sendButtonMatchesTheOneLineBox() async throws {
+        let rig = Rig()
+        _ = await rig.workspace.newSession(name: "A")
+        let window = try alloyWindow(rig.workspace)
+        for _ in 0..<10 { window.tick(); await Task.yield() }
+        let send = try window.element(identifier: "send").frame
+        let box = try window.element(identifier: "composer-box").frame
+        #expect(send.size.height == box.size.height)
+        #expect(send.size.height == Pixels(Float(AppearanceStyle.defaults.composerFieldOneLineHeight)))
+    }
+
     @Test func reduceTransparencyDrawsSolid() {
         let style = AppearanceStyle.defaults
         #expect(GlassLook.resolve(style: style, reduceTransparency: true, glassEnabled: true) == .solid)

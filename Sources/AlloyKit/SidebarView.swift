@@ -114,23 +114,23 @@ struct SessionRow: Component {
                         .onKeyPress(.escape) { renaming = false; return .handled }
                         .accessibilityIdentifier("rename-\(id.uuidString)")
                 } else {
-                    Text(session.name).font(size: 13)
+                    Text(session.name).font(size: 13).lineLimit(1)
                         .onTapGesture(count: 2) { draft = session.name; renaming = true }
                         .accessibilityIdentifier("session-name-\(id.uuidString)")
                 }
                 HStack(spacing: Pixels(6)) {
-                    Text(statusWord(session.status)).font(size: 11).foregroundColor(.mutedInk)
-                    Text(String(format: "$%.2f", session.costUSD)).font(size: 11).foregroundColor(.mutedInk)
-                    Text(tokenText(session.totalTokens)).font(size: 11).foregroundColor(.mutedInk)
+                    Text(statusWord(session.status)).font(size: 11).foregroundColor(.mutedInk).lineLimit(1)
+                    Text(String(format: "$%.2f", session.costUSD)).font(size: 11).foregroundColor(.mutedInk).lineLimit(1)
+                    Text(tokenText(session.totalTokens)).font(size: 11).foregroundColor(.mutedInk).lineLimit(1)
                         .accessibilityIdentifier("session-tokens-\(id.uuidString)")
                 }
                 HStack(spacing: Pixels(6)) {
                     if let model = session.model {
-                        Text(modelShortName(model)).font(size: 11).foregroundColor(.mutedInk)
+                        Text(modelShortName(model)).font(size: 11).foregroundColor(.mutedInk).lineLimit(1)
                             .accessibilityIdentifier("session-model-\(id.uuidString)")
                     }
                     if session.redundantReads > 0, workspace.settings.shareKnowledge {
-                        Text("\(session.redundantReads) re-reads").font(size: 11).foregroundColor(.mutedInk)
+                        Text("\(session.redundantReads) re-reads").font(size: 11).foregroundColor(.mutedInk).lineLimit(1)
                             .accessibilityIdentifier("session-rereads-\(id.uuidString)")
                     }
                     if let badge = modeBadge(session.permissionMode) {
@@ -220,7 +220,7 @@ struct ChangedFileRow: Component {
                 Circle().fill(color(for: author)).frame(width: Pixels(8), height: Pixels(8))
                     .accessibilityIdentifier("author-dot-\(index)")
             }
-            Text(file.path).font(size: 12)
+            Text(file.path).font(size: 12).lineLimit(1).truncationMode(.middle)
             Spacer()
             if let warning = CoordinationStyle.headline(warnings) {
                 WarningMark(warning: warning, identifier: "changed-file-warning-\(file.path)")

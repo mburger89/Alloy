@@ -1,4 +1,5 @@
 @testable import AlloyCore
+import AlloyLSP
 @testable import AlloyKit
 import AlloyTestSupport
 import Foundation
@@ -8,30 +9,116 @@ import Testing
 
 @MainActor
 @Suite struct SettingsViewTests {
-    private func open(_ window: TestWindow) async throws {
-        try window.openSettingsFromMenu()
-        try await window.runUntil { (try? window.element(identifier: "settings-view")) != nil }
+    /// Opens Settings from the main window's menu; the result is the Settings window.
+    private func open(_ main: TestWindow) async throws -> TestWindow {
+        let settings = try main.openSettingsFromMenu()
+        try await settings.runUntil { (try? settings.element(identifier: "settings-view")) != nil }
+        return settings
     }
 
-    private func gone(_ window: TestWindow, _ id: String) async throws {
-        try await window.runUntil { (try? window.element(identifier: id)) == nil }
-    }
-
-    @Test func menuItemOpensSettingsViewAndEscCloses() async throws {
+    @Test func menuItemOpensASettingsWindowAndEscCloses() async throws {
         let rig = Rig()
-        let window = try alloyWindow(rig.workspace)
-        #expect((try? window.element(identifier: "settings-view")) == nil)
-        try await open(window)
-        for id in ["settings-close", "settings-claude-path", "settings-share-knowledge", "settings-ask-shared-notes",
+        let main = try alloyWindow(rig.workspace)
+        #expect((try? main.element(identifier: "settings-view")) == nil)
+        #expect(!main.settingsController.isOpen)
+        let window = try await open(main)
+        #expect(main.settingsController.isOpen)
+        #expect(window !== main)
+        #expect((try? main.element(identifier: "settings-view")) == nil, "not an overlay in the main window")
+        #expect(window.window.title == "Settings")
+        for id in ["settings-title", "settings-claude-path", "settings-share-knowledge", "settings-ask-shared-notes",
                    "settings-reset"] {
             _ = try window.element(identifier: id)
         }
+        // The traffic lights close the window, so the title island has no close button of its own.
+        #expect((try? window.element(identifier: "settings-close")) == nil)
         window.typeKey(.escape)
-        try await gone(window, "settings-view")
-        // The close button does the same.
-        try await open(window)
-        try window.click(window.element(identifier: "settings-close"))
-        try await gone(window, "settings-view")
+        try await closed(main)
+    }
+
+    /// Esc closes the window when the focus is elsewhere too (the window-level cancel shortcut).
+    @Test func escClosesWhereverTheFocusIs() async throws {
+        let rig = Rig()
+        let main = try alloyWindow(rig.workspace)
+        let window = try await open(main)
+        try window.click(window.element(identifier: "settings-claude-path"))
+        window.typeKey(.escape)
+        try await closed(main)
+    }
+
+    /// The window's own close (its red button) forgets it too, so the next open makes a new one.
+    @Test func closingTheWindowForgetsIt() async throws {
+        let rig = Rig()
+        let main = try alloyWindow(rig.workspace)
+        let first = try await open(main)
+        first.close()
+        try await closed(main)
+        let second = try await open(main)
+        #expect(second !== first)
+        #expect(main.settingsController.isOpen)
+    }
+
+    /// Asking again while Settings is open brings the open window to the front; no second window.
+    @Test func menuItemWhileSettingsIsOpenFrontsIt() async throws {
+        let rig = Rig()
+        let main = try alloyWindow(rig.workspace)
+        let window = try await open(main)
+        let before = window.platformWindow.orderFrontCalls
+        let again = try main.openSettingsFromMenu()
+        #expect(again === window)
+        #expect(window.platformWindow.orderFrontCalls == before + 1)
+        #expect(main.testApp.windows.filter { $0 !== main }.count == 1, "one Settings window")
+        _ = try window.element(identifier: "settings-view")
+    }
+
+    /// Closing the controller (the main window's close does) closes the Settings window.
+    @Test func controllerCloseClosesTheWindow() async throws {
+        let rig = Rig()
+        let main = try alloyWindow(rig.workspace)
+        let window = try await open(main)
+        main.settingsController.close()
+        #expect(!main.settingsController.isOpen)
+        #expect(window.platformWindow.isClosed)
+    }
+
+    @Test func settingsViewRendersInItsOwnWindowWithoutAnyRootView() async throws {
+        let rig = Rig()
+        let window = try TestWindow(size: SettingsWindowController.windowSize) {
+            settingsWindowElement(SettingsWindowRoot(workspace: rig.workspace, themes: nil, close: {}, gone: {}))
+        }
+        window.tick(); window.tick()
+        _ = try window.element(identifier: "settings-view")
+    }
+
+    /// The Settings window looks like the main one: a title island reading "Settings" across the top, the content in one
+    /// island below it, both inset by the style's gutter and sharing its corner radius.
+    @Test func settingsWindowIsATitleIslandOverAContentIsland() throws {
+        let rig = Rig()
+        let style = AppearanceStyle.defaults
+        let window = try TestWindow(size: SettingsWindowController.windowSize) {
+            settingsWindowElement(SettingsWindowRoot(workspace: rig.workspace, themes: nil, close: {}, gone: {}))
+        }
+        window.tick(); window.tick()
+        let title = try window.element(identifier: "island-settings-title").frame
+        let content = try window.element(identifier: "island-settings").frame
+        let gutter = Pixels(Float(style.gutter))
+        #expect(title.minX == gutter && title.minY == gutter)
+        #expect(title.maxY - title.minY == Pixels(Float(style.titleIslandHeight)))
+        #expect(content.minX == gutter)
+        #expect(content.minY - title.maxY == gutter)
+        #expect(content.maxY == SettingsWindowController.windowSize.height - gutter)
+        #expect(content.maxX == SettingsWindowController.windowSize.width - gutter)
+        let label = try window.element(identifier: "settings-title")
+        #expect(label.label == "Settings" || label.value == "Settings")
+        #expect(label.frame.minY >= title.minY && label.frame.maxY <= title.maxY)
+        let view = try window.element(identifier: "settings-view").frame
+        #expect(view.minX >= content.minX && view.maxX <= content.maxX && view.minY >= content.minY)
+        #expect(throws: (any Error).self) { try window.element(identifier: "title-new-session") }
+    }
+
+    private func closed(_ main: TestWindow) async throws {
+        for _ in 0..<200 where main.settingsController.isOpen { await Task.yield(); main.tick() }
+        #expect(!main.settingsController.isOpen)
     }
 
     @Test func appMenuHasSettingsWithCommandComma() throws {
@@ -51,20 +138,11 @@ import Testing
     @Test func settingsMenuItemIsDisabledWithoutAProject() throws {
         let model = LauncherModel()
         let window = try TestWindow(size: Size(width: Pixels(900), height: Pixels(600))) { launcherRoot(model: model) }
-        window.testApp.app.commands { alloyCommands(model: model) }
+        window.installAlloyMenu(model: model)
         window.tick()
         let item = try #require(window.testApp.menuBar.flatMap(\.items).first { $0.title == "Settings…" })
         #expect(!item.isEnabled)
         #expect(throws: (any Error).self) { try window.openSettingsFromMenu() }
-    }
-
-    @Test func menuItemWhileSettingsIsOpenLeavesItOpen() async throws {
-        let rig = Rig()
-        let window = try alloyWindow(rig.workspace)
-        try await open(window)
-        try window.openSettingsFromMenu()
-        for _ in 0..<3 { window.tick(); await Task.yield() }
-        _ = try window.element(identifier: "settings-view")
     }
 
     @Test func sidebarNoLongerHasSettingsButton() throws {
@@ -75,8 +153,8 @@ import Testing
 
     @Test func existingSettingsIdsStillWork() async throws {
         let rig = Rig()
-        let window = try alloyWindow(rig.workspace)
-        try await open(window)
+        let main = try alloyWindow(rig.workspace)
+        let window = try await open(main)
         try window.click(window.element(identifier: "settings-detect"))
         try await window.runUntil { (try? window.element(identifier: "settings-detected")) != nil }
         let text = try window.element(identifier: "settings-detected")
@@ -112,8 +190,8 @@ import Testing
                                                         outputTokens: 1, sessionID: "s", terminalReason: nil,
                                                         cacheCreationTokens: 0, cacheReadTokens: 0)))
         for _ in 0..<20_000 where !(s.status == .idle && s.hasConversation) { await Task.yield() }
-        let window = try alloyWindow(rig.workspace)
-        try await open(window)
+        let main = try alloyWindow(rig.workspace)
+        let window = try await open(main)
         try window.click(window.element(identifier: "settings-ask-shared-notes"))
         try await window.runUntil { rig.workspace.settings.askBeforeSharedNotes }
         await rig.workspace.settle()
@@ -198,62 +276,14 @@ import Testing
 
     // MARK: Keys and focus
 
-    private func twoSessions(_ rig: Rig) async -> (Session, Session) {
-        let a = await rig.workspace.newSession(name: "A")
-        let b = await rig.workspace.newSession(name: "B")
-        rig.workspace.selectedSessionID = a.id
-        return (a, b)
-    }
-
     @Test func escWhileThePathFieldIsFocusedCloses() async throws {
         let rig = Rig()
-        let window = try alloyWindow(rig.workspace)
-        try await open(window)
+        let main = try alloyWindow(rig.workspace)
+        let window = try await open(main)
         try window.click(window.element(identifier: "settings-claude-path"))
         window.typeText("/x")
         window.typeKey(.escape)
-        try await gone(window, "settings-view")
-    }
-
-    @Test func selectingAnotherSessionKeepsKeysFromTheComposer() async throws {
-        let rig = Rig()
-        let (_, b) = await twoSessions(rig)
-        let window = try alloyWindow(rig.workspace)
-        try await open(window)
-        try window.click(window.element(identifier: "session-name-\(b.id.uuidString)"))
-        for _ in 0..<5 { window.tick() }
-        window.typeText("leak")
-        window.typeKey(.escape)
-        try await gone(window, "settings-view")
-        let composer = try window.element(identifier: "composer")
-        #expect(!(composer.value ?? "").contains("leak"), "\(composer.value ?? "")")
-        #expect(await rig.transports[1].sentAfterInitialize.isEmpty)
-    }
-
-    @Test func closingRestoresComposerFocus() async throws {
-        let rig = Rig()
-        _ = await twoSessions(rig)
-        let window = try alloyWindow(rig.workspace)
-        try window.click(window.element(identifier: "composer"))
-        for _ in 0..<3 { window.tick() }   // focus changes reach the model one frame later
-        #expect(try window.element(identifier: "composer").isFocused)
-        try await open(window)
-        #expect(!(try window.element(identifier: "composer").isFocused), "Settings holds the keyboard")
-        window.typeKey(.escape)
-        try await gone(window, "settings-view")
-        for _ in 0..<3 { window.tick() }
-        #expect(try window.element(identifier: "composer").isFocused)
-    }
-
-    @Test func escWithQuickOpenClosesOnlyQuickOpen() async throws {
-        let rig = Rig()
-        let window = try alloyWindow(rig.workspace)
-        try await open(window)
-        window.typeKey("p", modifierFlags: .command)
-        try await window.runUntil { (try? window.element(identifier: "quick-open-field")) != nil }
-        window.typeKey(.escape)
-        try await window.runUntil { (try? window.element(identifier: "quick-open-field")) == nil }
-        _ = try window.element(identifier: "settings-view")
+        try await closed(main)
     }
 
     // MARK: Failures and relaunches
@@ -262,8 +292,8 @@ import Testing
         let rig = Rig()
         // A file where the support directory should be: the settings file cannot be created.
         try Data().write(to: rig.root.appendingPathComponent("support"))
-        let window = try alloyWindow(rig.workspace)
-        try await open(window)
+        let main = try alloyWindow(rig.workspace)
+        let window = try await open(main)
         try window.click(window.element(identifier: "settings-claude-path"))
         window.typeText("/opt/claude")
         try window.click(window.element(identifier: "settings-save"))
@@ -283,8 +313,8 @@ import Testing
                                             tools: [], slashCommands: [], terminalSlashCommands: [])))
         for _ in 0..<20_000 where s.status != .working { await Task.yield() }
         #expect(s.status == .working)
-        let window = try alloyWindow(rig.workspace)
-        try await open(window)
+        let main = try alloyWindow(rig.workspace)
+        let window = try await open(main)
         try window.click(window.element(identifier: "settings-share-knowledge"))
         try await window.runUntil { !rig.workspace.settings.shareKnowledge }
         try window.click(window.element(identifier: "settings-ask-shared-notes"))
@@ -304,8 +334,8 @@ import Testing
 
     @Test func shareOtherProjectsToggleSaves() async throws {
         let rig = Rig()
-        let window = try alloyWindow(rig.workspace)
-        try await open(window)
+        let main = try alloyWindow(rig.workspace)
+        let window = try await open(main)
         #expect(try window.element(identifier: "settings-share-other-projects").isEnabled)
         try window.click(window.element(identifier: "settings-share-other-projects"))
         try await window.runUntil { !rig.workspace.settings.shareAcrossProjects }
@@ -315,8 +345,8 @@ import Testing
 
     @Test func shareOtherProjectsDisabledWithoutSharing() async throws {
         let rig = Rig()
-        let window = try alloyWindow(rig.workspace)
-        try await open(window)
+        let main = try alloyWindow(rig.workspace)
+        let window = try await open(main)
         try window.click(window.element(identifier: "settings-share-knowledge"))
         try await window.runUntil { !rig.workspace.settings.shareKnowledge }
         try await window.runUntil { (try? window.element(identifier: "settings-share-other-projects").isEnabled) == false }
@@ -328,10 +358,69 @@ import Testing
 
     @Test func panelHasLabelAndRole() async throws {
         let rig = Rig()
-        let window = try alloyWindow(rig.workspace)
-        try await open(window)
+        let main = try alloyWindow(rig.workspace)
+        let window = try await open(main)
         let view = try window.element(identifier: "settings-view")
         #expect(view.label == "Settings")
         #expect(view.role == .group)
+    }
+}
+
+/// Settings > Language servers: the Linters group and the Clippy switch.
+@MainActor
+@Suite struct SettingsLintersTests {
+    /// The real built-in table; nothing is launched because no file is open and no command is found.
+    private func open(_ rig: Rig) async throws -> TestWindow {
+        let coordinator = LSPCoordinator.install(on: rig.workspace,
+                                                 locator: ServerLocator(loginPATH: { nil }, xcrunFind: { _ in nil }),
+                                                 launcher: ServerLauncher { _, _, _ in throw CancellationError() })
+        let main = try alloyWindow(rig.workspace)
+        let settings = try main.openSettingsFromMenu()
+        try await settings.runUntil { (try? settings.element(identifier: "settings-lsp-rust-analyzer")) != nil }
+        withExtendedLifetime(coordinator) {}
+        return settings
+    }
+
+    @Test func lintersHaveTheirOwnGroup() async throws {
+        let rig = Rig()
+        let settings = try await open(rig)
+        _ = try settings.element(identifier: "settings-linters-heading")
+        for id in ["ruff", "eslint", "biome"] {
+            _ = try settings.element(identifier: "settings-linter-\(id)")
+            _ = try settings.element(identifier: "settings-linter-status-\(id)")
+            #expect((try? settings.element(identifier: "settings-lsp-\(id)")) == nil, "\(id) is not among the servers")
+        }
+        _ = try settings.element(identifier: "settings-lsp-rust-analyzer")
+        #expect((try? settings.element(identifier: "settings-linter-rust-analyzer")) == nil)
+    }
+
+    @Test func togglingALinterPersists() async throws {
+        let rig = Rig()
+        let settings = try await open(rig)
+        try settings.click(settings.element(identifier: "settings-linter-ruff"))
+        #expect(rig.workspace.settings.languageServers["ruff"]?.enabled == false)
+        let reloaded = AlloySettings.load(appSupport: rig.root.appendingPathComponent("support"))
+        #expect(reloaded.languageServers["ruff"]?.enabled == false)
+    }
+
+    @Test func clippyTogglePersists() async throws {
+        let rig = Rig()
+        let settings = try await open(rig)
+        try settings.click(settings.element(identifier: "settings-lsp-rust-analyzer-clippy"))
+        #expect(rig.workspace.settings.languageServers["rust-analyzer"]?.clippy == true)
+        let reloaded = AlloySettings.load(appSupport: rig.root.appendingPathComponent("support"))
+        #expect(reloaded.languageServers["rust-analyzer"]?.clippy == true)
+    }
+
+    @Test func userAddedLinterIsListed() async throws {
+        let rig = Rig()
+        try rig.workspace.updateSettings({
+            var s = rig.workspace.settings
+            s.languageServers["mylint"] = ServerConfigOverride(name: "MyLint", extensions: ["zz"], command: "mylint", role: .linter)
+            return s
+        }())
+        let settings = try await open(rig)
+        _ = try settings.element(identifier: "settings-linter-mylint")
+        #expect((try? settings.element(identifier: "settings-lsp-mylint")) == nil)
     }
 }

@@ -229,9 +229,10 @@ public actor LanguageServer {
         let box = notificationBox
         await rpc.onNotification { method, params in box.call(method, params) }
         let root = self.root
+        let answers = config.configurationAnswers
         await rpc.onRequest { method, params in
             if method == Self.semanticRefreshMethod { box.call(method, params) }
-            return Self.answer(method: method, params: params, root: root) }
+            return Self.answer(method: method, params: params, root: root, configuration: answers) }
         let exits = channel.exited
         Task { [weak self] in
             for await code in exits { await self?.processExited(generation: gen, code: code) }
@@ -305,7 +306,7 @@ public actor LanguageServer {
             "clientInfo": .object(["name": .string("Alloy")]),
             "capabilities": Self.clientCapabilities,
         ]
-        if let options = config.initializationOptions { params["initializationOptions"] = options }
+        if let options = ServerRegistry.effectiveInitializationOptions(config) { params["initializationOptions"] = options }
         return .object(params)
     }
 
@@ -346,11 +347,12 @@ public actor LanguageServer {
     }
 
     /// Replies to the requests a server sends the client.
-    static func answer(method: String, params: JSONValue?, root: URL) -> Result<JSONValue, JSONRPCError> {
+    static func answer(method: String, params: JSONValue?, root: URL,
+                       configuration: [String: JSONValue] = [:]) -> Result<JSONValue, JSONRPCError> {
         switch method {
         case "workspace/configuration":
-            let count = params?["items"]?.arrayValue?.count ?? 0
-            return .success(.array(Array(repeating: .null, count: count)))
+            let items = params?["items"]?.arrayValue ?? []
+            return .success(.array(items.map { configuration[$0["section"]?.stringValue ?? ""] ?? .null }))
         case "window/workDoneProgress/create", "client/registerCapability", "client/unregisterCapability",
              semanticRefreshMethod:
             return .success(.null)

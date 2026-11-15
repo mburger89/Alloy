@@ -41,6 +41,18 @@ struct DiagnosticsTests {
         #expect(two.last?.severity == .error)
     }
 
+    @Test func diagnosticCodeStringAndNumber() {
+        let snapshot = CodeBuffer("abc\n").snapshot()
+        func code(_ value: JSONValue?) -> String? {
+            guard case .object(var o) = raw(0, 0, 1) else { return nil }
+            if let value { o["code"] = value }
+            return DiagnosticMapping.convert([.object(o)], in: snapshot, encoding: .utf16).first?.code
+        }
+        #expect(code(.string("F401")) == "F401")
+        #expect(code(.number(6133)) == "6133")
+        #expect(code(nil) == nil)
+    }
+
     @Test func emptyRangesAreWidenedToACharacter() {
         let snapshot = CodeBuffer("x😀\nyz").snapshot()
         // At the emoji: its 4 bytes. At the end of the line: the emoji before. On an empty last position: stays empty.

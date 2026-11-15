@@ -23,6 +23,92 @@ import Testing
         return p.path
     }
 
+    // MARK: Linters
+
+    @Test func lintersAreFoundBesideTheMainServer() {
+        let r = ServerRegistry(overrides: [:])
+        #expect(r.server(forPath: "a.py")?.id == "pyright")
+        #expect(r.linters(forPath: "a.py").map(\.id) == ["ruff"])
+    }
+
+    @Test func lintersNeverWinMainLookup() {
+        let r = ServerRegistry(overrides: [:])
+        #expect(r.server(forPath: "a.ts")?.id == "typescript-language-server")
+        #expect(r.linters(forPath: "a.ts").map(\.id) == ["eslint", "biome"])
+        #expect(r.languageID(forPath: "a.tsx") == "typescriptreact")
+    }
+
+    @Test func disabledLinterIsNotListed() {
+        let r = ServerRegistry(overrides: ["ruff": ServerConfigOverride(enabled: false)])
+        #expect(r.linters(forPath: "a.py").isEmpty)
+    }
+
+    @Test func userAddedLinterWithRole() {
+        let r = ServerRegistry(overrides: ["mylint": ServerConfigOverride(extensions: ["py"], command: "mylint", role: .linter)])
+        #expect(r.linters(forPath: "a.py").map(\.id) == ["ruff", "mylint"])
+        #expect(r.server(forPath: "a.py")?.id == "pyright")
+    }
+
+    @Test func roleOverrideMovesBuiltIn() {
+        let r = ServerRegistry(overrides: ["ruff": ServerConfigOverride(role: .main)])
+        #expect(r.server(forPath: "a.py")?.id == "ruff")
+        #expect(r.linters(forPath: "a.py").isEmpty)
+    }
+
+    @Test func unknownRoleIsIgnored() throws {
+        let json = #"{"role":"banana","command":"x","enabled":false}"#
+        let o = try JSONDecoder().decode(ServerConfigOverride.self, from: Data(json.utf8))
+        #expect(o.role == nil)
+        #expect(o.command == "x")
+        let r = ServerRegistry(overrides: ["ruff": o])
+        #expect(r.all.first { $0.id == "ruff" }?.role == .linter)
+    }
+
+    @Test func clippyMergesIntoInitOptions() {
+        let r = ServerRegistry(overrides: ["rust-analyzer": ServerConfigOverride(clippy: true)])
+        let ra = r.all.first { $0.id == "rust-analyzer" }!
+        #expect(ServerRegistry.effectiveInitializationOptions(ra)?["check"]?["command"]?.stringValue == "clippy")
+
+        let own = JSONValue.object(["check": .object(["command": .string("check")]), "x": .number(1)])
+        let r2 = ServerRegistry(overrides: ["rust-analyzer": ServerConfigOverride(initializationOptions: own, clippy: true)])
+        let ra2 = r2.all.first { $0.id == "rust-analyzer" }!
+        let eff = ServerRegistry.effectiveInitializationOptions(ra2)
+        #expect(eff?["check"]?["command"]?.stringValue == "check")
+        #expect(eff?["x"]?.intValue == 1)
+
+        let off = ServerRegistry(overrides: [:]).all.first { $0.id == "rust-analyzer" }!
+        #expect(ServerRegistry.effectiveInitializationOptions(off) == nil)
+    }
+
+    @Test func efmHasNoBuiltInFiles() {
+        let r = ServerRegistry(overrides: [:])
+        #expect(r.linters(forPath: "a.swift").contains { $0.id == "efm" } == false)
+        let e = r.all.first { $0.id == "efm" }
+        #expect(e?.role == .linter)
+        #expect(e?.extensions.isEmpty == true)
+    }
+
+    @Test func builtInLinterRows() {
+        let r = ServerRegistry(overrides: [:])
+        let eslint = r.all.first { $0.id == "eslint" }!
+        #expect(eslint.arguments == ["--stdio"])
+        #expect(eslint.requiresConfigFiles == ["eslint.config.*", ".eslintrc", ".eslintrc.*", "package.json#eslintConfig"])
+        #expect(eslint.configurationAnswers[""]?["validate"]?.stringValue == "on")
+        #expect(eslint.configurationAnswers[""]?["onIgnoredFiles"]?.stringValue == "off")
+        #expect(eslint.configurationAnswers[""]?["quiet"] == .bool(false))
+        #expect(eslint.configurationAnswers[""]?["format"] == .bool(false))
+        #expect(eslint.configurationAnswers[""]?["codeActionOnSave"] == .object(["enable": .bool(false), "mode": .string("all")]))
+        #expect(eslint.languageIDs["ts"] == "typescript")
+        #expect(r.all.first { $0.id == "biome" }?.requiresConfigFiles == ["biome.json", "biome.jsonc"])
+        #expect(r.all.first { $0.id == "golangci-lint" }?.initializationOptions?["command"] != nil)
+    }
+
+    @Test func serverConfigDecodesWithoutNewFields() throws {
+        let json = #"{"id":"a","name":"A","languageID":"x","languageIDs":{},"extensions":[],"fileNames":[],"command":"a","arguments":[],"enabled":true}"#
+        let c = try JSONDecoder().decode(ServerConfig.self, from: Data(json.utf8))
+        #expect(c.role == .main && c.configurationAnswers.isEmpty && c.requiresConfigFiles.isEmpty && !c.clippy)
+    }
+
     @Test func matchesByExtensionAndFileName() {
         let r = ServerRegistry(overrides: [:])
         #expect(r.server(forPath: "src/a.RS")?.id == "rust-analyzer")

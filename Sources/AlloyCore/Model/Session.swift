@@ -31,6 +31,8 @@ public final class Session: Identifiable {
     /// Total tokens processed: input + cache creation + cache read + output, summed per `result` (the sidebar's "tok").
     public internal(set) var totalTokens: Int = 0
     public internal(set) var model: String?
+    /// The CLI effort level (low, medium, high, xhigh, max); nil is the CLI default and passes no flag.
+    public internal(set) var effort: String?
     public internal(set) var permissionMode: String?
     /// True once the CLI has a conversation for this id (first init or result), so `--resume` is valid.
     public internal(set) var hasConversation: Bool
@@ -62,7 +64,8 @@ public final class Session: Identifiable {
 
     init(id: UUID, name: String, colorIndex: Int, projectRoot: URL, hasConversation: Bool = false,
          cliSessionID: String? = nil, model: String? = nil, permissionMode: String? = nil, forkSource: String? = nil,
-         forkPoint: String? = nil, purpose: SessionPurpose = .coding) {
+         forkPoint: String? = nil, purpose: SessionPurpose = .coding, effort: String? = nil) {
+        self.effort = effort
         self.purpose = purpose
         self.forkSource = forkSource
         self.forkPoint = forkPoint
