@@ -10,6 +10,10 @@ extension Workspace {
         guard let path = source.activeTab else { return }
         let group = EditorGroup(tabs: [path], activeTab: path)
         layout.groups[group.id] = group
+        // A path whose document is not loaded has no caret to copy: both groups seed when it loads.
+        if let doc = documents[path] {
+            makeSelectionState(for: doc, in: .group(group.id), copying: selectionState(for: path, in: .group(source.id))?.selections)
+        }
         layout.tree = layout.tree.splitting(source.id, axis: axis, newGroup: group.id, newSplit: UUID())
         layout.focus(group.id)
         scheduleUIStateWrite()
@@ -39,6 +43,7 @@ extension Workspace {
         layout.tree = removal.tree
         layout.groups.removeValue(forKey: id)
         presentations.removeValue(forKey: .group(id))
+        dropSelectionStates(of: .group(id))
         if layout.focusedGroupID == id { layout.focus(removal.focus) }
         scheduleUIStateWrite()
     }

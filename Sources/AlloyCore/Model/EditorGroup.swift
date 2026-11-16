@@ -45,6 +45,8 @@ public final class CodeLayout {
         didSet { if chatCollapsed != oldValue { onChatCollapsedChange?() } }
     }
     @ObservationIgnored var onChatCollapsedChange: (() -> Void)?
+    /// Runs when `focus(_:)` names a group (the workspace tracks which pane was focused last).
+    @ObservationIgnored var onFocus: ((UUID) -> Void)?
     /// How the groups are split; leaves are the keys of `groups`.
     public internal(set) var tree: SplitTree
 
@@ -58,7 +60,7 @@ public final class CodeLayout {
 
     /// Moves focus to `id`; an id that is not a group is ignored.
     public func focus(_ id: UUID) {
-        if groups[id] != nil { focusedGroupID = id }
+        if groups[id] != nil { focusedGroupID = id; onFocus?(id) }
     }
 
     public var focusedGroup: EditorGroup { groups[focusedGroupID] ?? fallbackGroup }

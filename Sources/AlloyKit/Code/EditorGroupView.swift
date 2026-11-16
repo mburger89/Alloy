@@ -37,7 +37,8 @@ struct EditorGroupView: Component {
             if let message = workspace.tabMessages[path] {
                 VStack(spacing: 0) { FilePanelMessage(text: message) }.padding(top)
             } else if let document, let view {
-                CodePanel(workspace: workspace, store: store, document: document, view: view, topClear: clear,
+                let _ = workspace.selectionRevision
+                CodePanel(workspace: workspace, store: store, document: document, view: view, selection: view.selection(in: workspace), topClear: clear,
                           codeViewIdentifier: "code-view-\(groupID)", onFocus: focus).equatable()
                     .id(document.id.uuidString)
             } else {

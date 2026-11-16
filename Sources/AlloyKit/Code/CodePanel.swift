@@ -76,6 +76,11 @@ final class OpenDocumentView {
         services.attach(self)
     }
 
+    /// This pane's caret and selections for the file: the workspace's state for (pane, path), else the buffer's default.
+    func selection(in workspace: Workspace? = nil) -> CodeSelectionState {
+        (workspace ?? self.workspace)?.selectionState(for: document.path, in: pane) ?? document.buffer.selectionState
+    }
+
     /// Detaches from the document's services (which outlive the view) and drops what the view holds.
     func close() {
         closed = true
@@ -211,12 +216,13 @@ final class OpenDocumentView {
         }
         services.drainEdits()
         let snapshot = document.buffer.snapshot()
-        let offset = document.buffer.primarySelection.head
+        let selection = self.selection(in: workspace)
+        let offset = selection.primarySelection.head
         let path = document.path
         return Task { @MainActor [weak self] in
             let outcome = await lsp.definition(path: path, utf8Offset: offset, snapshot: snapshot)
             guard !Task.isCancelled, let self, !self.closed, workspace.activeTab(in: pane) == path,
-                  self.document.buffer.version == snapshot.version, self.document.buffer.primarySelection.head == offset else { return }
+                  self.document.buffer.version == snapshot.version, selection.primarySelection.head == offset else { return }
             switch outcome {
             case .stale: return
             case .unavailable: self.showDefinitionMessage("No definition found", seconds: Self.noDefinitionSeconds)
@@ -316,9 +322,9 @@ final class OpenDocumentView {
     /// Selects the next (`+1`) or previous (`-1`) problem from the caret, wrapping.
     func stepProblem(_ direction: Int) {
         let items = DiagnosticDecorations.current(lsp?.diagnostics.entry(for: document.path), in: document.buffer)
-        let selection = document.buffer.primarySelection.range
+        let selection = self.selection().primarySelection.range
         guard let range = DiagnosticDecorations.nextProblem(items, selection: selection, direction: direction) else { return }
-        document.buffer.select(range, reveal: true)
+        self.selection().select(range, reveal: true)
     }
 
     /// The value `onChange` watches to start a rebuild.
@@ -390,7 +396,8 @@ final class OpenDocumentView {
     func step(_ direction: Int) {
         let matches = decorations.findMatches
         guard !matches.isEmpty else { return }
-        let caret = document.buffer.primarySelection
+        let selection = self.selection()
+        let caret = selection.primarySelection
         let next: Int
         if let current = decorations.currentMatch {
             next = (current + direction + matches.count) % matches.count
@@ -400,7 +407,7 @@ final class OpenDocumentView {
             next = matches.lastIndex { $0.lowerBound < caret.range.lowerBound } ?? matches.count - 1
         }
         decorations.currentMatch = next
-        document.buffer.select(matches[next], reveal: true)
+        selection.select(matches[next], reveal: true)
     }
 }
 
@@ -556,6 +563,8 @@ struct CodePanel: Component {
     let store: SessionUIStore
     let document: EditorDocument
     let view: OpenDocumentView
+    /// The pane's selection state the code view runs on; the equatable panel compares it, so a replaced state rewires the view.
+    let selection: CodeSelectionState
     /// The glass bar floating over the panel's top (its height with the gutter below it): the code scrolls under it, so
     /// the code's top margin is this; the find bar, which is not scrolled, sits below the glass bar instead.
     var topClear: Double = 0
@@ -579,6 +588,7 @@ struct CodePanel: Component {
                                idSuffix: Self.sideBySideSuffix(view.pane))
             } else {
                 CodeView(buffer: document.buffer, decorations: view.decorations)
+                    .selectionState(selection)
                     .font(family: "Menlo", size: 12)
                     .codeViewEditable(editable)
                     .scrollState(view.scroll)

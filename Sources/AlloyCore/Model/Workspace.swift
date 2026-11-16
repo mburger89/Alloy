@@ -108,6 +108,12 @@ public final class Workspace {
     public let codeLayout = CodeLayout()
     /// Per pane and path; a missing entry is the pane's default (see `presentation(of:in:)`).
     var presentations: [PaneID: [String: Presentation]] = [:]
+    /// Each pane's selection state per held path (see Workspace+Selection.swift).
+    /// Rises when a pane's selection state is dropped (and so may be replaced); the panels read it so they rebuild their code view.
+    public internal(set) var selectionRevision = 0
+    @ObservationIgnored var paneSelections: [PaneID: [String: CodeSelectionState]] = [:]
+    /// Panes by when they last took focus, newest first.
+    @ObservationIgnored var paneFocusLog: [PaneID] = []
     /// The tab the code panel shows.
     public var activeTab: String? {
         didSet {
@@ -129,7 +135,7 @@ public final class Workspace {
     /// A code view of `pane` gained (`true`) or lost focus. A loss clears the flag only while it still names `pane`,
     /// so a blur arriving after another view's gain leaves that view focused.
     public func codeFocusChanged(_ focused: Bool, pane: PaneID) {
-        if focused { focusedCodePane = pane } else if focusedCodePane == pane { focusedCodePane = nil }
+        if focused { focusedCodePane = pane; noteFocus(pane) } else if focusedCodePane == pane { focusedCodePane = nil }
     }
     /// Why a tab has no document ("Binary file", unreadable, outside the project).
     public internal(set) var tabMessages: [String: String] = [:]
@@ -473,6 +479,7 @@ public final class Workspace {
         self.hookRootForms = Self.hookRootForms(of: projectRoot)
         self.branchName = Self.readBranchName(projectRoot: projectRoot)
         codeLayout.onChatCollapsedChange = { [weak self] in self?.scheduleUIStateWrite() }
+        codeLayout.onFocus = { [weak self] id in self?.noteFocus(.group(id)) }
         fileTree.snapshotDidChange = { [weak self] in
             guard let self, let path = fileTreeSelection, !fileTree.snapshot.contains(path) else { return }
             fileTreeSelection = nil
@@ -1476,7 +1483,7 @@ public final class Workspace {
                 // The empty row after a final newline is not a line of the file.
                 let last = snap.lineCount > 1 && snap.lineRange(snap.lineCount - 1).isEmpty ? snap.lineCount - 2 : snap.lineCount - 1
                 let row = max(0, min(line - 1, last))
-                doc.buffer.select(snap.lineRange(row), reveal: true)
+                selectionState(for: path, in: pane)?.select(snap.lineRange(row), reveal: true)
             }
         }
     }
@@ -1492,7 +1499,7 @@ public final class Workspace {
         let snap = doc.buffer.snapshot()
         let wanted = range(snap)
         let lower = min(max(wanted.lowerBound, 0), snap.utf8Count), upper = min(max(wanted.upperBound, lower), snap.utf8Count)
-        doc.buffer.select(lower..<upper, reveal: true)
+        selectionState(for: path, in: pane)?.select(lower..<upper, reveal: true)
     }
 
     func install(_ result: EditorFileRead, path: String, url: URL) {
@@ -1510,6 +1517,7 @@ public final class Workspace {
             let doc = EditorDocument(path: path, buffer: buffer, language: ext.isEmpty ? nil : ext,
                                      state: state, diskStamp: stamp)
             documents[path] = doc
+            ensureSelectionStates(forInstalled: path)
             if state == .editable { autosave.watch(doc) { [weak self] d in self?.documents[d.path] === d } }
         }
     }

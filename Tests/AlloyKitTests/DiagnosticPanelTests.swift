@@ -468,13 +468,13 @@ struct DiagnosticPanelTests {
         try await DiagRig.run { r in
             try "aaaa\nbbbb\ncccc\ndddd\n".write(to: r.rig.root.appendingPathComponent("main.rs"), atomically: true, encoding: .utf8)
             let window = try await r.open("main.rs")
-            let doc = try #require(r.rig.workspace.document("main.rs"))
+            _ = try #require(r.rig.workspace.document("main.rs"))
             r.publish("main.rs", [error(6..<8), error(11..<12), error(16..<18)])
             window.tick()
             try window.click(window.element(identifier: "code-view"))
             for _ in 0..<5 { window.tick(); await Task.yield() }
-            doc.buffer.select(0..<0, reveal: false)
-            @MainActor func selection() -> Range<Int> { doc.buffer.primarySelection.range }
+            r.rig.workspace.selectionState(for: "main.rs", in: .chat)!.select(0..<0, reveal: false)
+            @MainActor func selection() -> Range<Int> { r.rig.workspace.selectionState(for: "main.rs", in: .chat)!.primarySelection.range }
             window.typeKey(FilePanelView.f8)
             #expect(selection() == 6..<8)
             window.typeKey(FilePanelView.f8)

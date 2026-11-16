@@ -27,7 +27,7 @@ import Testing
         await e.ws.settle()
         let doc = try #require(e.ws.document("a.txt"))
         #expect(e.ws.activeTab == "a.txt")
-        #expect(doc.buffer.primarySelection.range == doc.buffer.snapshot().lineRange(1))
+        #expect(e.ws.selectionState(for: "a.txt", in: .chat)?.primarySelection.range == doc.buffer.snapshot().lineRange(1))
     }
 
     @Test func selectedSessionsEditReplacesAnActiveCleanTab() async throws {

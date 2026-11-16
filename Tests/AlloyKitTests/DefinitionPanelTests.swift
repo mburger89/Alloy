@@ -69,6 +69,12 @@ private func location(_ uri: String, _ line: Int, _ from: Int, _ to: Int) -> Str
     #"[{"uri":"\#(uri)","range":{"start":{"line":\#(line),"character":\#(from)},"end":{"line":\#(line),"character":\#(to)}}}]"#
 }
 
+/// The y of the caret the focused code view reports to the input method: what the user sees as the caret's row.
+@MainActor private func caretY(_ window: TestWindow) -> Double? {
+    guard let area = window.platformWindow.textInputAreas.last, let rect = area else { return nil }
+    return Double(rect.origin.y.value)
+}
+
 @MainActor
 @Suite
 struct DefinitionPanelTests {
@@ -77,16 +83,29 @@ struct DefinitionPanelTests {
             try r.write("main.rs", "use lib;\nfn main() { call(); }\n")
             try r.write("lib.rs", "// lib\nfn call() {}\n")
             let window = try await r.open("main.rs")
-            let doc = try #require(r.rig.workspace.document("main.rs"))
-            doc.buffer.select(20..<20, reveal: false)
+            _ = try #require(r.rig.workspace.document("main.rs"))
+            r.rig.workspace.selectionState(for: "main.rs", in: .chat)!.select(20..<20, reveal: false)
             window.typeKey(FilePanelView.f12)
             try await window.runUntil { r.rig.workspace.activeTab == "lib.rs" && r.rig.workspace.document("lib.rs") != nil
-                && r.rig.workspace.document("lib.rs")?.buffer.primarySelection.range != 0..<0 }
+                && r.rig.workspace.selectionState(for: "lib.rs", in: .chat)?.primarySelection.range != 0..<0 }
             let lib = try #require(r.rig.workspace.document("lib.rs"))
             // "// lib\n" is 7 bytes; line 1, characters 3..<8 is "call(".. "fn call" -> bytes 10..<15
-            #expect(lib.buffer.primarySelection.range == 10..<15)
+            #expect(r.rig.workspace.selectionState(for: "lib.rs", in: .chat)?.primarySelection.range == 10..<15)
             #expect(String(decoding: lib.buffer.snapshot().utf8(in: 10..<15), as: UTF8.self) == "call(")
             #expect(r.rig.workspace.tabs.contains("main.rs"))
+            // The view of lib.rs runs on that state, so the caret it draws is on row 1, below row 0.
+            let view = try #require(CodePanelStore.existingView(for: lib, in: .chat))
+            _ = view
+            // The view draws the pane's state: with the caret on row 1 it reports a lower caret than with it on row 0.
+            try window.click(window.element(identifier: "code-view"))
+            let state = try #require(r.rig.workspace.selectionState(for: "lib.rs", in: .chat))
+            state.select(10..<15, reveal: false)
+            for _ in 0..<5 { window.tick(); await Task.yield() }
+            let row1 = try #require(caretY(window))
+            state.select(0..<0, reveal: false)
+            for _ in 0..<5 { window.tick(); await Task.yield() }
+            let row0 = try #require(caretY(window))
+            #expect(row1 > row0, "row 1 at \(row1), row 0 at \(row0)")
         }
     }
 
@@ -96,12 +115,17 @@ struct DefinitionPanelTests {
         try await DefRig.run(answer: { root in location(root.appendingPathComponent("main.rs").absoluteString, 0, 4, 7) }) { r in
             try r.write("main.rs", Self.cSource)
             let window = try await r.open("main.rs")
-            let doc = try #require(r.rig.workspace.document("main.rs"))
-            doc.buffer.select(75..<75, reveal: false)
+            _ = try #require(r.rig.workspace.document("main.rs"))
+            r.rig.workspace.selectionState(for: "main.rs", in: .chat)!.select(75..<75, reveal: false)
+            for _ in 0..<3 { window.tick(); await Task.yield() }
+            let before = try #require(caretY(window))
             window.typeKey(FilePanelView.f12)
-            try await window.runUntil { doc.buffer.primarySelection.range == 4..<7 }
+            try await window.runUntil { r.rig.workspace.selectionState(for: "main.rs", in: .chat)?.primarySelection.range == 4..<7 }
             for _ in 0..<10 { window.tick(); await Task.yield() }
-            #expect(doc.buffer.primarySelection.range == 4..<7)
+            #expect(r.rig.workspace.selectionState(for: "main.rs", in: .chat)?.primarySelection.range == 4..<7)
+            // The view draws that caret: it moved up from row 3 to row 0.
+            let after = try #require(caretY(window))
+            #expect(after < before, "the drawn caret moved from \(before) to \(after)")
         }
     }
 
@@ -112,12 +136,17 @@ struct DefinitionPanelTests {
         try await DefRig.run(answer: link) { r in
             try r.write("main.rs", Self.cSource)
             let window = try await r.open("main.rs")
-            let doc = try #require(r.rig.workspace.document("main.rs"))
-            doc.buffer.select(75..<75, reveal: false)
+            _ = try #require(r.rig.workspace.document("main.rs"))
+            r.rig.workspace.selectionState(for: "main.rs", in: .chat)!.select(75..<75, reveal: false)
+            for _ in 0..<3 { window.tick(); await Task.yield() }
+            let before = try #require(caretY(window))
             window.typeKey(FilePanelView.f12)
-            try await window.runUntil { doc.buffer.primarySelection.range == 4..<7 }
+            try await window.runUntil { r.rig.workspace.selectionState(for: "main.rs", in: .chat)?.primarySelection.range == 4..<7 }
             for _ in 0..<10 { window.tick(); await Task.yield() }
-            #expect(doc.buffer.primarySelection.range == 4..<7)
+            #expect(r.rig.workspace.selectionState(for: "main.rs", in: .chat)?.primarySelection.range == 4..<7)
+            // The view draws that caret: it moved up from row 3 to row 0.
+            let after = try #require(caretY(window))
+            #expect(after < before, "the drawn caret moved from \(before) to \(after)")
         }
     }
 

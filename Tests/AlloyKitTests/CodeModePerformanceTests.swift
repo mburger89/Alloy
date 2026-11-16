@@ -243,10 +243,10 @@ import Testing
         try window.click(window.element(identifier: "code-view"))
         window.typeText("x")
         for _ in 0..<10 { window.tick(); await Task.yield() }
-        doc.buffer.select(120..<125)
+        rig.workspace.selectionState(for: "big.swift", in: .chat)!.select(120..<125)
         view.scroll.position = CodeScrollPosition(row: 40, x: 0)
         for _ in 0..<10 { window.tick(); await Task.yield() }
-        let caret = doc.buffer.primarySelection.range, scroll = view.scroll.position, text = doc.buffer.snapshot().text
+        let caret = rig.workspace.selectionState(for: "big.swift", in: .chat)!.primarySelection.range, scroll = view.scroll.position, text = doc.buffer.snapshot().text
         let writes = rig.workspace.writeCount, version = doc.buffer.version
         #expect(doc.buffer.canUndo && doc.isDirty)
         rig.workspace.setMode(.code)
@@ -255,7 +255,7 @@ import Testing
         for _ in 0..<10 { window.tick(); await Task.yield() }
         let after = try #require(CodePanelStore.existingView(for: doc))
         #expect(after === view)
-        #expect(doc.buffer.primarySelection.range == caret)
+        #expect(rig.workspace.selectionState(for: "big.swift", in: .chat)?.primarySelection.range == caret)
         #expect(after.scroll.position == scroll, "scroll \(after.scroll.position) vs \(scroll)")
         #expect(after.findVisible && after.findQuery == "value3")
         #expect(doc.buffer.snapshot().text == text && doc.isDirty && doc.buffer.canUndo)

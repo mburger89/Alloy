@@ -177,7 +177,9 @@ private let longNew = (1...200).map { $0 == 100 ? "let value100 = 30000" : "let 
         try window.click(window.element(identifier: "open-in-file-\(id.uuidString)"))
         try await window.runUntil { rig.workspace.activeTab == "login.swift" && rig.workspace.document("login.swift") != nil }
         let doc = try #require(rig.workspace.document("login.swift"))
-        try await window.runUntil { doc.buffer.primarySelection.range == doc.buffer.snapshot().lineRange(1) }
+        try await window.runUntil { rig.workspace.selectionState(for: doc.path, in: .chat)?.primarySelection.range == doc.buffer.snapshot().lineRange(1) }
+        let view = try #require(CodePanelStore.existingView(for: doc, in: .chat))
+        #expect(view.selection(in: rig.workspace) === rig.workspace.selectionState(for: doc.path, in: .chat))
         #expect(rig.workspace.presentation(of: doc.path, in: .chat) == .inline)
         try window.click(window.element(identifier: "side-by-side-\(id.uuidString)"))
         try await window.runUntil { rig.workspace.presentation(of: doc.path, in: .chat) == .sideBySide }

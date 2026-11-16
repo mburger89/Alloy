@@ -34,7 +34,8 @@ struct FilePanelView: Component {
             if let message = workspace.tabMessages[path] {
                 VStack(spacing: 0) { FilePanelMessage(text: message) }.padding(top)
             } else if let document, let view {
-                CodePanel(workspace: workspace, store: store, document: document, view: view, topClear: clear).equatable()
+                let _ = workspace.selectionRevision
+                CodePanel(workspace: workspace, store: store, document: document, view: view, selection: view.selection(in: workspace), topClear: clear).equatable()
                     .id(document.id.uuidString)
             } else {
                 VStack(spacing: 0) { FilePanelMessage(text: "Loading\u{2026}") }.padding(top)

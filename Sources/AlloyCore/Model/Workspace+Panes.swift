@@ -47,6 +47,7 @@ extension Workspace {
         case .group(let id):
             if let g = codeLayout.groups[id], !g.tabs.contains(path) { g.tabs.append(path); scheduleUIStateWrite() }
         }
+        ensureSelectionState(path, in: pane)
     }
 
     /// Makes `path` the pane's active tab; leaving a dirty tab saves it (Chat's `activeTab` does that itself).
@@ -87,6 +88,7 @@ extension Workspace {
             scheduleUIStateWrite()
             if g.tabs.isEmpty { collapseGroupIfEmpty(id) }
         }
+        dropSelectionState(path, from: pane)
         if presentations[pane]?[path] != nil { presentations[pane]?.removeValue(forKey: path) }
     }
 

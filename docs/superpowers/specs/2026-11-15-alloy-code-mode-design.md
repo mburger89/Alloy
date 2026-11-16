@@ -75,7 +75,7 @@ each of those gets its own design later.
      (it shows an empty "Open a file with ⌘P or from the tree" state).
    - Focusing a neighbouring group uses ⌃⌘← / ⌃⌘→ / ⌃⌘↑ / ⌃⌘↓ **(my call)**.
    - The same file open in two groups is one document: edits show in both at once, each group keeps its own scroll
-     and caret.
+     and caret (its own selection state over the shared buffer).
    - Quick Open (⌘P) opens into the focused group.
 5. **Shared with Chat mode.** Both modes use the workspace's one set of open documents, so unsaved edits, undo
    history and LSP state carry across a switch. Chat mode's file panel keeps its own tab list; switching to Chat shows
@@ -108,10 +108,12 @@ each of those gets its own design later.
      isn't there. Files opened only in other Code groups don't appear in Chat's tabs.
    - Leaving a tab within a group saves it, like today's rule. Moving focus between groups doesn't save.
 3. **Per-group caret, scroll, find and diff toggle.** Each group's view of a document has its own scroll position,
-   find state and diff/plain toggle (`diffMode` moves from the document to the view). Caret and selection are stored
-   on the shared `CodeBuffer` in MetalUI today (`MetalUICodeBuffer/CodeBuffer.swift:153`), so two groups showing one
-   file share one caret until MetalUI lets a code view own its selections over a shared buffer. That is a MetalUI
-   gap to file; Alloy does not build its own selection layer. `OpenDocumentView` splits into a per-document part
+   find state and diff/plain toggle (`diffMode` moves from the document to the view). Caret and selection are per view:
+   the workspace keeps a MetalUI `CodeSelectionState` per (pane, path), created when a pane starts holding the path
+   and dropped when it releases it; each pane's `CodeView` runs on its own state (`.selectionState(_:)`), and edits
+   in any view move every other view's caret. A new pane seeds its caret from the most recently focused pane showing
+   the file, a split copies the source group's caret, and jumps (go to definition, quick open lines, follow edits)
+   move only the target pane's caret. `OpenDocumentView` splits into a per-document part
    (highlighter, LSP, diagnostics) and a per-view part (scroll, find, diff toggle).
 4. **File tree data.** The tree is built from FileIndex's cached paths (`git ls-files --cached --others
    --exclude-standard`, or the walk outside git), so it shows no empty folders. File-change events trigger a

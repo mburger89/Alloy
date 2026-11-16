@@ -27,6 +27,7 @@ extension FilePanelView: Equatable {
 extension CodePanel: Equatable {
     nonisolated static func == (a: Self, b: Self) -> Bool {
         a.workspace === b.workspace && a.store === b.store && a.document === b.document && a.view === b.view
+            && a.selection === b.selection
             && a.topClear == b.topClear
     }
 }

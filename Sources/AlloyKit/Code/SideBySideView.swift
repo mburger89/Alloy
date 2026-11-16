@@ -86,6 +86,7 @@ struct SideBySideView: Component {
             }
             Divider()
             CodeView(buffer: document.buffer, decorations: view.decorations)
+                .selectionState(view.selection(in: workspace))
                 .font(family: "Menlo", size: 12)
                 .codeViewEditable(editable)
                 .scrollState(view.scroll)

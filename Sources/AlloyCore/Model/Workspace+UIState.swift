@@ -9,6 +9,7 @@ extension Workspace {
         guard self.mode != mode else { return }
         if mode == .chat { syncChatToFocusedGroup() } else { seedEmptyGroupFromChat() }
         self.mode = mode
+        noteFocus(mode == .code ? .group(codeLayout.focusedGroupID) : .chat)
         if mode == .code { loadFocusedGroupDocument() }
         // The Chat code view the flag describes is torn down by the switch (its blur never fires); Code mode's group
         // views set their own focus. Nothing is saved.
@@ -93,6 +94,9 @@ extension Workspace {
         layout.tree = tree
         layout.focus(groups[saved.focused] != nil ? saved.focused : tree.groupIDs[0])
         for id in presentations.keys { if case .group = id { presentations.removeValue(forKey: id) } }
+        // The groups' states go (their tabs were replaced); the focus log keeps the entries of groups that survive.
+        for id in paneSelections.keys { if case .group = id { paneSelections.removeValue(forKey: id); selectionRevision += 1 } }
+        paneFocusLog.removeAll { if case .group(let g) = $0 { return layout.groups[g] == nil } else { return false } }
     }
 
     /// Loads `ui-state.json`. Missing, corrupt or newer files give the defaults; a newer file is never overwritten.

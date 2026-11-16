@@ -368,8 +368,8 @@ import Testing
         try window.click(window.element(identifier: "code-view-\(g0)"))
         await settle(window, 5)
         #expect(rig.workspace.codeLayout.focusedGroupID == g0)
-        let doc = try #require(rig.workspace.document("main.rs"))
-        doc.buffer.select(20..<20, reveal: false)
+        _ = try #require(rig.workspace.document("main.rs"))
+        rig.workspace.selectionState(for: "main.rs", in: .group(g0))!.select(20..<20, reveal: false)
         if viaMenu { rig.workspace.goToDefinition?() } else { window.typeKey(FilePanelView.f12) }
         try await window.runUntil { rig.workspace.activeTab(in: .group(g0)) == "lib.rs" }
         #expect(rig.workspace.activeTab(in: .group(g1)) == "main.rs")

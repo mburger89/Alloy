@@ -117,16 +117,16 @@ private struct SeededRng: RandomNumberGenerator {
         e.write("a.txt", "one\ntwo\nthree\n")
         await e.ws.open("a.txt")
         let doc = try #require(e.ws.document("a.txt"))
-        let before = doc.buffer.revealSerial
+        let before = e.ws.selectionState(for: doc.path, in: .chat)!.revealSerial
         await e.ws.open("a.txt", revealLine: 2, mode: .sideBySide)
         let snap = doc.buffer.snapshot()
-        #expect(doc.buffer.primarySelection.range == snap.lineRange(1))
-        #expect(doc.buffer.revealSerial > before)
+        #expect(e.ws.selectionState(for: doc.path, in: .chat)!.primarySelection.range == snap.lineRange(1))
+        #expect(e.ws.selectionState(for: doc.path, in: .chat)!.revealSerial > before)
         #expect(e.ws.presentation(of: doc.path, in: .chat) == .sideBySide)
         // A second reveal of the same line still reveals.
-        let again = doc.buffer.revealSerial
+        let again = e.ws.selectionState(for: doc.path, in: .chat)!.revealSerial
         await e.ws.open("a.txt", revealLine: 2)
-        #expect(doc.buffer.revealSerial > again)
+        #expect(e.ws.selectionState(for: doc.path, in: .chat)!.revealSerial > again)
         #expect(e.ws.presentation(of: doc.path, in: .chat) == .sideBySide)
     }
 
@@ -135,11 +135,11 @@ private struct SeededRng: RandomNumberGenerator {
         e.write("a.txt", "one\ntwo\n")
         await e.ws.open("a.txt", revealLine: 99)
         let doc = try #require(e.ws.document("a.txt"))
-        #expect(doc.buffer.primarySelection.range == doc.buffer.snapshot().lineRange(1))
+        #expect(e.ws.selectionState(for: doc.path, in: .chat)!.primarySelection.range == doc.buffer.snapshot().lineRange(1))
         e.write("b.txt", "solo")
         await e.ws.open("b.txt", revealLine: 5)
         let b = try #require(e.ws.document("b.txt"))
-        #expect(b.buffer.primarySelection.range == b.buffer.snapshot().lineRange(0))
+        #expect(e.ws.selectionState(for: "b.txt", in: .chat)!.primarySelection.range == b.buffer.snapshot().lineRange(0))
     }
 
     @Test func revealWorksOnAReadOnlyDocument() async throws {
@@ -147,10 +147,10 @@ private struct SeededRng: RandomNumberGenerator {
         try Data([0x61, 0xFF, 0x0A, 0x62, 0x0A]).write(to: e.root.appendingPathComponent("bad.txt"))
         await e.ws.open("bad.txt")
         let doc = try #require(e.ws.document("bad.txt"))
-        let before = doc.buffer.revealSerial
+        let before = e.ws.selectionState(for: doc.path, in: .chat)!.revealSerial
         await e.ws.open("bad.txt", revealLine: 2)
-        #expect(doc.buffer.primarySelection.range == doc.buffer.snapshot().lineRange(1))
-        #expect(doc.buffer.revealSerial > before)
+        #expect(e.ws.selectionState(for: doc.path, in: .chat)!.primarySelection.range == doc.buffer.snapshot().lineRange(1))
+        #expect(e.ws.selectionState(for: doc.path, in: .chat)!.revealSerial > before)
         #expect(!doc.isDirty)
     }
 

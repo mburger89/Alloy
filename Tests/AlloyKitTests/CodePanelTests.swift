@@ -187,9 +187,9 @@ func emitEdit(_ rig: Rig, old: String, new: String, toolUseID: String) async thr
         window.typeText("let")
         func count() -> String? { (try? window.element(identifier: "find-count")).flatMap { $0.value ?? $0.label } }
         try await window.runUntil { count() == "3 matches" }
-        let doc = try #require(rig.workspace.document("login.swift"))
+        _ = try #require(rig.workspace.document("login.swift"))
         try window.click(window.element(identifier: "find-next"))
-        #expect(doc.buffer.primarySelection.range == 0..<3)
+        #expect(rig.workspace.selectionState(for: "login.swift", in: .chat)?.primarySelection.range == 0..<3)
         try await window.runUntil { count() == "1 of 3" }
         window.typeText("x")
         try await window.runUntil { count() == "No matches" }
