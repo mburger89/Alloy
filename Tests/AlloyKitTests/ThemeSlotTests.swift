@@ -147,7 +147,7 @@ import Testing
         await rig.transports[0].emit(.assistantBlock(messageID: "m0", block: .text("```swift\nfunc\n```")))
         for _ in 0..<20_000 where session.transcript.blocks.isEmpty { await Task.yield() }
         let window = try TestWindow(size: Size(width: Pixels(1200), height: Pixels(800)), colorScheme: .dark) {
-            rootView(workspace: rig.workspace)
+            rootView(workspace: rig.workspace, center: testCenter(for: rig.workspace))
         }
         window.tick()
         window.tick()

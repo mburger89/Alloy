@@ -11,7 +11,7 @@ extension AlloyScreen: Equatable {
 }
 
 extension SidebarView: Equatable {
-    nonisolated static func == (a: Self, b: Self) -> Bool { a.workspace === b.workspace }
+    nonisolated static func == (a: Self, b: Self) -> Bool { a.workspace === b.workspace && a.keymap === b.keymap }
 }
 
 extension ChatView: Equatable {

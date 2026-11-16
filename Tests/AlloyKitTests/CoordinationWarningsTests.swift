@@ -89,7 +89,7 @@ private final class WarnRig {
 
     func window(width: Float = 1200, dark: Bool = false) throws -> TestWindow {
         let ws = workspace
-        let w = try TestWindow(size: Size(width: Pixels(width), height: Pixels(800)), colorScheme: dark ? .dark : .light) { rootView(workspace: ws) }
+        let w = try TestWindow(size: Size(width: Pixels(width), height: Pixels(800)), colorScheme: dark ? .dark : .light) { rootView(workspace: ws, center: testCenter(for: ws)) }
         w.tick(); w.tick()
         return w
     }

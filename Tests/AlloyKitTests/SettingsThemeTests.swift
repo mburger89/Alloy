@@ -28,7 +28,7 @@ import Testing
         if let settings { try rig.workspace.updateSettings(settings) }
         let holder = Holder()
         let window = try TestWindow(size: Size(width: width, height: Pixels(800))) {
-            rootView(workspace: rig.workspace, themes: holder.controller)
+            rootView(workspace: rig.workspace, themes: holder.controller, center: testCenter(for: rig.workspace))
         }
         let watcher = ScriptedChangeSource()
         // The app is the theme host, as in main.swift.

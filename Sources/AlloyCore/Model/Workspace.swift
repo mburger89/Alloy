@@ -263,6 +263,8 @@ public final class Workspace {
     /// True once `restoreUIState` has finished (also with no, a corrupt or a newer file). Split views read their saved sizes when
     /// first built, so Code mode builds its split only after this; it never goes back to false.
     public internal(set) var uiStateRestored = false
+    /// The ids of the commands run most recently, newest first. Read when the palette opens; never observed.
+    @ObservationIgnored public internal(set) var recentCommands: [String] = []
     @ObservationIgnored var savedPaneSizes: [String: [Double]] = [:]
     @ObservationIgnored var uiStateTimer: Task<Void, Never>?
     @ObservationIgnored var uiStateWriteCount = 0
@@ -427,6 +429,8 @@ public final class Workspace {
     @ObservationIgnored public var onLanguageServersChanged: (@MainActor ([String: ServerConfigOverride]) -> Void)?
     /// Awaited at the end of `stopAll()`: whatever else must stop before the app quits (the language servers).
     @ObservationIgnored public var onStop: (@MainActor () async -> Void)?
+    /// Called from `updateSettings` when the user's key overrides changed; the command registry resolves them into the keymap.
+    @ObservationIgnored public var onKeybindingsChanged: (@MainActor ([String: String]) -> Void)?
     /// Go to Definition for the active tab's caret (set by the code panel; the menu and F12 call it).
     @ObservationIgnored public var goToDefinition: (@MainActor () -> Void)?
     /// An opaque slot for the UI layer's language-server coordinator (AlloyCore cannot name that type).
@@ -629,7 +633,9 @@ public final class Workspace {
             || s.shareAcrossProjects != settings.shareAcrossProjects
         let visibilityChanged = s.shareKnowledge != settings.shareKnowledge || s.shareAcrossProjects != settings.shareAcrossProjects
         let serversChanged = s.languageServers != settings.languageServers
+        let keybindingsChanged = s.keybindings != settings.keybindings
         settings = s
+        if keybindingsChanged { onKeybindingsChanged?(s.keybindings) }
         themeWorkshop?.settingsDidChange()
         if serversChanged { onLanguageServersChanged?(s.languageServers) }
         if visibilityChanged { reloadKnowledgeAfterSettingsChange() }

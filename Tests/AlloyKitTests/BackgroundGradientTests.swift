@@ -96,7 +96,7 @@ import Testing
         let rig = Rig()
         let holder = Holder()
         let window = try TestWindow(size: Size(width: Pixels(1200), height: Pixels(900))) {
-            rootView(workspace: rig.workspace, themes: holder.controller)
+            rootView(workspace: rig.workspace, themes: holder.controller, center: testCenter(for: rig.workspace))
         }
         let controller = ThemeController(workspace: rig.workspace, host: window.testApp.app, watcher: ScriptedChangeSource())
         holder.controller = controller

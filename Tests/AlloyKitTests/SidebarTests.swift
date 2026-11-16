@@ -57,7 +57,7 @@ import Testing
         let a = await rig.workspace.newSession(name: "A")
         let b = await rig.workspace.newSession(name: "B")
         let window = try TestWindow(size: Size(width: Pixels(1200), height: Pixels(800)), colorScheme: dark ? .dark : .light) {
-            rootView(workspace: rig.workspace)
+            rootView(workspace: rig.workspace, center: testCenter(for: rig.workspace))
         }
         window.tick(); window.tick()
         let resolved = try resolvedInWindow([.sessionSelection, Color(ColorToken.accent)], dark: dark)

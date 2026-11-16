@@ -137,7 +137,7 @@ import Testing
 
     @Test func settingsMenuItemIsDisabledWithoutAProject() throws {
         let model = LauncherModel()
-        let window = try TestWindow(size: Size(width: Pixels(900), height: Pixels(600))) { launcherRoot(model: model) }
+        let window = try TestWindow(size: Size(width: Pixels(900), height: Pixels(600))) { launcherRoot(model: model, center: testCenter(for: model)) }
         window.installAlloyMenu(model: model)
         window.tick()
         let item = try #require(window.testApp.menuBar.flatMap(\.items).first { $0.title == "Settings…" })
@@ -215,7 +215,7 @@ import Testing
         let rig = Rig()
         let a = await rig.workspace.newSession(name: "A")
         // A window just wide enough that the split view gives the sidebar its 200 pt minimum.
-        let window = try TestWindow(size: Size(width: Pixels(760), height: Pixels(800))) { rootView(workspace: rig.workspace) }
+        let window = try TestWindow(size: Size(width: Pixels(760), height: Pixels(800))) { rootView(workspace: rig.workspace, center: testCenter(for: rig.workspace)) }
         window.tick(); window.tick()
         let id = "session-rereads-\(a.id.uuidString)"
         try await window.runUntil { (try? window.element(identifier: "session-row-\(a.id.uuidString)")) != nil }
@@ -263,7 +263,7 @@ import Testing
         let a = await rig.workspace.newSession(name: "A")
         a.redundantReads = 4
         rig.workspace.notesServed = 2
-        let window = try TestWindow(size: Size(width: Pixels(760), height: Pixels(800))) { rootView(workspace: rig.workspace) }
+        let window = try TestWindow(size: Size(width: Pixels(760), height: Pixels(800))) { rootView(workspace: rig.workspace, center: testCenter(for: rig.workspace)) }
         window.tick(); window.tick()
         let rereads = "session-rereads-\(a.id.uuidString)"
         try await window.runUntil { (try? window.element(identifier: "knowledge-stats")) != nil && (try? window.element(identifier: rereads)) != nil }
@@ -341,6 +341,27 @@ import Testing
         try await window.runUntil { !rig.workspace.settings.shareAcrossProjects }
         #expect(!AlloySettings.load(appSupport: rig.root.appendingPathComponent("support")).shareAcrossProjects)
         await rig.workspace.stopAll()
+    }
+
+    @Test func paletteShowDisabledToggleSaves() async throws {
+        let rig = Rig()
+        let main = try alloyWindow(rig.workspace)
+        let window = try await open(main)
+        #expect(rig.workspace.settings.paletteShowsDisabled)
+        try window.click(window.element(identifier: "settings-palette-show-disabled"))
+        try await window.runUntil { !rig.workspace.settings.paletteShowsDisabled }
+        #expect(!AlloySettings.load(appSupport: rig.root.appendingPathComponent("support")).paletteShowsDisabled)
+        await rig.workspace.stopAll()
+    }
+
+    @Test func failedPaletteToggleSaveShowsErrorAndKeepsTheValue() async throws {
+        let rig = Rig()
+        try Data().write(to: rig.root.appendingPathComponent("support"))
+        let main = try alloyWindow(rig.workspace)
+        let window = try await open(main)
+        try window.click(window.element(identifier: "settings-palette-show-disabled"))
+        try await window.runUntil { (try? window.element(identifier: "settings-error")) != nil }
+        #expect(rig.workspace.settings.paletteShowsDisabled)
     }
 
     @Test func shareOtherProjectsDisabledWithoutSharing() async throws {

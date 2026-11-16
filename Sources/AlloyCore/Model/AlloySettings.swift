@@ -24,6 +24,9 @@ public struct AlloySettings: Codable, Equatable, Sendable {
     /// Show a session's edits in the right pane as they happen.
     public var followEdits: Bool
 
+    /// Show commands that cannot run right now (greyed) in the command palette. Off hides them.
+    public var paletteShowsDisabled: Bool
+
     public var themeMode: ThemeMode
     /// The theme id used in `.single` mode.
     public var theme: String
@@ -46,13 +49,19 @@ public struct AlloySettings: Codable, Equatable, Sendable {
     /// empty string to hide the image the theme file names. A theme with no entry shows its file's own image, if any.
     public var backgroundImages: [String: String]
 
+    /// Key overrides by command id: a canonical chord such as `primary+shift+p`, or `"none"` to unbind. Unknown ids are
+    /// kept; malformed chords are ignored when resolved.
+    public var keybindings: [String: String]
+
     public init(claudePath: String? = nil, lastProjectPath: String? = nil,
-                shareKnowledge: Bool = true, shareAcrossProjects: Bool = true, askBeforeSharedNotes: Bool = false, followEdits: Bool = true,
+                shareKnowledge: Bool = true, shareAcrossProjects: Bool = true, askBeforeSharedNotes: Bool = false, followEdits: Bool = true, paletteShowsDisabled: Bool = true,
                 themeMode: ThemeMode = .single, theme: String = "dracula",
                 lightTheme: String = "alloy-light", darkTheme: String = "dracula",
                 languageServers: [String: ServerConfigOverride] = [:],
                 appearance: AppearanceOverrides = AppearanceOverrides(), glass: Bool = true,
-                backgroundImages: [String: String] = [:]) {
+                backgroundImages: [String: String] = [:],
+                keybindings: [String: String] = [:]) {
+        self.keybindings = keybindings
         self.backgroundImages = backgroundImages
         self.glass = glass
         self.appearance = appearance
@@ -67,10 +76,11 @@ public struct AlloySettings: Codable, Equatable, Sendable {
         self.shareAcrossProjects = shareAcrossProjects
         self.askBeforeSharedNotes = askBeforeSharedNotes
         self.followEdits = followEdits
+        self.paletteShowsDisabled = paletteShowsDisabled
     }
 
     private enum CodingKeys: String, CodingKey {
-        case claudePath, lastProjectPath, shareKnowledge, shareAcrossProjects, askBeforeSharedNotes, followEdits, themeMode, theme, lightTheme, darkTheme, languageServers, appearance, glass, backgroundImages
+        case claudePath, lastProjectPath, shareKnowledge, shareAcrossProjects, askBeforeSharedNotes, followEdits, paletteShowsDisabled, themeMode, theme, lightTheme, darkTheme, languageServers, appearance, glass, backgroundImages, keybindings
     }
 
     /// Every key is optional, so a file written by an older Alloy still loads with its values intact.
@@ -82,6 +92,7 @@ public struct AlloySettings: Codable, Equatable, Sendable {
         shareAcrossProjects = try c.decodeIfPresent(Bool.self, forKey: .shareAcrossProjects) ?? true
         askBeforeSharedNotes = try c.decodeIfPresent(Bool.self, forKey: .askBeforeSharedNotes) ?? false
         followEdits = try c.decodeIfPresent(Bool.self, forKey: .followEdits) ?? true
+        paletteShowsDisabled = try c.decodeIfPresent(Bool.self, forKey: .paletteShowsDisabled) ?? true
         // The theme keys are lenient: a hand-edited bad value falls back to the default instead of failing the whole file
         // (which would make `load` return defaults and the next save wipe every other setting).
         themeMode = (try? c.decodeIfPresent(ThemeMode.self, forKey: .themeMode)) ?? .single
@@ -91,6 +102,7 @@ public struct AlloySettings: Codable, Equatable, Sendable {
         appearance = (try? c.decodeIfPresent(AppearanceOverrides.self, forKey: .appearance)) ?? AppearanceOverrides()
         glass = try c.decodeIfPresent(Bool.self, forKey: .glass) ?? true
         backgroundImages = (try? c.decodeIfPresent([String: String].self, forKey: .backgroundImages)) ?? [:]
+        keybindings = (try? c.decodeIfPresent([String: String].self, forKey: .keybindings)) ?? [:]
         // Entry by entry: one malformed override is dropped without losing the others.
         let lossy = (try? c.decodeIfPresent([String: LossyOverride].self, forKey: .languageServers)) ?? nil
         languageServers = (lossy ?? [:]).compactMapValues(\.value)

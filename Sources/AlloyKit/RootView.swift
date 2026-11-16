@@ -11,9 +11,10 @@ public let alloyFilePanelIdealWidth = Pixels(360)
 
 /// The window's one root element, rebuilt every frame: sidebar | chat | file panel.
 @MainActor
-public func rootView(workspace: Workspace, themes: ThemeController? = nil) -> some Element {
-    VStack(spacing: 0) {
-        AlloyScreen(workspace: workspace, themes: themes).equatable()
+public func rootView(workspace: Workspace, themes: ThemeController? = nil, center: CommandCenter) -> some Element {
+    center.bind(workspace)
+    return VStack(spacing: 0) {
+        AlloyScreen(workspace: workspace, themes: themes, center: center).equatable()
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity)
     .background { WindowBackdropView(style: themes?.style ?? .defaults).equatable() }
@@ -104,26 +105,26 @@ struct AlloyScreen: Component {
     @State var store = SessionUIStore()
     /// The code panel's per-document state and highlight engine.
     @State var panel = CodePanelStore()
-    /// Quick-open (⌘P), shared by the global keys and the file panel.
-    @State var quickOpen = QuickOpenModel()
+    /// The shared registry and quick-open (⌘P) model, used by the global keys and the file panel.
+    let center: CommandCenter
     /// Split sizes, kept in the project's `ui-state.json`.
     @State var splitStore: UIStateSplitStore
 
-    init(workspace: Workspace, themes: ThemeController? = nil) {
-        self.workspace = workspace; self.themes = themes
+    init(workspace: Workspace, themes: ThemeController? = nil, center: CommandCenter) {
+        self.workspace = workspace; self.themes = themes; self.center = center
         _splitStore = State(wrappedValue: UIStateSplitStore(workspace: workspace))
     }
 
     var content: some ElementGroup {
         let _ = BodyProbe.hit("AlloyScreen")
-        let workspace = workspace, quickOpen = quickOpen
+        let workspace = workspace, quickOpen = center.quickOpen
         let style = themes?.style ?? .defaults
         ZStack {
             VStack(spacing: 0) {
                 TitleIsland(workspace: workspace, quickOpen: quickOpen, style: style).equatable()
                 switch workspace.mode {
                 case .chat:
-                    IslandRow(workspace: workspace, store: store, panel: panel, quickOpen: quickOpen, themes: themes,
+                    IslandRow(workspace: workspace, store: store, panel: panel, quickOpen: quickOpen, keymap: center.registry.keymap, themes: themes,
                               style: style).equatable()
                 case .code:
                     CodeIslandRow(workspace: workspace, store: store, panel: panel, quickOpen: quickOpen, splitStore: splitStore,
@@ -133,8 +134,9 @@ struct AlloyScreen: Component {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .windowTitleBarMetrics(height: Pixels(Float(style.titleBandHeight)),
                                    controlsLeading: Pixels(Float(style.titleControlsLeading)))
-            GlobalKeys(workspace: workspace, quickOpen: quickOpen)
+            GlobalKeys(workspace: workspace, registry: center.registry).equatable()
             HeldReconciler(workspace: workspace, panel: panel).equatable()
+            PaletteLayer(model: center.palette, titleBandHeight: style.titleBandHeight).equatable()
         }
     }
 }
@@ -165,11 +167,12 @@ struct IslandRow: Component, Equatable {
     let store: SessionUIStore
     let panel: CodePanelStore
     let quickOpen: QuickOpenModel
+    let keymap: ResolvedKeymap
     var themes: ThemeController?
     let style: AppearanceStyle
 
     nonisolated static func == (a: Self, b: Self) -> Bool {
-        a.workspace === b.workspace && a.store === b.store && a.panel === b.panel && a.quickOpen === b.quickOpen
+        a.workspace === b.workspace && a.store === b.store && a.panel === b.panel && a.quickOpen === b.quickOpen && a.keymap === b.keymap
             && a.themes === b.themes && a.style == b.style
     }
 
@@ -177,7 +180,7 @@ struct IslandRow: Component, Equatable {
         let _ = BodyProbe.hit("IslandRow")
         let gutter = Pixels(Float(style.gutter))
         HSplitView {
-            SidebarView(workspace: workspace).equatable()
+            SidebarView(workspace: workspace, keymap: keymap).equatable()
                 .island(style: style, identifier: "island-sidebar")
                 .frame(minWidth: Pixels(200), idealWidth: Pixels(250), maxWidth: Pixels(380))
             ChatIslandBody(workspace: workspace, store: store, themes: themes)
@@ -201,45 +204,41 @@ struct IslandRow: Component, Equatable {
 /// ⌘P, ⌘W, ⌃Tab, ⌃⇧Tab and ⌘1-9 as button shortcuts. A shortcut runs only after the focused view declined the key,
 /// so a text field mid-IME-composition (which owns every key then) never triggers one, and the panel's own ⌘F (an
 /// `onKeyPress`) and the code view's ⌘G still win. ⌘F and ⌘G are deliberately not registered here.
-struct GlobalKeys: Component {
+struct GlobalKeys: Component, Equatable {
     let workspace: Workspace
-    let quickOpen: QuickOpenModel
+    let registry: CommandRegistry
+
+    nonisolated static func == (a: Self, b: Self) -> Bool { a.workspace === b.workspace && a.registry === b.registry }
 
     var content: some ElementGroup {
-        let workspace = workspace, quickOpen = quickOpen
+        // The set of commands and the resolved keys are the only registry state read here; a change to either rebuilds
+        // the buttons, a frame without one does nothing.
+        let _ = BodyProbe.hit("GlobalKeys")
+        let _ = registry.revision
+        let _ = registry.keymap.revision
+        let registry = registry
+        let global = registry.commands.filter { $0.descriptor.binding == .global }
+        let inCode = workspace.mode == .code ? registry.commands.filter { $0.descriptor.binding == .globalInCode } : []
         HStack(spacing: Pixels(0)) {
-            Button("Quick Open") {
-                if quickOpen.isShowing { quickOpen.hide() } else { quickOpen.show(workspace: workspace) }
+            ForEach(global, id: \.descriptor.id) { command in
+                globalKey(command, registry: registry)
             }
-            .keyboardShortcut("p", modifiers: .primary)
-            .accessibilityIdentifier("global-key-quick-open")
-            // Esc closes quick-open first; a tab never closes under it.
-            Button("Close Tab") { if !quickOpen.isShowing { workspace.closeActiveTab() } }
-                .keyboardShortcut("w", modifiers: .primary)
-                .accessibilityIdentifier("global-key-close-tab")
-            Button("Next Tab") { workspace.cycleTab(1) }
-                .keyboardShortcut(.tab, modifiers: .control)
-                .accessibilityIdentifier("global-key-next-tab")
-            Button("Previous Tab") { workspace.cycleTab(-1) }
-                .keyboardShortcut(.tab, modifiers: [.control, .shift])
-                .accessibilityIdentifier("global-key-previous-tab")
             // Chat mode's sidebar button owns ⌘N; Code mode has no sidebar sessions list, so the key lives here.
-            if workspace.mode == .code {
-                Button("New Session") {
-                    workspace.startNewSession()
-                }
-                .keyboardShortcut("n")
-                .accessibilityIdentifier("global-key-new-session")
-            }
-            ForEach(1...9, id: \.self) { n in
-                Button("Tab \(n)") { workspace.selectTab(number: n) }
-                    .keyboardShortcut(KeyEquivalent(Character(String(n))), modifiers: .primary)
-                    .accessibilityIdentifier("global-key-tab-\(n)")
+            ForEach(inCode, id: \.descriptor.id) { command in
+                globalKey(command, registry: registry)
             }
         }
         .frame(width: Pixels(0), height: Pixels(0))
         .opacity(0)
         .allowsHitTesting(false)
         .accessibilityHidden(true)
+    }
+
+    /// No `.disabled`: a disabled command's key still reaches `run(id:)`, which refuses it.
+    private func globalKey(_ command: RegisteredCommand, registry: CommandRegistry) -> some Element {
+        let descriptor = command.descriptor
+        return Button(descriptor.title) { registry.run(id: descriptor.id) }
+            .keyboardShortcut(registry.keymap.chord(for: descriptor.id)?.shortcut)
+            .accessibilityIdentifier(descriptor.keyID)
     }
 }

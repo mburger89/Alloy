@@ -54,6 +54,8 @@ struct SettingsView: Component {
                 Toggle(isOn: flag(\.followEdits)) { Text("Follow edits").font(size: 13) }
                     .accessibilityIdentifier("settings-follow-edits")
                 Text("Show a session's edits in the right pane as they happen.").font(size: 11).foregroundColor(.mutedInk)
+                Toggle(isOn: flag(\.paletteShowsDisabled)) { Text("Show unavailable commands in the command palette").font(size: 13) }
+                    .accessibilityIdentifier("settings-palette-show-disabled")
             }
             Divider()
             VStack(alignment: .leading, spacing: Pixels(8)) {

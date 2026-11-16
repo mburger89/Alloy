@@ -23,7 +23,7 @@ import Testing
         try rig.workspace.updateSettings(s)
         let holder = Holder()
         let window = try TestWindow(size: Size(width: Pixels(1200), height: Pixels(800))) {
-            rootView(workspace: rig.workspace, themes: holder.controller)
+            rootView(workspace: rig.workspace, themes: holder.controller, center: testCenter(for: rig.workspace))
         }
         window.installAlloyMenu(rig.workspace)
         let controller = ThemeController(workspace: rig.workspace, host: window.window, watcher: nil)
@@ -42,7 +42,7 @@ import Testing
         let style = AppearanceStyle.defaults
         let reserve = Float(style.titleControlsLeading + style.titleLightsWidth)
         let options = HeadlessPlatformWindow.Options(hiddenTitleBarInsets: Edges(top: Pixels(32), right: Pixels(0), bottom: Pixels(0), left: Pixels(1)))
-        let window = try TestWindow(size: Size(width: Pixels(1200), height: Pixels(800)), options: options) { rootView(workspace: rig.workspace) }
+        let window = try TestWindow(size: Size(width: Pixels(1200), height: Pixels(800)), options: options) { rootView(workspace: rig.workspace, center: testCenter(for: rig.workspace)) }
         window.installAlloyMenu(rig.workspace)
         window.window.windowStyle = .hiddenTitleBar
         func rects() throws -> [Bounds<Pixels>] {
@@ -88,7 +88,7 @@ import Testing
         rig.workspace.openFilePath = "login.swift"
         let holder = Holder()
         let window = try TestWindow(size: Size(width: Pixels(1200), height: Pixels(800))) {
-            rootView(workspace: rig.workspace, themes: holder.controller)
+            rootView(workspace: rig.workspace, themes: holder.controller, center: testCenter(for: rig.workspace))
         }
         window.installAlloyMenu(rig.workspace)
         let controller = ThemeController(workspace: rig.workspace, host: window.window, watcher: nil)
@@ -154,8 +154,9 @@ extension IslandsTests {
     @MainActor @Test func windowRootPaintsTheWindowBackground() throws {
         let rig = Rig()
         let theme = try #require(ThemeLibrary(builtIns: BuiltInThemes.all).resolve("dracula"))
+        let launcher = LauncherModel(workspace: rig.workspace)
         let window = try TestWindow(size: Size(width: Pixels(1200), height: Pixels(800)), colorScheme: .dark) {
-            launcherRoot(model: LauncherModel(workspace: rig.workspace))
+            launcherRoot(model: launcher, center: testCenter(for: launcher))
         }
         window.window.darkTheme = ThemeApplier.theme(for: theme)
         window.window.setNeedsRedraw()
@@ -225,7 +226,7 @@ extension IslandsTests {
         let rig = Rig()
         let app = try TestApp()
         let window = try app.openWindow(size: Size(width: Pixels(1200), height: Pixels(800)), windowStyle: .hiddenTitleBar,
-                                        colorScheme: .dark, options: .sdlChrome) { rootView(workspace: rig.workspace) }
+                                        colorScheme: .dark, options: .sdlChrome) { rootView(workspace: rig.workspace, center: testCenter(for: rig.workspace)) }
         for _ in 0..<5 { window.tick() }
         let island = try window.element(identifier: "island-title").frame
         let name = try window.element(identifier: "title-project").frame

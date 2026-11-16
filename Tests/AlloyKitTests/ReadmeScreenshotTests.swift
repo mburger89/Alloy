@@ -64,7 +64,7 @@ struct ReadmeScreenshotTests {
 
     @MainActor private static func openWindow(_ ws: Workspace, width: Float = 1440) throws -> TestWindow {
         let w = try TestWindow(size: Size(width: Pixels(width), height: Pixels(900)), colorScheme: .dark, scaleFactor: 2) {
-            rootView(workspace: ws)
+            rootView(workspace: ws, center: testCenter(for: ws))
         }
         for _ in 0..<4 { w.tick() }
         return w

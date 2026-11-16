@@ -36,7 +36,18 @@ extension Workspace {
         let live = Set(codeLayout.tree.splitIDs.map { "code-split-\($0.uuidString)" })
         let sizes = savedPaneSizes.filter { !$0.key.hasPrefix("code-split-") || live.contains($0.key) }
         return UIState(version: UIState.currentVersion, mode: mode, paneSizes: sizes,
-                       chatCollapsed: codeLayout.chatCollapsed, layout: layout, expandedFolders: expandedFolders.sorted())
+                       chatCollapsed: codeLayout.chatCollapsed, layout: layout, expandedFolders: expandedFolders.sorted(),
+                       recentCommands: recentCommands)
+    }
+
+    /// Moves `id` to the front of this project's recent commands (capped); does nothing, and writes nothing, when it is
+    /// already first. Unknown ids are kept (a plugin may come back).
+    public func noteCommandRun(id: String) {
+        guard recentCommands.first != id else { return }
+        recentCommands.removeAll { $0 == id }
+        recentCommands.insert(id, at: 0)
+        if recentCommands.count > UIState.recentCommandLimit { recentCommands.removeLast(recentCommands.count - UIState.recentCommandLimit) }
+        scheduleUIStateWrite()
     }
 
     /// The file tree's open folders. The tree writes it (a change calls ``noteExpandedFoldersChanged()``).
@@ -52,6 +63,7 @@ extension Workspace {
     /// quick-open lands in Chat, whose tab list survives the install (a group's would be replaced, orphaning the document).
     func apply(_ state: UIState) {
         savedPaneSizes = state.paneSizes
+        recentCommands = state.recentCommands
     }
 
     /// Which of `files` and `folders` (project-relative) exist; read off the main actor.

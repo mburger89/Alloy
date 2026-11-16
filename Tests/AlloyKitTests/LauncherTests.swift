@@ -13,7 +13,7 @@ import Testing
         let model = LauncherModel()
         var asked = 0
         model.chooseFolder = { asked += 1 }
-        let window = try TestWindow(size: Size(width: Pixels(1200), height: Pixels(800))) { launcherRoot(model: model) }
+        let window = try TestWindow(size: Size(width: Pixels(1200), height: Pixels(800))) { launcherRoot(model: model, center: testCenter(for: model)) }
         window.tick()
         try window.click(window.element(identifier: "choose-folder"))
         window.tick()
@@ -29,7 +29,7 @@ import Testing
         let model = LauncherModel(workspace: rig.workspace)
         _ = await rig.workspace.newSession(name: "A")
         _ = await rig.workspace.newSession(name: "B")
-        let window = try TestWindow(size: Size(width: Pixels(1200), height: Pixels(800))) { launcherRoot(model: model) }
+        let window = try TestWindow(size: Size(width: Pixels(1200), height: Pixels(800))) { launcherRoot(model: model, center: testCenter(for: model)) }
         installWindowShutdown(on: window.window, model: model)
         window.tick()
         #expect(window.requestClose() == false, "the close is deferred")

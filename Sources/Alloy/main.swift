@@ -61,9 +61,16 @@ if case .open(let root, _) = initial.choice, let workspace = makeWorkspace(root:
 } else {
     model = LauncherModel()
 }
+// The registry and quick open, shared by the window and the menu bar. Created before the window.
+let center = CommandCenter(launcher: model)
+if let workspace = model.workspace { center.bind(workspace) }
+// The app menu's Settings… (⌘,) and the Go menu; see alloyCommands. It only needs `app`, so it exists before the window.
+let settingsWindow = SettingsWindowController { title, size, minSize, root in
+    try app.openWindow(title: title, size: size, minSize: minSize, windowStyle: .hiddenTitleBar) { settingsWindowElement(root) }
+}
 let window = try app.openWindow(title: "Alloy", size: alloyWindowSize, minSize: Size(width: Pixels(900), height: Pixels(500)),
                            windowStyle: .hiddenTitleBar) {
-    launcherRoot(model: model, themes: themeController)
+    launcherRoot(model: model, themes: themeController, center: center)
 }
 
 // The benchmark (ALLOY_FRAME_TIMING=1 with ALLOY_DATA_DIR) reads MetalUI's frame timing: it is written on SIGTERM.
@@ -83,11 +90,8 @@ if let dumpURL = FrameTimingRecorder.install(on: window, environment: ProcessInf
     frameTimingTerm = source
 }
 
-// The app menu's Settings… (⌘,) and the Go menu; see alloyCommands.
-let settingsWindow = SettingsWindowController { title, size, minSize, root in
-    try app.openWindow(title: title, size: size, minSize: minSize, windowStyle: .hiddenTitleBar) { settingsWindowElement(root) }
-}
-app.commands { alloyCommands(model: model, settings: settingsWindow, themes: themeController) }
+BuiltinCommands.register(into: center, launcher: model, settings: { settingsWindow }, themes: { themeController })
+app.commands { alloyCommands(center: center) }
 
 // Closing the window or quitting stops every claude process first.
 installWindowShutdown(on: window, model: model, settings: settingsWindow)
@@ -110,6 +114,7 @@ model.chooseFolder = {
         guard let url = urls.first else { app.terminate(); return }
         let picked = choose([url.path])
         if case .open(let root, _) = picked.choice, let workspace = makeWorkspace(root: root) {
+            center.bind(workspace)
             model.adopt(workspace)
             await workspace.restore()
         } else {

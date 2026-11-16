@@ -30,7 +30,7 @@ import Testing
         rig.workspace.openFilePath = "login.swift"
         let controller = ThemeController(workspace: rig.workspace, host: Host(), watcher: nil)
         let window = try TestWindow(size: Size(width: Pixels(1200), height: Pixels(800))) {
-            rootView(workspace: rig.workspace, themes: controller)
+            rootView(workspace: rig.workspace, themes: controller, center: testCenter(for: rig.workspace))
         }
         window.installAlloyMenu(rig.workspace)
         try await window.runUntil { (try? window.element(identifier: "code-view")) != nil }

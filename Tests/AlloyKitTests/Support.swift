@@ -9,7 +9,7 @@ import Testing
 /// The app's real root element in a headless 1200x800 window, settled so lists have built their rows.
 @MainActor
 func alloyWindow(_ workspace: Workspace) throws -> TestWindow {
-    let window = try TestWindow(size: Size(width: Pixels(1200), height: Pixels(800))) { rootView(workspace: workspace) }
+    let window = try TestWindow(size: Size(width: Pixels(1200), height: Pixels(800))) { rootView(workspace: workspace, center: testCenter(for: workspace)) }
     // The menu bar as main.swift installs it: Settings… lives there now.
     window.installAlloyMenu(workspace)
     window.tick()
@@ -32,12 +32,13 @@ extension TestWindow {
 
     /// The menu bar as main.swift installs it: Settings… lives there, and opens a Settings window of this test app.
     /// `themes` is what the Settings window picks themes through; install the menu again once the controller exists.
-    func installAlloyMenu(_ workspace: Workspace, themes: ThemeController? = nil) {
-        installAlloyMenu(model: LauncherModel(workspace: workspace), themes: themes)
+    func installAlloyMenu(_ workspace: Workspace, themes: ThemeController? = nil, center: CommandCenter? = nil) {
+        installAlloyMenu(model: LauncherModel(workspace: workspace), themes: themes, center: center ?? testCenter(for: workspace))
     }
 
     /// The same for a launcher model (without a project, Settings… is disabled).
-    func installAlloyMenu(model: LauncherModel, themes: ThemeController? = nil) {
+    func installAlloyMenu(model: LauncherModel, themes: ThemeController? = nil, center: CommandCenter? = nil) {
+        let center = center ?? testCenter(for: model)
         let testApp = self.testApp
         let rig = SettingsRig()
         rig.controller = SettingsWindowController { title, size, minSize, root in
@@ -49,7 +50,10 @@ extension TestWindow {
             return opened.window
         }
         settingsRigs[ObjectIdentifier(testApp)] = rig
-        testApp.app.commands { alloyCommands(model: model, settings: rig.controller, themes: themes) }
+        // The center's built-in commands read these through closures, so installing again swaps them.
+        testSettingsControllers[ObjectIdentifier(center)] = rig.controller
+        testThemeControllers[ObjectIdentifier(center)] = themes
+        testApp.app.commands { alloyCommands(center: center) }
     }
 
     /// The test app's Settings controller (from `installAlloyMenu`).
@@ -61,6 +65,53 @@ extension TestWindow {
         try testApp.performMenuBarItem(accessibilityIdentifier: "app-settings")
         return try #require(settingsRigs[ObjectIdentifier(testApp)]?.windows.last)
     }
+}
+
+/// One center per workspace (or launcher model) for the life of the test: the root closure runs every frame and the
+/// menu is installed separately, and both must see the same registry and quick-open model. The entry holds the key
+/// weakly and is only reused while that very object is alive, so a recycled address never returns a stale center.
+@MainActor private var testCenters: [ObjectIdentifier: (key: WeakBox, center: CommandCenter)] = [:]
+private final class WeakBox { weak var object: AnyObject?; init(_ o: AnyObject) { object = o } }
+
+@MainActor
+func testCenter(for workspace: Workspace) -> CommandCenter {
+    cachedCenter(key: workspace) {
+        let launcher = LauncherModel(workspace: workspace)
+        let center = makeTestCenter(launcher: launcher)
+        center.bind(workspace)
+        return center
+    }
+}
+
+@MainActor
+func testCenter(for model: LauncherModel) -> CommandCenter {
+    cachedCenter(key: model) {
+        let center = makeTestCenter(launcher: model)
+        if let workspace = model.workspace { center.bind(workspace) }
+        return center
+    }
+}
+
+/// The Settings controller and theme controller a center's built-in commands use, keyed by the center; set by `installAlloyMenu`.
+@MainActor private var testSettingsControllers: [ObjectIdentifier: SettingsWindowController] = [:]
+@MainActor private var testThemeControllers: [ObjectIdentifier: ThemeController] = [:]
+
+@MainActor
+private func makeTestCenter(launcher: LauncherModel) -> CommandCenter {
+    let center = CommandCenter(launcher: launcher)
+    let id = ObjectIdentifier(center)
+    BuiltinCommands.register(into: center, launcher: launcher, settings: { testSettingsControllers[id] },
+                             themes: { testThemeControllers[id] })
+    return center
+}
+
+@MainActor
+private func cachedCenter(key: AnyObject, make: () -> CommandCenter) -> CommandCenter {
+    let id = ObjectIdentifier(key)
+    if let entry = testCenters[id], entry.key.object === key { return entry.center }
+    let center = make()
+    testCenters[id] = (WeakBox(key), center)
+    return center
 }
 
 /// The Settings windows a test app opened, in order.

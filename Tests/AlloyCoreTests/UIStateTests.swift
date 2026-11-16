@@ -416,3 +416,49 @@ import Testing
         #expect(UIStateFile.load(url) == .state(UIState(mode: .code)))
     }
 }
+
+@MainActor @Suite struct RecentCommandsTests {
+    @Test func missingAndMalformedRecentsDecodeEmpty() throws {
+        let a = try JSONDecoder().decode(UIState.self, from: Data("{\"version\":1,\"mode\":\"code\"}".utf8))
+        #expect(a.recentCommands.isEmpty)
+        let b = try JSONDecoder().decode(UIState.self, from: Data("{\"version\":1,\"mode\":\"code\",\"recentCommands\":{\"x\":1}}".utf8))
+        #expect(b.recentCommands.isEmpty && b.mode == .code)
+        #expect(UIState.currentVersion == 1)
+    }
+
+    @Test func encodeCapsAtTenNewestFirst() throws {
+        let ids = (0..<15).map { "c\($0)" }
+        let data = try JSONEncoder().encode(UIState(recentCommands: ids))
+        let back = try JSONDecoder().decode(UIState.self, from: data)
+        #expect(back.recentCommands == Array(ids.prefix(10)))
+    }
+
+    @Test func noteMovesToFrontAndWritesOnlyOnChange() async {
+        let e = Env(); defer { e.cleanup() }
+        await e.ws.restoreUIState()
+        e.ws.noteCommandRun(id: "a")
+        await waitUntil("armed") { e.clock.pendingSleepers == 1 }
+        e.clock.advance(by: 0.5)
+        await waitUntil("written") { e.ws.uiStateWriteCount == 1 }
+        e.ws.noteCommandRun(id: "a")
+        e.clock.advance(by: 1)
+        for _ in 0..<50 { await Task.yield() }
+        #expect(e.ws.uiStateWriteCount == 1)
+        e.ws.noteCommandRun(id: "b")
+        await waitUntil("armed 2") { e.clock.pendingSleepers == 1 }
+        e.clock.advance(by: 0.5)
+        await waitUntil("written 2") { e.ws.uiStateWriteCount == 2 }
+        #expect(e.ws.recentCommands == ["b", "a"])
+        for i in 0..<12 { e.ws.noteCommandRun(id: "x\(i)") }
+        #expect(e.ws.recentCommands.count == 10 && e.ws.recentCommands.first == "x11")
+        #expect(UIStateFile.load(e.ws.uiStateURL) != .corrupt)
+    }
+
+    @Test func restoreCarriesRecents() async throws {
+        let e = Env(); defer { e.cleanup() }
+        try FileManager.default.createDirectory(at: e.ws.storeDirectory, withIntermediateDirectories: true)
+        try "{\"version\":1,\"recentCommands\":[\"q\",\"r\"]}".write(to: e.ws.uiStateURL, atomically: true, encoding: .utf8)
+        await e.ws.restoreUIState()
+        #expect(e.ws.recentCommands == ["q", "r"])
+    }
+}

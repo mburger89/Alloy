@@ -156,7 +156,23 @@ private func ledgerWithEdits(_ text: String, session: UUID) -> FileLedger {
     }
 }
 
+/// 2,000 command titles shaped like the palette's ("View: Split Right"), spread over a few dozen categories.
+private let paletteTitles: [String] = (0..<2_000).map { i in
+    let verbs = ["Split", "Focus", "Toggle", "Reveal", "Go to", "Open", "Close", "Rename", "Format", "Run"]
+    let nouns = ["Right", "Left Group", "Chat Column", "in Tree", "Definition", "Terminal", "Tab", "Symbol", "Document", "Task"]
+    return "Category\(i % 37): \(verbs[i % 10]) \(nouns[(i / 10) % 10]) \(i)"
+}
+
 let benchmarks: @Sendable () -> Void = {
+    // One palette keystroke: rank every command title by word-start scoring and keep the best 50 (target under 2 ms).
+    Benchmark("CommandPalette ranking", configuration: configuration(maxIterations: 200)) { benchmark in
+        benchmark.startMeasurement()
+        for query in ["spl r", "go to def", "tog chat", "rev tree"] {
+            blackHole(FuzzyMatch.topIndices(query: query, in: paletteTitles, limit: 50) { $0 % 7 == 0 ? FuzzyMatch.recentBonus : 0 })
+        }
+        benchmark.stopMeasurement()
+    }
+
     Benchmark("HighlightEngine open+viewport small", configuration: configuration()) { _ in await openAndViewport(small) }
     Benchmark("HighlightEngine open+viewport medium", configuration: configuration()) { _ in await openAndViewport(medium) }
     // 2.2 MB is over the engine's windowed threshold, so this exercises the windowed path.

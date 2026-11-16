@@ -20,14 +20,19 @@ public struct UIState: Codable, Equatable, Sendable {
     public var layout: CodeLayoutState?
     /// Project-relative paths of the file tree's open folders.
     public var expandedFolders: [String]
+    /// Ids of the commands run most recently in this project, newest first (at most `recentCommandLimit`).
+    public var recentCommands: [String]
+
+    public static let recentCommandLimit = 10
 
     public init(version: Int = UIState.currentVersion, mode: WorkspaceMode = .chat, paneSizes: [String: [Double]] = [:],
-                chatCollapsed: Bool = false, layout: CodeLayoutState? = nil, expandedFolders: [String] = []) {
+                chatCollapsed: Bool = false, layout: CodeLayoutState? = nil, expandedFolders: [String] = [], recentCommands: [String] = []) {
         self.version = version; self.mode = mode; self.paneSizes = paneSizes
         self.chatCollapsed = chatCollapsed; self.layout = layout; self.expandedFolders = expandedFolders
+        self.recentCommands = recentCommands
     }
 
-    private enum CodingKeys: String, CodingKey { case version, mode, paneSizes, chatCollapsed, layout, expandedFolders }
+    private enum CodingKeys: String, CodingKey { case version, mode, paneSizes, chatCollapsed, layout, expandedFolders, recentCommands }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -39,6 +44,18 @@ public struct UIState: Codable, Equatable, Sendable {
         chatCollapsed = (try? c.decodeIfPresent(Bool.self, forKey: .chatCollapsed)) ?? false
         layout = (try? c.decodeIfPresent(CodeLayoutState.self, forKey: .layout)) ?? nil
         expandedFolders = (try? c.decodeIfPresent([String].self, forKey: .expandedFolders)) ?? []
+        recentCommands = (try? c.decodeIfPresent([String].self, forKey: .recentCommands)) ?? []
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(version, forKey: .version)
+        try c.encode(mode, forKey: .mode)
+        try c.encode(paneSizes, forKey: .paneSizes)
+        try c.encode(chatCollapsed, forKey: .chatCollapsed)
+        try c.encodeIfPresent(layout, forKey: .layout)
+        try c.encode(expandedFolders, forKey: .expandedFolders)
+        try c.encode(Array(recentCommands.prefix(Self.recentCommandLimit)), forKey: .recentCommands)
     }
 }
 

@@ -111,3 +111,14 @@ import Testing
         #expect(!back.followEdits)
     }
 }
+
+@Suite struct PaletteShowsDisabledSettingTests {
+    @Test func defaultsOnAndSurvivesAnOldSettingsFile() throws {
+        #expect(AlloySettings().paletteShowsDisabled)
+        let old = try JSONDecoder().decode(AlloySettings.self, from: Data(#"{"theme":"dracula"}"#.utf8))
+        #expect(old.paletteShowsDisabled)
+        var off = AlloySettings(); off.paletteShowsDisabled = false
+        let back = try JSONDecoder().decode(AlloySettings.self, from: JSONEncoder().encode(off))
+        #expect(!back.paletteShowsDisabled)
+    }
+}

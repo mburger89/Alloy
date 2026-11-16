@@ -29,7 +29,7 @@ import Testing
         }
         let holder = Holder()
         let window = try TestWindow(size: Size(width: Pixels(1200), height: Pixels(900))) {
-            rootView(workspace: rig.workspace, themes: holder.controller)
+            rootView(workspace: rig.workspace, themes: holder.controller, center: testCenter(for: rig.workspace))
         }
         // The app is the theme host, as in main.swift: the Settings window follows it as well as the main one.
         let controller = ThemeController(workspace: rig.workspace, host: window.testApp.app, watcher: ScriptedChangeSource())
@@ -259,7 +259,7 @@ import Testing
         rig.workspace.openFilePath = "login.swift"
         let holder = Holder()
         let window = try TestWindow(size: Size(width: Pixels(1200), height: Pixels(900))) {
-            rootView(workspace: rig.workspace, themes: holder.controller)
+            rootView(workspace: rig.workspace, themes: holder.controller, center: testCenter(for: rig.workspace))
         }
         window.installAlloyMenu(rig.workspace)
         let controller = ThemeController(workspace: rig.workspace, host: window.window, watcher: nil)

@@ -23,7 +23,7 @@ import Testing
         if let settings { try rig.workspace.updateSettings(settings) }
         let holder = Holder()
         let window = try TestWindow(size: Size(width: Pixels(1200), height: Pixels(800))) {
-            rootView(workspace: rig.workspace, themes: holder.controller)
+            rootView(workspace: rig.workspace, themes: holder.controller, center: testCenter(for: rig.workspace))
         }
         let controller = ThemeController(workspace: rig.workspace, host: window.testApp.app, watcher: nil)
         holder.controller = controller
@@ -113,7 +113,7 @@ import Testing
         try Data().write(to: rig.root.appendingPathComponent("support"))
         let holder = Holder()
         let window = try TestWindow(size: Size(width: Pixels(1200), height: Pixels(800))) {
-            rootView(workspace: rig.workspace, themes: holder.controller)
+            rootView(workspace: rig.workspace, themes: holder.controller, center: testCenter(for: rig.workspace))
         }
         window.installAlloyMenu(rig.workspace)
         let controller = ThemeController(workspace: rig.workspace, host: window.window, watcher: nil)
@@ -133,7 +133,7 @@ import Testing
         try Data().write(to: rig.root.appendingPathComponent("support"))
         let holder = Holder()
         let window = try TestWindow(size: Size(width: Pixels(1200), height: Pixels(800))) {
-            rootView(workspace: rig.workspace, themes: holder.controller)
+            rootView(workspace: rig.workspace, themes: holder.controller, center: testCenter(for: rig.workspace))
         }
         window.installAlloyMenu(rig.workspace)
         let controller = ThemeController(workspace: rig.workspace, host: window.window, watcher: nil)

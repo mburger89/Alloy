@@ -1,66 +1,40 @@
 import AlloyCore
 import MetalUI
 
-/// The shortcut of the app menu's Settings… item.
-@MainActor public let settingsShortcut = KeyboardShortcut(",", modifiers: [.command])
-
-/// Alloy's additions to MetalUI's default menu bar: "Settings…" (⌘,) in the application menu and a Go menu.
-/// Settings… fills MetalUI's `.appSettings` group, which sits in its own section after About.
+/// Alloy's additions to MetalUI's default menu bar, generated from the command registry: "Settings…" in the
+/// application menu (MetalUI's `.appSettings` group, which sits in its own section after About), a Go menu and a View
+/// menu. Items, titles, accessibility ids and shortcuts come from the registered `CommandDescriptor`s and the keymap
+/// (so user overrides apply); see docs/command-registry.md. The content closures run when the bar is shown or a key
+/// reaches the command stage, so enabled state and shortcuts are live.
 @MainActor @CommandsBuilder
-public func alloyCommands(model: LauncherModel, settings: SettingsWindowController, themes: ThemeController?) -> some Commands {
+public func alloyCommands(center: CommandCenter) -> some Commands {
+    let registry = center.registry
     CommandGroup(replacing: .appSettings) {
-        // Settings edit the open project's workspace, so it needs a project; the chooser has none.
-        Button("Settings…") { if let workspace = model.workspace { settings.open(workspace: workspace, themes: themes) } }
-            .keyboardShortcut(settingsShortcut)
-            .disabled(model.workspace == nil)
-            .accessibilityIdentifier("app-settings")
+        for command in registry.commands(in: .appSettings) { registryMenuItem(command, registry: registry) }
     }
-    // Go to Definition (plain F12). A focused handler claims the key first, so the panel's own F12 handling and this
-    // item never both fire.
     CommandMenu("Go") {
-        Button("Go to Definition") { model.workspace?.goToDefinition?() }
-            .keyboardShortcut(goToDefinitionShortcut)
+        for command in registry.commands(in: .go) { registryMenuItem(command, registry: registry) }
     }
     CommandMenu("View") {
-        Button("Chat Mode") { model.workspace?.setMode(.chat) }
-            .keyboardShortcut("1", modifiers: [.control, .command])
-            .disabled(model.workspace == nil)
-            .accessibilityIdentifier("view-mode-chat")
-        Button("Code Mode") { model.workspace?.setMode(.code) }
-            .keyboardShortcut("2", modifiers: [.control, .command])
-            .disabled(model.workspace == nil)
-            .accessibilityIdentifier("view-mode-code")
-        Button("Split Right") { model.workspace?.splitFocused(.horizontal) }
-            .keyboardShortcut("\\", modifiers: [.command])
-            .disabled(model.workspace?.mode != .code)
-            .accessibilityIdentifier("view-split-right")
-        Button("Split Down") { model.workspace?.splitFocused(.vertical) }
-            .keyboardShortcut("\\", modifiers: [.option, .command])
-            .disabled(model.workspace?.mode != .code)
-            .accessibilityIdentifier("view-split-down")
-        Button("Focus Left Group") { model.workspace?.focusGroup(.left) }
-            .keyboardShortcut(.leftArrow, modifiers: [.control, .command])
-            .disabled(model.workspace?.mode != .code)
-            .accessibilityIdentifier("view-focus-left")
-        Button("Focus Right Group") { model.workspace?.focusGroup(.right) }
-            .keyboardShortcut(.rightArrow, modifiers: [.control, .command])
-            .disabled(model.workspace?.mode != .code)
-            .accessibilityIdentifier("view-focus-right")
-        Button("Focus Up Group") { model.workspace?.focusGroup(.up) }
-            .keyboardShortcut(.upArrow, modifiers: [.control, .command])
-            .disabled(model.workspace?.mode != .code)
-            .accessibilityIdentifier("view-focus-up")
-        Button("Focus Down Group") { model.workspace?.focusGroup(.down) }
-            .keyboardShortcut(.downArrow, modifiers: [.control, .command])
-            .disabled(model.workspace?.mode != .code)
-            .accessibilityIdentifier("view-focus-down")
-        Button("Reveal in Tree") { model.workspace?.revealInTree() }
-            .keyboardShortcut("l", modifiers: [.option, .command])
-            .disabled(model.workspace?.mode != .code)
-            .accessibilityIdentifier("view-reveal-in-tree")
-        Button("Toggle Chat Column") { model.workspace?.codeLayout.chatCollapsed.toggle() }
-            .keyboardShortcut("c", modifiers: [.command, .shift])
-            .disabled(model.workspace?.mode != .code)
-            .accessibilityIdentifier("view-toggle-chat-column")
+        for command in registry.commands(in: .view) { registryMenuItem(command, registry: registry) }
     }
+    // Plugin commands that ask for a menu. Evaluated when the bar is shown (no observation), so a plugin that registers
+    // after launch appears at the next evaluation, and the menu is absent while nothing is placed in it.
+    if registry.hasCommands(in: .plugins) {
+        CommandMenu("Plugins") {
+            for command in registry.commands(in: .plugins) { registryMenuItem(command, registry: registry) }
+        }
+    }
+}
+
+/// One menu item for a registered command. Only a `.menu`-bound command carries its chord on the item; a command
+/// whose chord the user unbound (or whose chord clashed) gets no shortcut but stays in the menu.
+@MainActor
+private func registryMenuItem(_ command: RegisteredCommand, registry: CommandRegistry) -> some MenuContent {
+    let descriptor = command.descriptor
+    let shortcut = descriptor.binding == .menu ? registry.keymap.chord(for: descriptor.id)?.shortcut : nil
+    return Button(descriptor.title) { registry.run(id: descriptor.id) }
+        .keyboardShortcut(shortcut)
+        .disabled(!command.isEnabled())
+        .accessibilityIdentifier(descriptor.menuID)
 }
