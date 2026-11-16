@@ -171,6 +171,7 @@ struct GroupTabStrip: Component {
         }
         let selection = Binding<String>(get: { workspace.activeTab(in: pane) ?? tabs.first ?? "" },
                                         set: { workspace.focusGroup(id: groupID); workspace.activate($0, in: pane) })
+        let select = { (path: String) in selection.wrappedValue = path }
         VStack(spacing: 0) {
             TabStrip(selection: selection, tabs: items)
                 .selectedTabShape(style.tabSelectionShape)
@@ -178,6 +179,12 @@ struct GroupTabStrip: Component {
                 .selectedTabFill(focused ? .color(Color.glassRim) : .clear)
                 .onCloseTab { path in workspace.requestClose(path, in: pane) }
                 .onMoveTab { from, to in workspace.moveTab(from: from, to: to, in: pane) }
+                // A right click does not select, so each item selects the tab first, then splits the focused group.
+                .tabContextMenu { path in
+                    Button("Split Right") { select(path); workspace.splitFocused(.horizontal) }
+                    Button("Split Down") { select(path); workspace.splitFocused(.vertical) }
+                    Button("Close Tab") { workspace.requestClose(path, in: pane) }
+                }
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("code-group-tabs-\(groupID)")

@@ -34,7 +34,7 @@ import Testing
     /// Settings moved to its own window and the title island lost its gear pill (one element per frame): 90, measured as
     /// 1800 requests over the 20 counted frames.
     /// History: 110 pre-islands, 134 post-islands, 92 after #294/#297, 91 after #305, 90 now.
-    private static let steadyFrameRequests = 90
+    private static let steadyFrameRequests = 88
 
     @Test func typingLeavesSidebarScreenAndChatAlone() async throws {
         let (rig, _) = try await editedRig()

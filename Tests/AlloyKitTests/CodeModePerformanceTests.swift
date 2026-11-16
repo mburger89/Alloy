@@ -104,9 +104,9 @@ import Testing
     // The steady keystroke frame of Code mode, measured on this branch (Chat mode is `ViewRerunTests.steadyFrameRequests`,
     // 90). A group adds its own glass bar, tab strip, header and code view; the same file in two groups types into both.
     // History: 109 / 126 / 137 before CodeSidebarView, CodeChatColumn and CodeIslandRow became equatable.
-    private static let steadyCode1 = 93
-    private static let steadyCode2 = 110
-    private static let steadyCode3 = 121
+    private static let steadyCode1 = 91
+    private static let steadyCode2 = 107
+    private static let steadyCode3 = 117
 
     private func guardTyping(_ layout: Layout, steady: Int) async throws {
         let (rig, window, id) = try await rigged(layout)

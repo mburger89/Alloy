@@ -79,6 +79,34 @@ import Testing
         #expect(rig.workspace.selectedSessionID == b.id)
     }
 
+    @Test func sessionMenuItemsCarryATintedStatusDot() async throws {
+        let rig = Rig()
+        let a = await rig.workspace.newSession(name: "Ada")
+        let b = await rig.workspace.newSession(name: "Bea", purpose: .coding, select: false)
+        let c = await rig.workspace.newSession(name: "Cy", purpose: .coding, select: false)
+        let d = await rig.workspace.newSession(name: "Di", purpose: .coding, select: false)
+        // The four colour classes: warning, accent, error, muted.
+        a.status = .awaitingPermission
+        b.status = .working
+        c.status = .exited(status: 1, message: "")
+        d.status = .idle
+        let window = try await codeWindow(rig)
+        try openMenu(window)
+        let menu = try #require(window.presentedMenu)
+        var tints: [String] = []
+        for session in [a, b, c, d] {
+            let item = try #require(menu.item(accessibilityIdentifier: "code-session-\(session.id.uuidString)"))
+            #expect(item.title == "\(session.name) \u{2014} \(statusWord(session.status))", "the status word stays in the title for screen readers")
+            let image = try #require(item.image)
+            #expect(image.symbol == "circle.fill")
+            let expected = MenuEvaluation { Button("x", systemImage: "circle.fill") {}.tint(statusDotColor(session)) }.items.first?.image?.tint
+            #expect(image.tint == expected && expected != nil, "\(session.name)")
+            tints.append("\(try #require(image.tint))")
+        }
+        #expect(Set(tints).count == 4, "four classes, four colours")
+        #expect(menu.item(accessibilityIdentifier: "code-session-new")?.image == nil)
+    }
+
     @Test func sessionMenuNewSession() async throws {
         let rig = Rig()
         _ = await rig.workspace.newSession(name: "Ada")

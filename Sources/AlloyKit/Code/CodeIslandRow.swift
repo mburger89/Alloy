@@ -49,6 +49,7 @@ struct CodeIslandRow: Component, Equatable {
                 if collapsed {
                     HSplitView { sidebarIsland(); editorIsland() }
                         .splitViewAutosaveName("code-main-collapsed", store: splitStore)
+                        .splitViewDividerIdentifier("code-main-collapsed")
                         .splitViewDivider(.hidden, thickness: CGFloat(style.gutter))
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                     CollapsedChatStrip(workspace: workspace, style: style).equatable()
@@ -61,6 +62,7 @@ struct CodeIslandRow: Component, Equatable {
                             .frame(minWidth: codeChatWidths.min, idealWidth: codeChatWidths.ideal, maxWidth: codeChatWidths.max)
                     }
                     .splitViewAutosaveName("code-main", store: splitStore)
+                    .splitViewDividerIdentifier("code-main")
                     .splitViewDivider(.hidden, thickness: CGFloat(style.gutter))
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }

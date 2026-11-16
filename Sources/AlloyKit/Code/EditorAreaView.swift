@@ -61,6 +61,7 @@ func SplitNodeView(node: SplitTree, env: EditorAreaEnv) -> AnyElement {
                 b.frame(minWidth: codeGroupMinWidth, maxWidth: .infinity)
             }
             .splitViewAutosaveName(name, store: env.splitStore)
+            .splitViewDividerIdentifier(name)
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier(name))
         case .vertical:
@@ -69,6 +70,7 @@ func SplitNodeView(node: SplitTree, env: EditorAreaEnv) -> AnyElement {
                 b.frame(minHeight: codeGroupMinHeight, maxHeight: .infinity)
             }
             .splitViewAutosaveName(name, store: env.splitStore)
+            .splitViewDividerIdentifier(name)
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier(name))
         }
