@@ -31,6 +31,7 @@ public struct ServerCapabilities: Sendable {
     public var semanticTokens: SemanticTokensLegend?
     public var semanticTokensDelta: Bool
     public var pullDiagnostics: Bool
+    public var foldingRange: Bool
 
     /// - Parameter json: the `capabilities` object (an `InitializeResult` is unwrapped too).
     public init(json: JSONValue) {
@@ -54,6 +55,7 @@ public struct ServerCapabilities: Sendable {
             semanticTokensDelta = false
         }
         pullDiagnostics = Self.isProvided(caps["diagnosticProvider"])
+        foldingRange = Self.isProvided(caps["foldingRangeProvider"])
     }
 
     private static func isProvided(_ value: JSONValue?) -> Bool {
@@ -341,6 +343,8 @@ public actor LanguageServer {
                     "formats": .array([.string("relative")]),
                 ]),
                 "diagnostic": .object([:]),
+                // Only line numbers are used, so servers need not compute columns.
+                "foldingRange": .object(["lineFoldingOnly": .bool(true)]),
             ]),
             "window": .object(["workDoneProgress": .bool(true)]),
         ])

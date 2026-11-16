@@ -1,6 +1,7 @@
 import Foundation
 import MetalUI
 import MetalUICodeBuffer
+import AlloyCore
 import SwiftTreeSitter
 
 /// What a highlight run is, independent of colour.
@@ -164,6 +165,9 @@ public actor HighlightEngine {
         var snapshot: CodeSnapshot?
         /// The buffer version `bytes` is the text of.
         var version: UInt64
+        /// The fold ranges of the whole-file tree at `version`.
+        var foldCache: (version: UInt64, ranges: [FoldRange])?
+        var language: Language
     }
 
     private struct Waiter {
@@ -217,7 +221,8 @@ public actor HighlightEngine {
         let bytes = windowed ? [] : snapshot.utf8(in: 0..<snapshot.utf8Count)
         let tree = windowed ? nil : HighlightCore.parse(parser, old: nil, bytes: bytes)
         documents[id] = Document(support: support, parser: parser, tree: tree, windowed: windowed, bytes: bytes,
-                                 snapshot: windowed ? snapshot : nil, version: version)
+                                 snapshot: windowed ? snapshot : nil, version: version, language: language)
+        foldRuns[id] = 0
         resumeWaiters(id)
     }
 
@@ -251,6 +256,23 @@ public actor HighlightEngine {
         doc.tree = HighlightCore.parse(doc.parser, old: doc.tree, bytes: doc.bytes)
         documents[id] = doc
         resumeWaiters(id)
+    }
+
+    private var foldRuns: [UUID: Int] = [:]
+
+    /// How many times the fold query ran for `id` (test observability of the per-version cache).
+    func foldQueryRunCount(id: UUID) -> Int { foldRuns[id] ?? 0 }
+
+    /// The fold ranges of the document's whole-file tree at its current version; `nil` for an unknown id, a
+    /// windowed document or a language without a fold query. Cached per version.
+    public func foldRanges(documentID id: UUID) async -> [FoldRange]? {
+        guard let doc = documents[id], !doc.windowed, let tree = doc.tree else { return nil }
+        if let cache = doc.foldCache, cache.version == doc.version { return cache.ranges }
+        guard let query = LanguageSupport.foldQuery(for: doc.language),
+              let ranges = FoldQueryRunner.ranges(tree: tree, query: query, bytes: doc.bytes) else { return nil }
+        foldRuns[id, default: 0] += 1
+        documents[id]?.foldCache = (doc.version, ranges)
+        return ranges
     }
 
     /// The version `captures` answers for an id the engine does not hold.
@@ -357,6 +379,7 @@ public actor HighlightEngine {
     /// Forgets `id`; its waiting `captures` calls answer ``unknownVersion``.
     public func close(id: UUID) {
         documents[id] = nil
+        foldRuns[id] = nil
         resumeWaiters(id)
     }
 

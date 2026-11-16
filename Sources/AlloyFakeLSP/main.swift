@@ -24,6 +24,8 @@ import Foundation
 //   exitOnInitializeFromLaunch  from launch k on, exit(1) on `initialize` without replying
 //   stallAfterInitialized  after `initialized`, stop reading stdin forever (fills the pipe)
 //   holdDefinition  true: a definition request is answered only once the client cancels it (with null); never otherwise
+//   foldingRanges  result for textDocument/foldingRange (null when absent)
+//   holdFoldingRanges  true: a foldingRange request is answered only once the client cancels it (with null); never otherwise
 //   delayMs        sleep before each response
 //   shutdownDelayMs  sleep before answering `shutdown`
 // FAKE_LSP_LOG: file that receives every received message as one JSON line.
@@ -235,10 +237,14 @@ struct FakeLSP {
         case "textDocument/definition":
             if script["holdDefinition"]?.boolValue == true { return }
             if let id { respond(id: id, result: script["definition"] ?? .null) }
+        case "textDocument/foldingRange":
+            if script["holdFoldingRanges"]?.boolValue == true { return }
+            if let id { respond(id: id, result: script["foldingRanges"] ?? .null) }
         case "$/cancelRequest":
             // A held request is released by its cancellation.
             if script["holdSemanticTokens"]?.boolValue == true, let held = params?["id"] { respond(id: held, result: .null) }
             if script["holdDefinition"]?.boolValue == true, let held = params?["id"] { respond(id: held, result: .null) }
+            if script["holdFoldingRanges"]?.boolValue == true, let held = params?["id"] { respond(id: held, result: .null) }
         case "textDocument/semanticTokens/full", "textDocument/semanticTokens/full/delta":
             if script["holdSemanticTokens"]?.boolValue == true { return }
             if let ms = script["semanticDelayMs"]?.intValue, ms > 0 { Thread.sleep(forTimeInterval: Double(ms) / 1000) }

@@ -55,6 +55,7 @@ let package = Package(
         .target(
             name: "AlloyHighlight",
             dependencies: [
+                "AlloyCore",
                 .product(name: "MetalUI", package: "MetalUI"),
                 .product(name: "SwiftTreeSitter", package: "SwiftTreeSitter"),
                 .product(name: "TreeSitterSwift", package: "tree-sitter-swift"),
@@ -105,6 +106,9 @@ let package = Package(
             name: "AlloyHighlightTests",
             dependencies: [
                 "AlloyHighlight",
+                "AlloyCore",
+                .product(name: "MetalUICodeBuffer", package: "MetalUI"),
+                .product(name: "SwiftTreeSitter", package: "SwiftTreeSitter"),
                 .product(name: "MetalUI", package: "MetalUI"),
                 .product(name: "MetalUITesting", package: "MetalUI"),
             ]

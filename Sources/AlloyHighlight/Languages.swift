@@ -135,6 +135,22 @@ struct LanguageSupport: Sendable {
         }
     }
 
+    nonisolated(unsafe) private static var foldCache: [Language: Query] = [:]
+
+    /// The compiled fold query of `language` (compiled once); `nil` without a query or when it fails to compile.
+    static func foldQuery(for language: Language) -> Query? {
+        if let hit = lock.withLock({ foldCache[language] }) { return hit }
+        guard let source = language.foldQuerySource else { return nil }
+        do {
+            let query = try Query(language: SwiftTreeSitter.Language(language.tsLanguage), data: Data(source.utf8))
+            lock.withLock { foldCache[language] = query }
+            return query
+        } catch {
+            report("fold query for \(language) failed to compile: \(error)", key: "fold-compile-\(language)")
+            return nil
+        }
+    }
+
     static func of(_ language: Language) -> LanguageSupport {
         lock.lock()
         if let hit = cache[language] { lock.unlock(); return hit }
