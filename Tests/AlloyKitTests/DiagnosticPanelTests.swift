@@ -393,7 +393,7 @@ struct DiagnosticPanelTests {
             try await window.runUntil { (try? window.element(identifier: "code-view")) != nil }
             try await window.runUntil { r.coordinator.status.byPath["login.swift"]?.state == .ready }
             let doc = try #require(r.rig.workspace.document("login.swift"))
-            doc.diffMode = .sideBySide
+            r.rig.workspace.setPresentation(.sideBySide, of: doc.path, in: .chat)
             try await window.runUntil { (try? window.element(identifier: "sbs-left")) != nil }
             let view = try #require(CodePanelStore.existingView(for: doc))
             for _ in 0..<5 { window.tick(); await Task.yield() }
@@ -404,6 +404,23 @@ struct DiagnosticPanelTests {
             #expect(view.decorations.virtualLineCount == before.0, "no message rows in the right pane")
             #expect(left.decorations.virtualLineCount == before.1)
             #expect(r.coordinator.diagnostics.counts.byPath["login.swift"]?.errors == 2, "tint and bars remain")
+        }
+    }
+
+    @Test func sideBySideHidesMessageRowsEvenWhenNoDiffBuilds() async throws {
+        try await DiagRig.run { r in
+            try panelOldText.write(to: r.rig.root.appendingPathComponent("login.swift"), atomically: true, encoding: .utf8)
+            r.rig.workspace.openFilePath = "login.swift"
+            let window = try alloyWindow(r.rig.workspace)
+            try await window.runUntil { (try? window.element(identifier: "code-view")) != nil }
+            try await window.runUntil { r.coordinator.status.byPath["login.swift"]?.state == .ready }
+            let doc = try #require(r.rig.workspace.document("login.swift"))
+            let view = try #require(CodePanelStore.existingView(for: doc))
+            r.rig.workspace.setPresentation(.sideBySide, of: doc.path, in: .chat)
+            for _ in 0..<5 { window.tick(); await Task.yield() }
+            r.publish("login.swift", [error(4..<5, "unused")])
+            window.tick()
+            #expect(view.decorations.virtualLineCount == 0, "no ledger file, so nothing builds, yet rows stay hidden")
         }
     }
 

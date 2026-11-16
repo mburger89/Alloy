@@ -42,18 +42,7 @@ extension Workspace {
     /// first changed line, `line` (1-based) a given one. The newest request wins: while an older one is still
     /// looking up its line, a newer click drops it, so two clicks never leave the older file open.
     public func requestOpen(_ path: String, edit: UUID? = nil, line: Int? = nil, mode: DiffMode? = nil) {
-        openRequestTicket += 1
-        let ticket = openRequestTicket
-        track { [weak self] in
-            guard let self else { return }
-            var reveal = line
-            if let edit {
-                await firstLineGate?(edit)
-                reveal = await firstLine(of: edit, path: path)
-            }
-            guard ticket == openRequestTicket else { return }
-            await open(path, revealLine: reveal, mode: mode)
-        }
+        requestOpen(path, edit: edit, line: line, mode: mode, in: defaultPane)
     }
 
     /// Shows a session's fresh edit in the code panel when "Follow edits" is on. The selected session's edit opens its
@@ -61,7 +50,7 @@ extension Workspace {
     /// code panel holds focus); another session's edit opens only into an empty pane. Never takes keyboard focus;
     /// `requestOpen`'s ticket makes the newest edit of a burst win.
     func followEdit(_ edit: EditRecord, by session: Session) {
-        guard settings.followEdits else { return }
+        guard settings.followEdits, mode == .chat else { return }
         if session.id == selectedSessionID {
             if codePanelFocused { return }
             if let active = activeTab, documents[active]?.isDirty == true { return }
@@ -73,8 +62,8 @@ extension Workspace {
 
     /// Closes the active tab (saving first, as `close` does).
     public func closeActiveTab() {
-        guard let path = activeTab else { return }
-        requestClose(path)
+        guard let path = activeTab(in: defaultPane) else { return }
+        requestClose(path, in: defaultPane)
     }
 
     /// Closes the tab for `path` in a tracked task (`settle()` waits for it); the strip's close button and ⌘W both use it.

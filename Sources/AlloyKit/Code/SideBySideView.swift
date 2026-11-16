@@ -60,9 +60,11 @@ struct SideBySideView: Component {
     let view: OpenDocumentView
     /// The panel's one focus source: the right pane is the focus target, as the inline view is.
     let focused: FocusState<Bool>.Binding
+    /// Appended to `sbs-left` / `sbs-right`: empty in Chat, `-<groupID>` in a group.
+    var idSuffix = ""
 
     var content: some ElementGroup {
-        let workspace = workspace, store = store, document = document, view = view
+        let workspace = workspace, store = store, document = document, view = view, idSuffix = idSuffix
         let editable = document.state == .editable
         HStack(spacing: 0) {
             if let left = view.left {
@@ -74,11 +76,11 @@ struct SideBySideView: Component {
                     .onGutterBarClick { hit in view.selectedEdit = hit.tag.flatMap { view.leftTags[$0] } }
                     .gutterBarContextMenu { hit in
                         if let edit = hit.tag.flatMap({ view.leftTags[$0] }) {
-                            editMenu(edit: edit, workspace: workspace, store: store, document: document)
+                            editMenu(edit: edit, workspace: workspace, store: store, document: document, pane: view.pane)
                         }
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .accessibilityIdentifier("sbs-left")
+                    .accessibilityIdentifier("sbs-left" + idSuffix)
             } else {
                 Color.clear.frame(maxWidth: .infinity, maxHeight: .infinity)
             }
@@ -91,12 +93,12 @@ struct SideBySideView: Component {
                 .onGutterBarClick { hit in view.selectedEdit = hit.tag.flatMap { view.tags[$0] } }
                 .gutterBarContextMenu { hit in
                     if let edit = hit.tag.flatMap({ view.tags[$0] }) {
-                        editMenu(edit: edit, workspace: workspace, store: store, document: document)
+                        editMenu(edit: edit, workspace: workspace, store: store, document: document, pane: view.pane)
                     }
                 }
                 .focused(focused)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .accessibilityIdentifier("sbs-right")
+                .accessibilityIdentifier("sbs-right" + idSuffix)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }

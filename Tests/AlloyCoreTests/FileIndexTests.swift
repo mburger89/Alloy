@@ -49,4 +49,58 @@ import Testing
         let index = FileIndex(root: try tempDir())
         #expect(await index.paths().isEmpty)
     }
+
+    @Test func deletedTrackedFileIsNotListed() async throws {
+        let root = try tempDir()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try git(root, "init", "-q")
+        try write(root, "keep.txt"); try write(root, "gone.txt")
+        try git(root, "add", ".")
+        try git(root, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "x")
+        try FileManager.default.removeItem(at: root.appendingPathComponent("gone.txt"))
+        let index = FileIndex(root: root)
+        await index.refresh()
+        #expect(await index.paths() == ["keep.txt"])
+    }
+
+    @Test func untrackedUnignoredFileIsListed() async throws {
+        let root = try tempDir()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try git(root, "init", "-q")
+        try write(root, "new.txt")
+        let index = FileIndex(root: root)
+        await index.refresh()
+        #expect(await index.paths() == ["new.txt"])
+    }
+
+    @Test func ignoredFileIsHidden() async throws {
+        let root = try tempDir()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try git(root, "init", "-q")
+        try write(root, ".gitignore", "*.log\n"); try write(root, "a.log"); try write(root, "a.txt")
+        let index = FileIndex(root: root)
+        await index.refresh()
+        #expect(!(await index.paths()).contains("a.log"))
+        #expect(await index.paths().contains("a.txt"))
+    }
+
+    @Test func gitDirectoryNeverListed() async throws {
+        let root = try tempDir()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try git(root, "init", "-q")
+        try write(root, "a.txt")
+        let index = FileIndex(root: root)
+        await index.refresh()
+        #expect(!(await index.paths()).contains { $0.hasPrefix(".git/") })
+    }
+
+    @Test func walkSkipsBuildAndNodeModules() async throws {
+        let root = try tempDir()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try write(root, "a.txt"); try write(root, "node_modules/x.js"); try write(root, ".build/y")
+        let index = FileIndex(root: root)
+        await index.refresh()
+        #expect(await index.paths() == ["a.txt"])
+        #expect(await index.isTruncated == false)
+    }
 }

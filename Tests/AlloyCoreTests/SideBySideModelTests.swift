@@ -122,12 +122,12 @@ private struct SeededRng: RandomNumberGenerator {
         let snap = doc.buffer.snapshot()
         #expect(doc.buffer.primarySelection.range == snap.lineRange(1))
         #expect(doc.buffer.revealSerial > before)
-        #expect(doc.diffMode == .sideBySide)
+        #expect(e.ws.presentation(of: doc.path, in: .chat) == .sideBySide)
         // A second reveal of the same line still reveals.
         let again = doc.buffer.revealSerial
         await e.ws.open("a.txt", revealLine: 2)
         #expect(doc.buffer.revealSerial > again)
-        #expect(doc.diffMode == .sideBySide)
+        #expect(e.ws.presentation(of: doc.path, in: .chat) == .sideBySide)
     }
 
     @Test func revealBeyondEndSelectsTheLastRealLine() async throws {

@@ -171,4 +171,18 @@ struct SemanticHighlighterUnitTests {
         #expect(highlighter.appliedCount == 1 && highlighter.appliedRunCount == 1)
         #expect(requested == 1)
     }
+
+    @Test func viewAttachedAfterAnAnswerGetsTheNewestAnswer() {
+        let buffer = CodeBuffer("const x\n")
+        let first = CodeDecorations(buffer: buffer), second = CodeDecorations(buffer: buffer)
+        let highlighter = SemanticHighlighter(path: "a.zig") { _ in }
+        // An answer with no view attached is kept, and replayed to the one attached next.
+        highlighter.apply([(0..<5, .keyword)], version: Int(buffer.version))
+        highlighter.attach(first)
+        #expect(first.highlights(in: 0..<7, layer: .semantic).count == 1)
+        highlighter.apply([(0..<5, .keyword), (6..<7, .type)], version: Int(buffer.version))
+        highlighter.attach(second)
+        #expect(second.highlights(in: 0..<7, layer: .semantic).count == 2)
+        #expect(first.highlights(in: 0..<7, layer: .semantic).count == 2)
+    }
 }

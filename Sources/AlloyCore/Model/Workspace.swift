@@ -65,8 +65,22 @@ public final class Workspace {
     let poolBusyTimeoutMS: Int
     /// The project's files for `@file` and quick open; refreshed on demand.
     public let fileIndex: FileIndex
+    /// The file tree of Code mode, built from ``fileIndex``.
+    public let fileTree = FileTreeModel()
+    /// True while Code mode shows the tree; file events refresh it only then.
+    @ObservationIgnored public var fileTreeActive = false { didSet { if fileTreeActive, !oldValue { updateFileTreeMarks() } } }
+    /// The tree's selected row (a repo-relative path).
+    public var fileTreeSelection: String?
+    /// Set by the tree view while one is shown: scrolls the tree to a row. Reveal calls it in the same transaction as
+    /// the expansion and the selection.
+    @ObservationIgnored public var fileTreeScroll: ((String) -> Void)?
+    /// How many tree views are shown. A rebuilt sidebar shows its new tree before the old one goes (MetalUI runs a
+    /// build's onAppear before its onDisappear), so a count, not a flag, says whether any is.
+    @ObservationIgnored var fileTreeViewCount = 0
+    @ObservationIgnored var fileTreeDebounceTask: Task<Void, Never>?
+    @ObservationIgnored var fileTreeRefreshCount = 0
     public private(set) var sessions: [Session] = []
-    public private(set) var ledger: ProjectLedger
+    public private(set) var ledger: ProjectLedger { didSet { if fileTreeActive { updateFileTreeMarks() } } }
     public var selectedSessionID: Session.ID? {
         didSet {
             guard let id = selectedSessionID, id != oldValue, historyPending.contains(id) else { return }
@@ -76,8 +90,12 @@ public final class Workspace {
     /// The project-relative path shown in the file panel (set by a click on a changed file or by the command line).
     /// Alias of `activeTab` that keeps Plan 1 call sites: setting a path opens (and activates) it.
     public var openFilePath: String? {
-        get { activeTab }
+        get { activeTab(in: defaultPane) }
         set {
+            if mode == .code {
+                if let path = newValue { let pane = defaultPane; track { [weak self] in await self?.open(path, in: pane) } }
+                return
+            }
             guard let path = newValue else { activeTab = nil; return }
             if !tabs.contains(path) { tabs.append(path) }
             activeTab = path
@@ -85,17 +103,34 @@ public final class Workspace {
         }
     }
     /// Open files in open order.
-    public private(set) var tabs: [String] = []
+    public internal(set) var tabs: [String] = []
+    /// Code mode's editor groups (each a tab list; Chat's tabs stay in `tabs`).
+    public let codeLayout = CodeLayout()
+    /// Per pane and path; a missing entry is the pane's default (see `presentation(of:in:)`).
+    var presentations: [PaneID: [String: Presentation]] = [:]
     /// The tab the code panel shows.
     public var activeTab: String? {
         didSet {
             // Leaving a tab saves it.
-            guard let old = oldValue, old != activeTab, documents[old]?.isDirty == true else { return }
+            guard !activeTabChangeIsSilent, let old = oldValue, old != activeTab, documents[old]?.isDirty == true else { return }
             track { [weak self] in try? await self?.save(old) }
         }
     }
+    /// True while `setChatActive(_:saving:)` changes `activeTab` without the leave-saves rule.
+    @ObservationIgnored var activeTabChangeIsSilent = false
     /// True while the code panel holds keyboard focus (the panel reports it); following edits never interrupts it.
-    public var codePanelFocused = false
+    public var focusedCodePane: PaneID?
+    /// True while Chat's code view holds focus.
+    public var codePanelFocused: Bool {
+        get { focusedCodePane == .chat }
+        set { focusedCodePane = newValue ? .chat : nil }
+    }
+
+    /// A code view of `pane` gained (`true`) or lost focus. A loss clears the flag only while it still names `pane`,
+    /// so a blur arriving after another view's gain leaves that view focused.
+    public func codeFocusChanged(_ focused: Bool, pane: PaneID) {
+        if focused { focusedCodePane = pane } else if focusedCodePane == pane { focusedCodePane = nil }
+    }
     /// Why a tab has no document ("Binary file", unreadable, outside the project).
     public internal(set) var tabMessages: [String: String] = [:]
     var documents: [String: EditorDocument] = [:]
@@ -217,6 +252,16 @@ public final class Workspace {
     @ObservationIgnored private var mergeBusy: Set<String> = []
     @ObservationIgnored private var mergeQueue: [String: [CheckedContinuation<Void, Never>]] = [:]
     @ObservationIgnored let autosaveClock: any AutosaveClock
+    /// Chat or Code (see Workspace+UIState.swift). Set through `setMode`, which also schedules the `ui-state.json` write.
+    public internal(set) var mode: WorkspaceMode = .chat
+    /// True once `restoreUIState` has finished (also with no, a corrupt or a newer file). Split views read their saved sizes when
+    /// first built, so Code mode builds its split only after this; it never goes back to false.
+    public internal(set) var uiStateRestored = false
+    @ObservationIgnored var savedPaneSizes: [String: [Double]] = [:]
+    @ObservationIgnored var uiStateTimer: Task<Void, Never>?
+    @ObservationIgnored var uiStateWriteCount = 0
+    /// False once a newer Alloy's `ui-state.json` was read: that file is never overwritten by this run.
+    @ObservationIgnored var uiStateWritable = true
     @ObservationIgnored private var autosaveStore: Autosave?
     private var autosave: Autosave {
         if let a = autosaveStore { return a }
@@ -229,9 +274,11 @@ public final class Workspace {
     @ObservationIgnored private var opening: Set<String> = []
     /// Callers of `open` that arrived while the same path was being read; resumed when that read finished.
     @ObservationIgnored private var openWaiters: [String: [CheckedContinuation<Void, Never>]] = [:]
-    @ObservationIgnored private var closing: Set<String> = []
+    /// One close in flight: per pane and path, so two panes can close the same file independently.
+    struct CloseKey: Hashable { let pane: PaneID; let path: String }
+    @ObservationIgnored private var closing: Set<CloseKey> = []
     /// Paths opened again while their close was writing; that close then aborts.
-    @ObservationIgnored private var reopened: Set<String> = []
+    @ObservationIgnored private var reopened: Set<CloseKey> = []
     @ObservationIgnored var syncGeneration: [String: Int] = [:]
     /// Workspace-wide, so a reopened file never reuses a generation an earlier refresh still holds.
     @ObservationIgnored private var syncCounter = 0
@@ -425,6 +472,11 @@ public final class Workspace {
         self.themeTools = ThemeTools.make(workspace: self)
         self.hookRootForms = Self.hookRootForms(of: projectRoot)
         self.branchName = Self.readBranchName(projectRoot: projectRoot)
+        codeLayout.onChatCollapsedChange = { [weak self] in self?.scheduleUIStateWrite() }
+        fileTree.snapshotDidChange = { [weak self] in
+            guard let self, let path = fileTreeSelection, !fileTree.snapshot.contains(path) else { return }
+            fileTreeSelection = nil
+        }
     }
 
     // MARK: Local server
@@ -917,7 +969,7 @@ public final class Workspace {
             return
         }
         // Plan mode asks about tools that were launched pre-approved; Alloy's own tools are answered here, with no card.
-        if case .message(.controlRequest(let req)) = event, case .canUseTool(let name, let input, _, let tid, _) = req.kind,
+        if case .message(.controlRequest(let req)) = event, case .canUseTool(let name, let input, _, _, _) = req.kind,
            launchAllowedTools[s.id]?.contains(name) == true, let t = live[s.id]?.transport {
             Task { @MainActor [weak self] in await self?.deliver(.allow(requestID: req.requestID, updatedInput: input), via: t, to: s) }
             return
@@ -1314,6 +1366,7 @@ public final class Workspace {
     /// SIGKILL, bounded at about 3 s) concurrently, and this returns only once they have exited.
     public func stopAll() async {
         isShuttingDown = true
+        await flushUIState()
         warningSleeper?.cancel(); warningSleeper = nil; warningSleeperExpiry = nil
         for id in Array(idleWaiters.keys) { releaseIdleWaiters(id, reachedIdle: false) }
         stopWatching()
@@ -1393,10 +1446,11 @@ public final class Workspace {
 
     /// Opens `path` in a tab and activates it; an open tab is reused. The file is read off the main actor and
     /// the buffer is built here. `revealLine` (1-based) selects that line; `mode` sets the document's diff mode.
-    public func open(_ path: String, revealLine: Int? = nil, mode: DiffMode? = nil) async {
-        if !tabs.contains(path) { tabs.append(path) }
-        activeTab = path
-        if closing.contains(path) { reopened.insert(path) }
+    public func open(_ path: String, revealLine: Int? = nil, mode: DiffMode? = nil, in pane: PaneID? = nil) async {
+        let pane = pane ?? defaultPane
+        addTab(path, in: pane)
+        setActive(path, in: pane)
+        if closing.contains(CloseKey(pane: pane, path: path)) { reopened.insert(CloseKey(pane: pane, path: path)) }
         if documents[path] == nil, tabMessages[path] == nil, opening.insert(path).inserted {
             let root = projectRoot.standardizedFileURL.path
             let url = projectRoot.appendingPathComponent(path).standardizedFileURL
@@ -1404,7 +1458,7 @@ public final class Workspace {
                 tabMessages[path] = "This file is outside the project."
             } else {
                 let result = await Task.detached { Self.readForEditing(url: url) }.value
-                if tabs.contains(path) {
+                if holds(path) {
                     install(result, path: path, url: url)
                     await reconcileOnOpen(path, result)
                 }
@@ -1416,7 +1470,7 @@ public final class Workspace {
             await withCheckedContinuation { openWaiters[path, default: []].append($0) }
         }
         if let doc = documents[path] {
-            if let mode { doc.diffMode = mode }
+            if let mode { setPresentation(Presentation(mode), of: path, in: pane) }
             if let line = revealLine {
                 let snap = doc.buffer.snapshot()
                 // The empty row after a final newline is not a line of the file.
@@ -1431,9 +1485,10 @@ public final class Workspace {
     /// document's snapshot (clamped to the text, once the document is installed; an open of the same path already in
     /// flight is waited for). The range is not snapped to character boundaries. Nothing is selected when the file has no
     /// document.
-    public func open(_ path: String, selecting range: (CodeSnapshot) -> Range<Int>) async {
-        await open(path)
-        guard activeTab == path, let doc = documents[path] else { return }
+    public func open(_ path: String, selecting range: (CodeSnapshot) -> Range<Int>, in pane: PaneID? = nil) async {
+        let pane = pane ?? defaultPane
+        await open(path, in: pane)
+        guard activeTab(in: pane) == path, let doc = documents[path] else { return }
         let snap = doc.buffer.snapshot()
         let wanted = range(snap)
         let lower = min(max(wanted.lowerBound, 0), snap.utf8Count), upper = min(max(wanted.upperBound, lower), snap.utf8Count)
@@ -1461,21 +1516,24 @@ public final class Workspace {
 
     /// Closes the tab, saving first when the buffer is dirty. The close is abandoned (tab kept) when the save
     /// fails, when the user typed during the write, or when the file was opened again meanwhile.
-    public func close(_ path: String) async {
-        guard tabs.contains(path), closing.insert(path).inserted else { return }
-        reopened.remove(path)
-        defer { closing.remove(path); reopened.remove(path) }
+    public func close(_ path: String, in pane: PaneID? = nil) async {
+        let pane = pane ?? defaultPane
+        let key = CloseKey(pane: pane, path: path)
+        guard tabs(in: pane).contains(path), closing.insert(key).inserted else { return }
+        reopened.remove(key)
+        defer { closing.remove(key); reopened.remove(key) }
         if let doc = documents[path], doc.isDirty {
             do { try await save(path) } catch { return }
-            if doc.isDirty || reopened.contains(path) { return }
+            if doc.isDirty || reopened.contains(key) { return }
         }
-        guard let index = tabs.firstIndex(of: path) else { return }
-        tabs.remove(at: index)
+        guard tabs(in: pane).contains(path) else { return }
+        removeTab(path, from: pane)
+        // The document, its watch and its sync generation go only with the last holder.
+        guard !holds(path) else { return }
         documents.removeValue(forKey: path)
         autosave.unwatch(path)
         tabMessages.removeValue(forKey: path)
         syncGeneration.removeValue(forKey: path)
-        if activeTab == path { activeTab = tabs.indices.contains(index) ? tabs[index] : tabs.last }
     }
 
     /// Moves a tab as a drag does: `tabs.insert(tabs.remove(at: from), at: to)`. Out-of-range indexes do nothing.
@@ -1486,6 +1544,7 @@ public final class Workspace {
 
     /// Activates the next (`+1`) or previous (`-1`) tab, wrapping.
     public func cycleTab(_ step: Int) {
+        if mode == .code { return cycleTab(step, in: defaultPane) }
         guard !tabs.isEmpty else { return }
         let current = activeTab.flatMap { tabs.firstIndex(of: $0) } ?? (step > 0 ? -1 : 0)
         activeTab = tabs[((current + step) % tabs.count + tabs.count) % tabs.count]
@@ -1493,6 +1552,7 @@ public final class Workspace {
 
     /// Activates the `number`th tab (1-based); no such tab does nothing.
     public func selectTab(number: Int) {
+        if mode == .code { return selectTab(number: number, in: defaultPane) }
         guard tabs.indices.contains(number - 1) else { return }
         activeTab = tabs[number - 1]
     }
@@ -1504,7 +1564,7 @@ public final class Workspace {
 
     /// Saves every dirty open document.
     public func saveAll() async {
-        for path in tabs { try? await save(path) }
+        for path in Array(documents.keys) { try? await save(path) }
     }
 
     /// Writes the buffer to disk and records the change as the user's. The write is atomic and keeps the file's
@@ -2180,10 +2240,13 @@ public final class Workspace {
         }
     }
 
-    public func restore() async {
+    public func restore(opening file: String? = nil) async {
         ensureLoaded()
         guard !restored else { return }
         restored = true
+        await restoreUIState()
+        // The command-line file opens in the restored mode's pane, before the server starts.
+        if let file { openFilePath = file }
         await startServer()
         var renamedOnRestore = false
         for r in records where session(r.id) == nil {

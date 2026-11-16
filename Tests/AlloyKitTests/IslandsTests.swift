@@ -231,10 +231,16 @@ extension IslandsTests {
         let name = try window.element(identifier: "title-project").frame
         let pill = try window.element(identifier: "title-new-session").frame
         let y = (island.minY.value + island.maxY.value) / 2
-        let gap = Point(x: Pixels((name.maxX.value + pill.minX.value) / 2), y: Pixels(y))
+        let picker = try window.element(identifier: "mode-switch").frame
+        // The empty stretch between the project name and the Chat | Code switch (the switch itself keeps its clicks).
+        let gap = Point(x: Pixels((name.maxX.value + picker.minX.value) / 2), y: Pixels(y))
         let regions = window.windowDragRegions
         #expect(regions.contains { $0.contains(gap) }, "the empty title island at \(gap) is not a drag region")
         let onPill = Point(x: Pixels((pill.minX.value + pill.maxX.value) / 2), y: Pixels(y))
         #expect(!regions.contains { $0.contains(onPill) }, "a pill keeps its clicks")
+        let pickerGap = Point(x: Pixels((picker.maxX.value + pill.minX.value) / 2), y: Pixels(y))
+        #expect(regions.contains { $0.contains(pickerGap) }, "the empty stretch right of the switch at \(pickerGap) is not a drag region")
+        let onPicker = Point(x: Pixels((picker.minX.value + picker.maxX.value) / 2), y: Pixels(y))
+        #expect(!regions.contains { $0.contains(onPicker) }, "the mode switch keeps its clicks")
     }
 }

@@ -15,8 +15,7 @@ struct SidebarView: Component {
                 SectionHeader(title: "Sessions")
                 Spacer()
                 Button {
-                    let n = workspace.sessions.count + 1
-                    Task { await workspace.newSessionFromUser(name: "Session \(n)") }
+                    workspace.startNewSession()
                 } label: {
                     Image(systemName: "plus").font(.system(size: 13)).padding(Pixels(4))
                 }

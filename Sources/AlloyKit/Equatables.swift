@@ -56,6 +56,7 @@ extension DefinitionMessage: Equatable {
 extension FilePanelHeader: Equatable {
     nonisolated static func == (a: Self, b: Self) -> Bool {
         a.workspace === b.workspace && a.path == b.path && a.document === b.document && a.view === b.view
+            && a.pane == b.pane && a.ids == b.ids
     }
 }
 

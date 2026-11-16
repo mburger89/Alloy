@@ -30,12 +30,20 @@ struct TitleIsland: Component, Equatable {
                     .accessibilityIdentifier("title-branch")
             }
             Spacer()
+            Picker("Mode", selection: Binding(get: { workspace.mode }, set: { workspace.setMode($0) })) {
+                Text("Chat").accessibilityIdentifier("mode-chat").tag(WorkspaceMode.chat)
+                Text("Code").accessibilityIdentifier("mode-code").tag(WorkspaceMode.code)
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .segmentedPickerShape(style.buttonShape)
+            .accessibilityIdentifier("mode-switch")
+            Spacer()
             HStack(spacing: Pixels(6)) {
                 pill(style, label: "New Session", id: "title-new-session") {
                     Text("New Session").font(size: 11)
                 } action: {
-                    let n = workspace.sessions.count + 1
-                    Task { await workspace.newSessionFromUser(name: "Session \(n)") }
+                    workspace.startNewSession()
                 }
                 pill(style, label: "Quick Open", id: "title-quick-open") {
                     Text("Quick Open").font(size: 11)

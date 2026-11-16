@@ -198,6 +198,7 @@ extension Workspace {
         watchTask?.cancel(); watchTask = nil
         gitWatchTask?.cancel(); gitWatchTask = nil
         outsideDebounce?.cancel()
+        fileTreeDebounceTask?.cancel()
         gitDebounce?.cancel()
     }
 
@@ -205,6 +206,7 @@ extension Workspace {
         guard !isShuttingDown else { return }
         let arrival = autosaveClock.now
         for p in paths { pendingOutside[p] = arrival }
+        if fileTreeActive, paths.contains(where: affectsFileTree) { scheduleFileTreeRefresh() }
         guard outsideDebounce == nil else { return }
         // The deadline is taken now, so a manual clock advanced before the timer task runs still fires it.
         let deadline = arrival + Self.outsideCoalesce, clock = autosaveClock
@@ -236,7 +238,7 @@ extension Workspace {
         var unknown: [(String, Double)] = []
         var shellAround: [Double: Bool] = [:]       // per distinct arrival time
         for (rel, arrival) in rels.sorted(by: { $0.key < $1.key }) {
-            if documents[rel] != nil || tabs.contains(rel) || ledger.files[rel] != nil { toProcess.append((rel, arrival)); continue }
+            if documents[rel] != nil || holds(rel) || ledger.files[rel] != nil { toProcess.append((rel, arrival)); continue }
             // A path Alloy has never seen matters only if some shell could have written it. The modification date
             // is not known without a stat, so any window in the range `applyOutside` could pick lets the path through;
             // `applyOutside` then decides with the clamped date.
@@ -262,7 +264,7 @@ extension Workspace {
     }
 
     /// The project-relative form of an event path ("" for the root itself), or nil outside the project.
-    private func relativeEventPath(_ path: String) -> String? {
+    func relativeEventPath(_ path: String) -> String? {
         for root in eventRoots {
             if path == root || path == root + "/" { return "" }
             let prefix = root.hasSuffix("/") ? root : root + "/"
@@ -277,7 +279,7 @@ extension Workspace {
 
     /// Open documents, tabs and ledger files at or below the directory `rel` ("" is the whole project).
     private func knownPaths(under rel: String) -> Set<String> {
-        let all = Set(documents.keys).union(tabs).union(ledger.files.keys)
+        let all = Set(documents.keys).union(heldPaths()).union(ledger.files.keys)
         if rel.isEmpty { return all }
         return all.filter { $0 == rel || $0.hasPrefix(rel + "/") }
     }
@@ -386,7 +388,7 @@ extension Workspace {
             return
         }
         // A tab that could not show the file (binary, unreadable, deleted before it opened) tries again.
-        if tabs.contains(rel), tabMessages[rel] != nil {
+        if holds(rel), tabMessages[rel] != nil {
             tabMessages.removeValue(forKey: rel)
             install(read, path: rel, url: url)
             await reconcileOnOpen(rel, read)

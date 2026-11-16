@@ -126,4 +126,34 @@ struct MemoryProbeTests {
         print("MEMPROBE lines=\(doc.buffer.snapshot().lineCount) ledgerHasFile=\(rig.workspace.ledger.files[name] != nil)")
         withExtendedLifetime((window, rig)) {}
     }
+
+    /// `fullOpen` in Code mode: the same file in the one editor group. Run in its own process after `fullOpen`'s, and pass
+    /// Chat's `total-since-start` as `ALLOY_MEMPROBE_CHAT_MIB` to assert the spec's anti-goal: resident growth within 1.05x
+    /// of Chat's. Without it the number is only printed.
+    @Test func codeModeFullOpen() async throws {
+        var m = Marks()
+        let name = ProcessInfo.processInfo.environment["ALLOY_MEMPROBE_NAME"] ?? "large.rs"
+        let rig = Rig()
+        try FileManager.default.copyItem(at: corpusLarge, to: rig.root.appendingPathComponent(name))
+        await rig.workspace.restoreUIState()
+        rig.workspace.setMode(.code)
+        let group = rig.workspace.codeLayout.focusedGroupID
+        await rig.workspace.open(name, in: .group(group))
+        let window = try alloyWindow(rig.workspace)
+        m.mark("window + rig (file open)")
+        let id = "code-view-\(group.uuidString)"
+        try await window.runUntil { (try? window.element(identifier: id)) != nil }
+        m.mark("code view exists")
+        for _ in 0..<20 { window.tick(); try await Task.sleep(for: .milliseconds(50)) }
+        m.mark("20 more ticks / 1 s settle")
+        try await Task.sleep(for: .seconds(3))
+        window.tick()
+        m.mark("3 s settle")
+        let total = Footprint.mib - m.start
+        print(String(format: "MEMPROBE code-mode total growth %.2f MiB", total))
+        if let chat = ProcessInfo.processInfo.environment["ALLOY_MEMPROBE_CHAT_MIB"].flatMap(Double.init) {
+            #expect(total <= chat * 1.05, "Code mode grew \(total) MiB, Chat \(chat) MiB")
+        }
+        withExtendedLifetime((window, rig)) {}
+    }
 }

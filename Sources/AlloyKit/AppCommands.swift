@@ -21,4 +21,46 @@ public func alloyCommands(model: LauncherModel, settings: SettingsWindowControll
         Button("Go to Definition") { model.workspace?.goToDefinition?() }
             .keyboardShortcut(goToDefinitionShortcut)
     }
+    CommandMenu("View") {
+        Button("Chat Mode") { model.workspace?.setMode(.chat) }
+            .keyboardShortcut("1", modifiers: [.control, .command])
+            .disabled(model.workspace == nil)
+            .accessibilityIdentifier("view-mode-chat")
+        Button("Code Mode") { model.workspace?.setMode(.code) }
+            .keyboardShortcut("2", modifiers: [.control, .command])
+            .disabled(model.workspace == nil)
+            .accessibilityIdentifier("view-mode-code")
+        Button("Split Right") { model.workspace?.splitFocused(.horizontal) }
+            .keyboardShortcut("\\", modifiers: [.command])
+            .disabled(model.workspace?.mode != .code)
+            .accessibilityIdentifier("view-split-right")
+        Button("Split Down") { model.workspace?.splitFocused(.vertical) }
+            .keyboardShortcut("\\", modifiers: [.option, .command])
+            .disabled(model.workspace?.mode != .code)
+            .accessibilityIdentifier("view-split-down")
+        Button("Focus Left Group") { model.workspace?.focusGroup(.left) }
+            .keyboardShortcut(.leftArrow, modifiers: [.control, .command])
+            .disabled(model.workspace?.mode != .code)
+            .accessibilityIdentifier("view-focus-left")
+        Button("Focus Right Group") { model.workspace?.focusGroup(.right) }
+            .keyboardShortcut(.rightArrow, modifiers: [.control, .command])
+            .disabled(model.workspace?.mode != .code)
+            .accessibilityIdentifier("view-focus-right")
+        Button("Focus Up Group") { model.workspace?.focusGroup(.up) }
+            .keyboardShortcut(.upArrow, modifiers: [.control, .command])
+            .disabled(model.workspace?.mode != .code)
+            .accessibilityIdentifier("view-focus-up")
+        Button("Focus Down Group") { model.workspace?.focusGroup(.down) }
+            .keyboardShortcut(.downArrow, modifiers: [.control, .command])
+            .disabled(model.workspace?.mode != .code)
+            .accessibilityIdentifier("view-focus-down")
+        Button("Reveal in Tree") { model.workspace?.revealInTree() }
+            .keyboardShortcut("l", modifiers: [.option, .command])
+            .disabled(model.workspace?.mode != .code)
+            .accessibilityIdentifier("view-reveal-in-tree")
+        Button("Toggle Chat Column") { model.workspace?.codeLayout.chatCollapsed.toggle() }
+            .keyboardShortcut("c", modifiers: [.command, .shift])
+            .disabled(model.workspace?.mode != .code)
+            .accessibilityIdentifier("view-toggle-chat-column")
+    }
 }

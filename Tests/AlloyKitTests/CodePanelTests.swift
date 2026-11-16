@@ -274,11 +274,11 @@ func emitEdit(_ rig: Rig, old: String, new: String, toolUseID: String) async thr
         let (rig, _) = try await editedRig()
         let window = try await opened(rig)
         let doc = try #require(rig.workspace.document("login.swift"))
-        #expect(doc.diffMode == .inline)
+        #expect(rig.workspace.presentation(of: doc.path, in: .chat) == .inline)
         try window.click(segment("Side by side", in: window))
-        #expect(doc.diffMode == .sideBySide)
+        #expect(rig.workspace.presentation(of: doc.path, in: .chat) == .sideBySide)
         try window.click(segment("Inline", in: window))
-        #expect(doc.diffMode == .inline)
+        #expect(rig.workspace.presentation(of: doc.path, in: .chat) == .inline)
     }
 
     @Test func headerFindIsAnIconAndModeIsASegmentedPicker() async throws {
@@ -449,9 +449,9 @@ func emitEdit(_ rig: Rig, old: String, new: String, toolUseID: String) async thr
         let window = try await opened(rig)
         let id = try await contextMenu(rig, window)
         let doc = try #require(rig.workspace.document("login.swift"))
-        #expect(doc.diffMode == .inline)
+        #expect(rig.workspace.presentation(of: doc.path, in: .chat) == .inline)
         try window.chooseMenuItem(accessibilityIdentifier: "side-by-side-\(id.uuidString)")
-        #expect(doc.diffMode == .sideBySide)
+        #expect(rig.workspace.presentation(of: doc.path, in: .chat) == .sideBySide)
         try await window.runUntil { (try? window.element(identifier: "sbs-left")) != nil }
     }
 
@@ -572,7 +572,8 @@ func emitEdit(_ rig: Rig, old: String, new: String, toolUseID: String) async thr
         await rig.workspace.settle()
         let doc = try #require(rig.workspace.document("login.swift"))
         let engine = HighlightEngine()
-        let view = OpenDocumentView(document: doc, engine: engine)
+        let services = DocumentServices(document: doc, engine: engine)
+        let view = OpenDocumentView(document: doc, pane: .chat, services: services, engine: engine)
         #expect(view.highlighter == nil)
         for _ in 0..<2_000_000 where view.highlighter == nil { await Task.yield() }
         #expect(view.highlighter != nil)
@@ -583,6 +584,7 @@ func emitEdit(_ rig: Rig, old: String, new: String, toolUseID: String) async thr
         let after = await engine.captures(id: doc.id, byteRange: 0..<9, minVersion: doc.buffer.version)
         #expect(after.version == doc.buffer.version, "engine at \(after.version), buffer at \(doc.buffer.version)")
         view.close()
+        services.close()
     }
 
     /// A search that finishes after the buffer moved on must not set the matches of the old text.
@@ -591,7 +593,9 @@ func emitEdit(_ rig: Rig, old: String, new: String, toolUseID: String) async thr
         try "ab ab\n".write(to: rig.root.appendingPathComponent("n.txt"), atomically: true, encoding: .utf8)
         await rig.workspace.open("n.txt")
         let doc = try #require(rig.workspace.document("n.txt"))
-        let view = OpenDocumentView(document: doc, engine: HighlightEngine())
+        let engine = HighlightEngine()
+        let services = DocumentServices(document: doc, engine: engine)
+        let view = OpenDocumentView(document: doc, pane: .chat, services: services, engine: engine)
         let latch = Latch()
         view.searchGate = { await latch.wait() }
         view.findVisible = true
@@ -603,6 +607,7 @@ func emitEdit(_ rig: Rig, old: String, new: String, toolUseID: String) async thr
         #expect(view.findCount == 3)
         #expect(view.appliedSearchVersions == [doc.buffer.version], "applied \(view.appliedSearchVersions), first search was at \(v1)")
         view.close()
+        services.close()
     }
 
     @Test func scrollTargetIsKeptUntilItsBlockExists() {

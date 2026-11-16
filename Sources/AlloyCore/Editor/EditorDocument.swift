@@ -33,7 +33,6 @@ public final class EditorDocument: Identifiable {
     @ObservationIgnored var mergeUnreliable = false
     /// The disk text last merged into the buffer since the last save.
     @ObservationIgnored var lastMergedBytes: [UInt8]?
-    public var diffMode: DiffMode = .inline
 
     public var isDirty: Bool { buffer.version != savedVersion }
 

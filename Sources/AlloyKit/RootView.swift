@@ -106,6 +106,14 @@ struct AlloyScreen: Component {
     @State var panel = CodePanelStore()
     /// Quick-open (⌘P), shared by the global keys and the file panel.
     @State var quickOpen = QuickOpenModel()
+    /// Split sizes, kept in the project's `ui-state.json`.
+    @State var splitStore: UIStateSplitStore
+
+    init(workspace: Workspace, themes: ThemeController? = nil) {
+        self.workspace = workspace; self.themes = themes
+        _splitStore = State(wrappedValue: UIStateSplitStore(workspace: workspace))
+    }
+
     var content: some ElementGroup {
         let _ = BodyProbe.hit("AlloyScreen")
         let workspace = workspace, quickOpen = quickOpen
@@ -113,20 +121,46 @@ struct AlloyScreen: Component {
         ZStack {
             VStack(spacing: 0) {
                 TitleIsland(workspace: workspace, quickOpen: quickOpen, style: style).equatable()
-                IslandRow(workspace: workspace, store: store, panel: panel, quickOpen: quickOpen, themes: themes,
-                          style: style)
+                switch workspace.mode {
+                case .chat:
+                    IslandRow(workspace: workspace, store: store, panel: panel, quickOpen: quickOpen, themes: themes,
+                              style: style).equatable()
+                case .code:
+                    CodeIslandRow(workspace: workspace, store: store, panel: panel, quickOpen: quickOpen, splitStore: splitStore,
+                                  themes: themes, style: style).equatable()
+                }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .windowTitleBarMetrics(height: Pixels(Float(style.titleBandHeight)),
                                    controlsLeading: Pixels(Float(style.titleControlsLeading)))
             GlobalKeys(workspace: workspace, quickOpen: quickOpen)
+            HeldReconciler(workspace: workspace, panel: panel).equatable()
         }
+    }
+}
+
+/// Always present, whichever mode is shown: when a tab list or a held document changes (and on first appearance), the
+/// views of closed tabs and the services of unheld documents are released. A component of its own so the tab lists
+/// invalidate only this, not the screen.
+struct HeldReconciler: Component, Equatable {
+    let workspace: Workspace
+    let panel: CodePanelStore
+
+    nonisolated static func == (a: Self, b: Self) -> Bool { a.workspace === b.workspace && a.panel === b.panel }
+
+    var content: some ElementGroup {
+        let workspace = workspace, panel = panel
+        Spacer()
+            .frame(width: Pixels(0), height: Pixels(0))
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+            .onChange(of: workspace.heldSignature(), initial: true) { panel.reconcile(workspace: workspace) }
     }
 }
 
 /// The three lower islands in a split view, a component of their own so each island's clipped content is built in a
 /// smaller type than the whole window (the one big tree crashes the runtime's metadata instantiation).
-struct IslandRow: Component {
+struct IslandRow: Component, Equatable {
     let workspace: Workspace
     let store: SessionUIStore
     let panel: CodePanelStore
@@ -134,18 +168,19 @@ struct IslandRow: Component {
     var themes: ThemeController?
     let style: AppearanceStyle
 
+    nonisolated static func == (a: Self, b: Self) -> Bool {
+        a.workspace === b.workspace && a.store === b.store && a.panel === b.panel && a.quickOpen === b.quickOpen
+            && a.themes === b.themes && a.style == b.style
+    }
+
     var content: some ElementGroup {
+        let _ = BodyProbe.hit("IslandRow")
         let gutter = Pixels(Float(style.gutter))
         HSplitView {
             SidebarView(workspace: workspace).equatable()
                 .island(style: style, identifier: "island-sidebar")
                 .frame(minWidth: Pixels(200), idealWidth: Pixels(250), maxWidth: Pixels(380))
-            VStack(spacing: 0) {
-                if let themes { ThemeBar(themes: themes) }
-                CoordinationNotice(workspace: workspace)
-                ChatView(workspace: workspace, store: store, themes: themes).equatable()
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-            }
+            ChatIslandBody(workspace: workspace, store: store, themes: themes)
             .island(style: style, identifier: "island-chat")
             .frame(minWidth: Pixels(320), maxWidth: .infinity)
             FilePanelView(workspace: workspace, store: store, panel: panel, quickOpen: quickOpen, themes: themes).equatable()
@@ -188,6 +223,14 @@ struct GlobalKeys: Component {
             Button("Previous Tab") { workspace.cycleTab(-1) }
                 .keyboardShortcut(.tab, modifiers: [.control, .shift])
                 .accessibilityIdentifier("global-key-previous-tab")
+            // Chat mode's sidebar button owns ⌘N; Code mode has no sidebar sessions list, so the key lives here.
+            if workspace.mode == .code {
+                Button("New Session") {
+                    workspace.startNewSession()
+                }
+                .keyboardShortcut("n")
+                .accessibilityIdentifier("global-key-new-session")
+            }
             ForEach(1...9, id: \.self) { n in
                 Button("Tab \(n)") { workspace.selectTab(number: n) }
                     .keyboardShortcut(KeyEquivalent(Character(String(n))), modifiers: .primary)

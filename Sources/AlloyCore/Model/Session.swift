@@ -145,7 +145,8 @@ public final class Session: Identifiable {
                                             text: "Mode: \(PermissionMode(rawValue: mode)?.displayName ?? mode)")
                 }
             case .assistantBlock:
-                status = .working
+                // Assigning an equal value still wakes observers; a streamed chunk must not rerun what only reads `status`.
+                if status != .working { status = .working }
             case .controlRequest(let r):
                 if case .canUseTool = r.kind { status = .awaitingPermission }
             case .controlCancel:

@@ -71,11 +71,11 @@ private let longNew = (1...200).map { $0 == 100 ? "let value100 = 30000" : "let 
         let window = try alloyWindow(rig.workspace)
         try await window.runUntil { (try? window.element(identifier: "code-view")) != nil }
         let doc = try #require(rig.workspace.document("login.swift"))
-        #expect(doc.diffMode == .inline)
+        #expect(rig.workspace.presentation(of: doc.path, in: .chat) == .inline)
         #expect((try? window.element(identifier: "sbs-left")) == nil)
         try window.click(segment("Side by side", in: window))
         try await window.runUntil { (try? window.element(identifier: "sbs-left")) != nil && (try? window.element(identifier: "sbs-right")) != nil }
-        #expect(doc.diffMode == .sideBySide)
+        #expect(rig.workspace.presentation(of: doc.path, in: .chat) == .sideBySide)
         try await window.runUntil { rig.workspace.sideBySideBuilds >= 1 }
         window.tick()
         // The old line is on the left only, the new line on the right only.
@@ -178,9 +178,9 @@ private let longNew = (1...200).map { $0 == 100 ? "let value100 = 30000" : "let 
         try await window.runUntil { rig.workspace.activeTab == "login.swift" && rig.workspace.document("login.swift") != nil }
         let doc = try #require(rig.workspace.document("login.swift"))
         try await window.runUntil { doc.buffer.primarySelection.range == doc.buffer.snapshot().lineRange(1) }
-        #expect(doc.diffMode == .inline)
+        #expect(rig.workspace.presentation(of: doc.path, in: .chat) == .inline)
         try window.click(window.element(identifier: "side-by-side-\(id.uuidString)"))
-        try await window.runUntil { doc.diffMode == .sideBySide }
+        try await window.runUntil { rig.workspace.presentation(of: doc.path, in: .chat) == .sideBySide }
         try await window.runUntil { (try? window.element(identifier: "sbs-left")) != nil }
     }
 
@@ -192,9 +192,9 @@ private let longNew = (1...200).map { $0 == 100 ? "let value100 = 30000" : "let 
         #expect(view.decorations.virtualLineCount == 2)
         let gate = Gate()
         view.buildGate = { await gate.wait() }
-        doc.diffMode = .inline
+        rig.workspace.setPresentation(.inline, of: doc.path, in: .chat)
         window.tick()
-        doc.diffMode = .sideBySide
+        rig.workspace.setPresentation(.sideBySide, of: doc.path, in: .chat)
         window.tick()
         await gate.open()
         for _ in 0..<50 { await Task.yield(); window.tick() }

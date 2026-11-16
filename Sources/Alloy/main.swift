@@ -26,7 +26,7 @@ func choose(_ arguments: [String]) -> (choice: ProjectChoice, reason: String?) {
 
 /// Opens `root` as the project. The choice was already checked; the resolved root is checked once more.
 @MainActor
-func makeWorkspace(root: URL, file: String?) -> Workspace? {
+func makeWorkspace(root: URL) -> Workspace? {
     guard case .open(let checked, _) = choose([root.path]).choice else { return nil }
     // The controller's settings are the current ones (a theme chosen on the launcher included), not the stale copy
     // loaded at startup.
@@ -39,7 +39,6 @@ func makeWorkspace(root: URL, file: String?) -> Workspace? {
     // Language servers start lazily, on the first open of a file one handles; they stop with the sessions on quit.
     LSPCoordinator.installLive(on: workspace, loginPATH: { ClaudeLocator.loginShell().path })
     workspace.startWatching()
-    workspace.openFilePath = file
     return workspace
 }
 
@@ -57,7 +56,7 @@ themeController.systemScheme = { NSApp.effectiveAppearance.bestMatch(from: [.dar
 let arguments = Array(CommandLine.arguments.dropFirst())
 let initial = choose(arguments)
 let model: LauncherModel
-if case .open(let root, let file) = initial.choice, let workspace = makeWorkspace(root: root, file: file) {
+if case .open(let root, _) = initial.choice, let workspace = makeWorkspace(root: root) {
     model = LauncherModel(workspace: workspace)
 } else {
     model = LauncherModel()
@@ -110,7 +109,7 @@ model.chooseFolder = {
         }
         guard let url = urls.first else { app.terminate(); return }
         let picked = choose([url.path])
-        if case .open(let root, _) = picked.choice, let workspace = makeWorkspace(root: root, file: nil) {
+        if case .open(let root, _) = picked.choice, let workspace = makeWorkspace(root: root) {
             model.adopt(workspace)
             await workspace.restore()
         } else {
@@ -120,7 +119,9 @@ model.chooseFolder = {
 }
 
 if let workspace = model.workspace {
-    Task { await workspace.restore() }
+    // The command-line file opens after the saved layout is back, so it lands in the restored mode's pane.
+    let startupFile: String? = if case .open(_, let file) = initial.choice { file } else { nil }
+    Task { await workspace.restore(opening: startupFile) }
 } else if !arguments.isEmpty, let reason = initial.reason {
     model.message = reason
 } else {

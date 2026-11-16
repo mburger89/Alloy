@@ -57,7 +57,7 @@ struct FilePanelView: Component {
         let style = themes?.style ?? .defaults
         let path = workspace.activeTab
         let document = path.flatMap { workspace.document($0) }
-        let view = document.flatMap { panel.view(for: $0) }
+        let view = document.flatMap { panel.view(for: $0, in: .chat) }
         let showsBar = !workspace.tabs.isEmpty || path != nil
         let barHeight = $barHeight
         let notice = path.flatMap { path in workspace.notices.last(where: { $0.path == path }) }
@@ -84,36 +84,43 @@ struct FilePanelView: Component {
         // Per-document state is made when a document appears or is replaced (never while rendering).
         .onChange(of: workspace.activeTab.flatMap { workspace.document($0)?.id }, initial: true) {
             panel.attach(workspace: workspace)
-            if let path = workspace.activeTab, let document = workspace.document(path) { panel.ensureView(for: document) }
+            if let path = workspace.activeTab, let document = workspace.document(path) { panel.ensureView(for: document, in: .chat) }
         }
         // A request for another tab's caret must not move the user once they have left it.
         .onChange(of: workspace.activeTab) { panel.cancelDefinition(); workspace.codePanelFocused = false }
-        .onChange(of: workspace.tabs) { panel.prune(keeping: workspace.tabs) }
         // A document replaced behind a background tab: its old view is closed now, not when the tab is next shown.
         .onChange(of: workspace.tabs.map { workspace.document($0)?.id }) { panel.refreshReplaced(workspace: workspace) }
-        // Cmd-F (Ctrl-F off macOS) from the code panel; a text field elsewhere, such as the composer, keeps the key.
-        .onKeyPress(keys: ["f"], phases: .down) { press in
-            guard press.modifiers == .primary, let path = workspace.activeTab, let document = workspace.document(path),
-                  let view = panel.view(for: document) else { return .ignored }
-            view.showFind()
-            return .handled
-        }
-        // F8 / Shift-F8: the next / previous problem of the code panel's file.
-        .onKeyPress(keys: [Self.f8], phases: [.down, .repeat]) { press in
-            guard press.modifiers.isEmpty || press.modifiers == .shift, let path = workspace.activeTab,
-                  let document = workspace.document(path), let view = panel.view(for: document) else { return .ignored }
-            view.stepProblem(press.modifiers.isEmpty ? 1 : -1)
-            return .handled
-        }
-        // F12: go to the definition of the symbol at the caret.
-        .onKeyPress(keys: [Self.f12], phases: .down) { press in
-            guard press.modifiers.isEmpty, let path = workspace.activeTab, let document = workspace.document(path),
-                  panel.view(for: document) != nil else { return .ignored }
-            panel.goToDefinition(workspace: workspace)
-            return .handled
-        }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("file-panel")
+        .codeKeyHandlers(workspace: workspace, panel: panel, pane: .chat)
+    }
+}
+
+extension ElementGroup {
+    /// The code panel's keys for `pane`'s active tab: Cmd-F (Ctrl-F off macOS) opens find, F8 / Shift-F8 step through
+    /// the problems, F12 goes to the definition. A text field elsewhere, such as the composer, keeps its keys.
+    func codeKeyHandlers(workspace: Workspace, panel: CodePanelStore, pane: PaneID) -> some ElementGroup {
+        self
+            .onKeyPress(keys: ["f"], phases: .down) { press in
+                guard press.modifiers == .primary, let path = workspace.activeTab(in: pane), let document = workspace.document(path),
+                      let view = panel.view(for: document, in: pane) else { return .ignored }
+                view.showFind()
+                return .handled
+            }
+            // F8 / Shift-F8: the next / previous problem of the pane's file.
+            .onKeyPress(keys: [FilePanelView.f8], phases: [.down, .repeat]) { press in
+                guard press.modifiers.isEmpty || press.modifiers == .shift, let path = workspace.activeTab(in: pane),
+                      let document = workspace.document(path), let view = panel.view(for: document, in: pane) else { return .ignored }
+                view.stepProblem(press.modifiers.isEmpty ? 1 : -1)
+                return .handled
+            }
+            // F12: go to the definition of the symbol at the caret.
+            .onKeyPress(keys: [FilePanelView.f12], phases: .down) { press in
+                guard press.modifiers.isEmpty, let path = workspace.activeTab(in: pane), let document = workspace.document(path),
+                      panel.view(for: document, in: pane) != nil else { return .ignored }
+                panel.goToDefinition(workspace: workspace, pane: pane)
+                return .handled
+            }
     }
 }
 
@@ -204,33 +211,58 @@ struct FilePanelMessage: Component {
     }
 }
 
-/// The path, a dirty dot, why the file is read-only, find and the inline / side-by-side toggle.
+/// The accessibility ids and wording of a header: Chat's (`file-panel-*`) or one group's (`code-group-*-<id>`).
+struct HeaderIDs: Equatable {
+    let path: String
+    let dirty: String
+    let readOnly: String
+    let find: String
+    let presentation: String
+    let presentationLabel: String
+    /// Whether the picker offers "Plain" (a group's default) besides Inline and Side by side.
+    let offersPlain: Bool
+
+    static let chat = HeaderIDs(path: "file-panel-path", dirty: "file-panel-dirty", readOnly: "file-panel-read-only",
+                                find: "find-button", presentation: "diff-mode-toggle", presentationLabel: "Diff layout",
+                                offersPlain: false)
+
+    static func group(_ id: UUID) -> HeaderIDs {
+        HeaderIDs(path: "code-group-path-\(id)", dirty: "code-group-dirty-\(id)", readOnly: "code-group-read-only-\(id)",
+                  find: "code-group-find-\(id)", presentation: "code-group-presentation-\(id)",
+                  presentationLabel: "Presentation", offersPlain: true)
+    }
+}
+
+/// The path, a dirty dot, why the file is read-only, find and the presentation picker, for Chat's panel or an editor group.
 struct FilePanelHeader: Component {
     let workspace: Workspace
     let path: String
     let document: EditorDocument?
     let view: OpenDocumentView?
+    var pane: PaneID = .chat
+    var ids: HeaderIDs = .chat
 
     var content: some ElementGroup {
         let _ = BodyProbe.hit("FilePanelHeader")
+        let workspace = workspace, path = path, pane = pane, ids = ids
         HStack(spacing: Pixels(8)) {
             // The path gives up space first (priority 0, the rest 1) and truncates in the middle, so the file name stays.
             Text(verbatim: path).font(size: 12).lineLimit(1).truncationMode(.middle)
-                .accessibilityIdentifier("file-panel-path")
+                .accessibilityIdentifier(ids.path)
             if document?.tabDirty == true {
                 Circle().fill(Color.mutedInk).frame(width: Pixels(7), height: Pixels(7))
-                    .accessibilityIdentifier("file-panel-dirty")
+                    .accessibilityIdentifier(ids.dirty)
             }
             if let view { DefinitionMessage(view: view).equatable() }
             Spacer()
             if case .readOnly(let reason)? = document?.state {
                 Text(verbatim: "Read-only \u{2014} \(reason)").font(size: 11).foregroundColor(.mutedInk).lineLimit(1)
                     .layoutPriority(1)
-                    .accessibilityIdentifier("file-panel-read-only")
+                    .accessibilityIdentifier(ids.readOnly)
             }
             ServerStatusLabel(workspace: workspace, path: path).equatable()
             DiagnosticCountsBadge(workspace: workspace, path: path).equatable()
-            if let document, let view {
+            if document != nil, let view {
                 Button { view.showFind() } label: {
                     Image(systemName: "magnifyingglass").font(.system(size: 13)).padding(Pixels(3))
                 }
@@ -238,15 +270,17 @@ struct FilePanelHeader: Component {
                 .layoutPriority(1)
                 .help("Find")
                 .accessibilityLabel("Find")
-                .accessibilityIdentifier("find-button")
-                Picker("Diff layout", selection: Binding(get: { document.diffMode }, set: { document.diffMode = $0 })) {
-                    Text("Inline").tag(DiffMode.inline)
-                    Text("Side by side").tag(DiffMode.sideBySide)
+                .accessibilityIdentifier(ids.find)
+                Picker(ids.presentationLabel, selection: Binding(get: { workspace.presentation(of: path, in: pane) },
+                                                                 set: { workspace.setPresentation($0, of: path, in: pane) })) {
+                    if ids.offersPlain { Text("Plain").tag(Presentation.plain) }
+                    Text("Inline").tag(Presentation.inline)
+                    Text("Side by side").tag(Presentation.sideBySide)
                 }
                 .pickerStyle(.segmented)
                 .labelsHidden()
                 .layoutPriority(1)
-                .accessibilityIdentifier("diff-mode-toggle")
+                .accessibilityIdentifier(ids.presentation)
             }
         }
         .padding(inset(12, 8))

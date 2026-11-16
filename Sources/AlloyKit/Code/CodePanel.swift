@@ -6,35 +6,26 @@ import AlloyLSP
 import Observation
 
 /// What a decoration build is for: the ledger's version and the buffer version it was saved as.
-struct BuildKey: Equatable { var ledger: Int; var saved: UInt64; var mode: DiffMode }
+struct BuildKey: Equatable { var ledger: Int; var saved: UInt64; var mode: Presentation }
 
-/// What the panel keeps for one open document: its `CodeDecorations` and highlighter, the selected edit, the
-/// find state and the scroll position. Kept by path in ``CodePanelStore`` so a tab switch loses none of it.
+/// What the panel keeps for one view of an open document: its `CodeDecorations` and highlighter, the selected edit, the
+/// find state, the scroll position and the diff build for its presentation. Kept by (pane, path) in ``CodePanelStore``
+/// so a tab switch loses none of it; the highlight feed, the language-server sync and the semantic tokens are the
+/// document's, in ``DocumentServices``, shared by every view of the file.
 @MainActor @Observable
 final class OpenDocumentView {
-    private enum Feed: Sendable {
-        case open(CodeSnapshot)
-        case edits([CodeEdit], CodeSnapshot)
-    }
-
     @ObservationIgnored let document: EditorDocument
+    @ObservationIgnored let pane: PaneID
+    @ObservationIgnored let services: DocumentServices
     @ObservationIgnored let decorations: CodeDecorations
     @ObservationIgnored let scroll = CodeScrollState()
     /// The left pane's scroll position in side-by-side mode; it outlives the pane, which is rebuilt with the ledger.
     @ObservationIgnored let leftScroll = CodeScrollState()
     @ObservationIgnored private(set) var highlighter: CodeViewHighlighter?
-    /// Server-driven colours for a file with no grammar; present only while the document is reported to a server.
-    @ObservationIgnored private(set) var semantic: SemanticHighlighter?
-    @ObservationIgnored private var hasGrammar = true
-    @ObservationIgnored private var feed: AsyncStream<Feed>.Continuation?
-    @ObservationIgnored private var cursor: CodeEditCursor
     @ObservationIgnored private let engine: HighlightEngine
     @ObservationIgnored private(set) var closed = false
-    /// The language-server bridge, and whether this document is currently reported open to it.
+    /// The language-server bridge (for the diagnostics and the definition request).
     @ObservationIgnored private let lsp: LSPCoordinator?
-    @ObservationIgnored private var lspOpen = false
-    /// Whether a server handles this file (decided at open and on settings changes, so typing does no lookup).
-    @ObservationIgnored private var lspWanted = false
     /// What the last diff build applied, kept so a diagnostics change can set the diff and the diagnostics together.
     private struct AppliedDiff {
         var model: DiffDecorationModel
@@ -46,9 +37,11 @@ final class OpenDocumentView {
         /// Whether the author-run layer of this diff is set (it is set once; diagnostics repaints leave it).
         var annotated = false
     }
-    /// The row changes since the view opened, to carry the diff to the current version by hand (see ``RowDeltaLog``).
-    @ObservationIgnored private var rowLog: RowDeltaLog
+    @ObservationIgnored private var annotationsSet = false
     @ObservationIgnored private var appliedDiff: AppliedDiff?
+    /// The presentation the applied diff was built for (line layers follow it).
+    @ObservationIgnored private var appliedPresentation: Presentation = .inline
+    @ObservationIgnored private weak var workspace: Workspace?
     @ObservationIgnored private var builtKey: BuildKey?
     @ObservationIgnored private var building: BuildKey?
     /// Decoration tag to edit, for the click and menu closures.
@@ -71,177 +64,45 @@ final class OpenDocumentView {
     /// Test hook: the buffer versions whose search matches were applied.
     @ObservationIgnored private(set) var appliedSearchVersions: [UInt64] = []
 
-    init(document: EditorDocument, engine: HighlightEngine, lsp: LSPCoordinator? = nil) {
+    init(document: EditorDocument, pane: PaneID, services: DocumentServices, engine: HighlightEngine,
+         lsp: LSPCoordinator? = nil) {
         self.document = document
+        self.pane = pane
+        self.services = services
         self.engine = engine
         self.lsp = lsp
         self.decorations = CodeDecorations(buffer: document.buffer)
         self.decorations.theme = .alloy
-        self.cursor = document.buffer.makeEditCursor()
-        self.rowLog = RowDeltaLog(base: document.buffer.version)
-        startHighlighting()
+        services.attach(self)
     }
 
-    /// Stops feeding the engine and forgets the document there.
+    /// Detaches from the document's services (which outlive the view) and drops what the view holds.
     func close() {
         closed = true
         messageTask?.cancel()
-        if lspOpen { lsp?.closed(path: document.path); lspOpen = false }
-        stopSemantic()
+        services.detach(self)
         left?.close()
         left = nil
-        feed?.finish()
-        feed = nil
     }
 
-    // MARK: Highlighting
+    // MARK: Document services
 
-    /// Opens the document in the engine, then watches the buffer and passes every drained edit batch on. The
-    /// highlighter exists only once the engine holds the text (`HighlightEngine.open` has returned), and every
-    /// engine call is made in order from one task, so the engine's version never runs ahead of a request's.
-    private func startHighlighting() {
-        cursor = document.buffer.makeEditCursor()
-        defer { observeBuffer() }
-        let first = document.buffer.snapshot()
-        let detected = Language.detect(path: document.path, firstLine: first.lineCount > 0 ? first.line(0) : nil)
-        hasGrammar = detected != nil
-        reportOpenToLSP(first)
-        guard let language = detected else { return }
-        let (stream, continuation) = AsyncStream.makeStream(of: Feed.self)
-        feed = continuation
-        let engine = engine, id = document.id
-        continuation.yield(.open(first))
-        Task.detached { [weak self] in
-            for await item in stream {
-                switch item {
-                case .open(let snapshot):
-                    await engine.open(id: id, language: language, snapshot: snapshot, version: snapshot.version)
-                    await self?.engineOpened()
-                case .edits(let edits, let snapshot):
-                    await engine.edit(id: id, edits: edits, snapshot: snapshot, version: snapshot.version)
-                }
-            }
-            await engine.close(id: id)
-        }
-    }
-
-    private func engineOpened() {
+    /// The engine holds the document's text: the view's highlighter can ask it for colours.
+    func engineReady() {
         guard !closed, highlighter == nil else { return }
         highlighter = CodeViewHighlighter(engine: engine, documentID: document.id, decorations: decorations)
         decorations.invalidateHighlights(in: 0..<document.buffer.utf8Count)
     }
 
-    private func observeBuffer() {
-        guard !closed else { return }
-        withObservationTracking {
-            _ = document.buffer.version
-        } onChange: { [weak self] in
-            Task { @MainActor in
-                guard let self, !self.closed else { return }
-                self.drain()
-                self.observeBuffer()
-            }
-        }
-    }
-
-    private func drain() {
-        // Matches follow edits but a new one is not found by that, so an open find searches again (off main).
+    /// The buffer changed: an open find searches again, since matches follow edits but a new one is not found by that.
+    func searchAgainIfOpen() {
         if findVisible, !findQuery.isEmpty { search() }
-        drainEdits()
     }
 
-    /// Passes the buffer's pending edits to the highlight engine and the language server.
-    private func drainEdits() {
-        let batch = cursor.drain()
-        switch batch {
-        case .edits(let edits):
-            guard !edits.isEmpty else { return }
-            let after = document.buffer.snapshot()
-            for edit in edits { rowLog.record(edit) }
-            feed?.yield(.edits(edits, after))
-            forwardToLSP(.edits(edits, after: after), snapshot: after)
-            semantic?.documentChanged()
-        case .resync(let snapshot):
-            rowLog.reset(at: snapshot.version)
-            feed?.yield(.open(snapshot))
-            forwardToLSP(.resync(snapshot), snapshot: snapshot)
-            semantic?.documentChanged()
-        }
-    }
+    /// Server-driven colours for a file with no grammar (the document's, shared by its views).
+    var semantic: SemanticHighlighter? { services.semantic }
 
-    /// A file over the server size cap is never reported: one that grows past it is closed, one that shrinks below it
-    /// is opened then.
-    private func forwardToLSP(_ change: DocumentChange, snapshot: CodeSnapshot) {
-        guard lspWanted, let lsp else { return }
-        let fits = snapshot.utf8Count <= DocumentSync.maxFileBytes
-        if lspOpen {
-            if fits {
-                lsp.changed(path: document.path, change: change)
-            } else {
-                lsp.closed(path: document.path)
-                lspOpen = false
-                stopSemantic()
-            }
-        } else if fits {
-            reportOpenToLSP(snapshot)
-        }
-    }
-
-    // MARK: Language server
-
-    /// Tells the language server about this document when one handles its file. Read-only documents (truncated or
-    /// not valid UTF-8) never reach a server: their text is not the file's.
-    private func reportOpenToLSP(_ snapshot: CodeSnapshot) {
-        guard let lsp, document.state == .editable, lsp.wants(document.path) else { return }
-        lspWanted = true
-        guard snapshot.utf8Count <= DocumentSync.maxFileBytes else { return }
-        lspOpen = true
-        probedVersion = snapshot.version
-        lsp.opened(path: document.path, snapshot: snapshot)
-        // A file with no grammar takes its colours from the server's semantic tokens, if it offers them: the first
-        // request finds out (once the server is ready), and only then is a highlighter made.
-        if !hasGrammar { lsp.requestSemanticTokens(path: document.path, probe: true) }
-    }
-
-    /// The buffer version of the text the opening probe asked about.
-    @ObservationIgnored private var probedVersion: UInt64?
-
-    /// The server answered whether it offers semantic tokens for this file.
-    func semanticSupport(_ supported: Bool) {
-        guard let lsp, !closed, lspOpen, !hasGrammar else { return }
-        guard supported else { stopSemantic(); return }
-        guard semantic == nil else { return }
-        semantic = SemanticHighlighter(path: document.path, decorations: decorations) { [weak lsp] path in
-            lsp?.requestSemanticTokens(path: path)
-        }
-        // An edit between the probe and now cancelled the probe's answer in the manager, and the edit's own request was
-        // dropped because there was no highlighter: ask for the current text.
-        if probedVersion != document.buffer.version { semantic?.documentChanged() }
-    }
-
-    private func stopSemantic() {
-        semantic?.stop()
-        semantic = nil
-    }
-
-    /// After a save: sends the edits not yet passed on, so the server sees `didSave` after the text it saved.
-    func lspSaved() {
-        guard lspOpen, !closed else { return }
-        drainEdits()
-        lsp?.flushedSaved(path: document.path)
-    }
-
-    /// After the server settings changed: reports the document if a server now handles it, and forgets it if none does.
-    func lspSettingsChanged() {
-        guard let lsp, !closed else { return }
-        if lsp.wants(document.path) {
-            if !lspOpen { drainEdits(); lspWanted = false; reportOpenToLSP(document.buffer.snapshot()) }
-        } else {
-            lspOpen = false
-            lspWanted = false
-            stopSemantic()
-        }
-    }
+    func semanticSupport(_ supported: Bool) { services.semanticSupport(supported) }
 
     // MARK: Diff decorations
 
@@ -251,9 +112,16 @@ final class OpenDocumentView {
     /// reaches the ledger before the buffer). The right pane's rows are those of the saved version, which MetalUI
     /// maps forward through unsaved typing.
     func rebuildIfNeeded(workspace: Workspace) {
+        self.workspace = workspace
         let path = document.path
-        guard let file = workspace.ledger.files[path] else { return }
         let key = buildTrigger(workspace: workspace)
+        if key.mode == .plain {
+            guard key != builtKey else { return }
+            clearDiff()
+            builtKey = key
+            return
+        }
+        guard let file = workspace.ledger.files[path] else { return }
         guard key != builtKey, key != building else { return }
         building = key
         let document = document
@@ -277,10 +145,11 @@ final class OpenDocumentView {
             guard let self, let workspace else { return }
             if building == key { building = nil }
             guard !closed, workspace.ledger.files[path]?.version == key.ledger, document.savedVersion == key.saved,
-                  sameText, document.diffMode == key.mode else { return }
+                  sameText, workspace.presentation(of: path, in: pane) == key.mode else { return }
             tags = model.tags
             appliedDiff = AppliedDiff(model: model, sessions: workspace.sessions, version: key.saved,
                                       byteCount: saved.utf8Count, fillers: sbs?.rightFillers, rowCount: saved.lineCount)
+            appliedPresentation = key.mode
             applyLineLayers()
             if let sbs {
                 // The pane (buffer, engine document, highlights) changes only when the old text does.
@@ -305,6 +174,23 @@ final class OpenDocumentView {
         }
     }
 
+    /// A plain presentation: forgets the diff and the left pane, clears the diff's layers and paints the diagnostics alone.
+    private func clearDiff() {
+        let hadDiff = appliedDiff != nil
+        building = nil
+        tags = [:]
+        leftTags = [:]
+        left?.close()
+        left = nil
+        appliedDiff = nil
+        appliedPresentation = .plain
+        if hadDiff || annotationsSet {
+            annotationsSet = false
+            decorations.setHighlights([], in: 0..<(1 << 40), layer: .annotations, asOf: document.buffer.version)
+        }
+        applyLineLayers(clearing: hadDiff)
+    }
+
     // MARK: Go to definition
 
     /// A short message about the last go-to-definition ("No definition found", or where an outside file lies); the header shows it.
@@ -319,17 +205,17 @@ final class OpenDocumentView {
     func startDefinition(workspace: Workspace) -> Task<Void, Never>? {
         definitionMessage = nil
         messageTask?.cancel()
-        guard let lsp, lspOpen, !closed else {
+        guard let lsp, services.lspOpen, !closed else {
             showDefinitionMessage("No definition found", seconds: Self.noDefinitionSeconds)
             return nil
         }
-        drainEdits()
+        services.drainEdits()
         let snapshot = document.buffer.snapshot()
         let offset = document.buffer.primarySelection.head
         let path = document.path
         return Task { @MainActor [weak self] in
             let outcome = await lsp.definition(path: path, utf8Offset: offset, snapshot: snapshot)
-            guard !Task.isCancelled, let self, !self.closed, workspace.activeTab == path,
+            guard !Task.isCancelled, let self, !self.closed, workspace.activeTab(in: pane) == path,
                   self.document.buffer.version == snapshot.version, self.document.buffer.primarySelection.head == offset else { return }
             switch outcome {
             case .stale: return
@@ -345,9 +231,10 @@ final class OpenDocumentView {
     }
 
     private func go(to target: DefinitionTarget, encoding: PositionEncoding, workspace: Workspace) async {
+        let pane = pane
         switch target {
         case .inWorkspace(let path, let range):
-            await workspace.open(path, selecting: { Positions.utf8Range(of: range, in: $0, encoding: encoding) })
+            await workspace.open(path, selecting: { Positions.utf8Range(of: range, in: $0, encoding: encoding) }, in: pane)
         case .external(let url, let range):
             // Alloy has no read-only view for files outside the project (`Workspace.open` refuses them): say where it is.
             showDefinitionMessage("Definition: \(url.path):\(range.start.line + 1):\(range.start.character + 1)",
@@ -399,18 +286,21 @@ final class OpenDocumentView {
     }
 
     /// Sets the line decorations and virtual rows: the diff's, if built, and the diagnostics'.
-    private func applyLineLayers() {
-        drainEdits()   // the row log must hold every edit MetalUI has seen
+    private func applyLineLayers(clearing: Bool = false) {
+        services.drainEdits()   // the row log must hold every edit MetalUI has seen
         var layout = DiagnosticDecorations.currentLayout(lsp?.diagnostics.entry(for: document.path), in: document.buffer)
-        let sideBySide = document.diffMode == .sideBySide
+        // Without a built diff, the pane's own presentation decides (a file that never builds still hides message rows).
+        let shown = appliedDiff == nil ? (workspace?.presentation(of: document.path, in: pane) ?? appliedPresentation) : appliedPresentation
+        let sideBySide = shown == .sideBySide
         if sideBySide { layout.rows = [] }   // only the right pane could show them, which would unlevel the panes
         if let diff = appliedDiff {
             let ok = DiffDecorations.apply(diff.model, to: decorations, sessions: diff.sessions, version: diff.version,
                                            byteCount: diff.byteCount, fillers: diff.fillers,
-                                           diagnostics: layout, rowLog: rowLog, savedRowCount: diff.rowCount,
+                                           diagnostics: layout, rowLog: services.rowLog, savedRowCount: diff.rowCount,
                                            includeAnnotations: !diff.annotated)
             if ok, !diff.annotated {
                 appliedDiff?.annotated = true
+                annotationsSet = true
                 annotationApplyCount += 1
             }
             if !ok {
@@ -418,7 +308,7 @@ final class OpenDocumentView {
                 appliedDiff = nil
                 builtKey = nil
             }
-        } else if lsp != nil {
+        } else if lsp != nil || clearing {
             DiffDecorations.applyDiagnostics(layout, to: decorations)
         }
     }
@@ -433,7 +323,10 @@ final class OpenDocumentView {
 
     /// The value `onChange` watches to start a rebuild.
     func buildTrigger(workspace: Workspace) -> BuildKey {
-        BuildKey(ledger: workspace.ledger.files[document.path]?.version ?? -1, saved: document.savedVersion, mode: document.diffMode)
+        let mode = workspace.presentation(of: document.path, in: pane)
+        // A plain view builds no diff: the ledger and the saved text do not matter to it.
+        if mode == .plain { return BuildKey(ledger: 0, saved: 0, mode: .plain) }
+        return BuildKey(ledger: workspace.ledger.files[document.path]?.version ?? -1, saved: document.savedVersion, mode: mode)
     }
 
     // MARK: Find
@@ -511,44 +404,60 @@ final class OpenDocumentView {
     }
 }
 
-/// The panel's per-document state and the one highlight engine, owned above the panel (by `AlloyScreen`) so they
-/// outlive re-renders.
+/// The key of one view: the pane showing the file, and the file.
+struct ViewKey: Hashable { let pane: PaneID; let path: String }
+
+/// The panel's per-document services and per-view state and the one highlight engine, owned above the panel (by
+/// `AlloyScreen`) so they outlive re-renders.
 @MainActor @Observable
 final class CodePanelStore {
-    @ObservationIgnored private let engine = HighlightEngine()
+    @ObservationIgnored let engine = HighlightEngine()
     private final class Weak { weak var store: CodePanelStore?; init(_ s: CodePanelStore) { store = s } }
     private static var registry: [Weak] = []
 
-    /// The state of `document` in whichever store made it, so a test can reach the panel's per-document state.
+    /// The Chat view of `document` in whichever store made it, so a test can reach the panel's per-document state.
     package static func existingView(for document: EditorDocument) -> OpenDocumentView? {
-        registry.removeAll { $0.store == nil }
-        return registry.lazy.compactMap { $0.store?.view(for: document) }.first
+        existingView(for: document, in: .chat)
     }
-    private var views: [String: OpenDocumentView] = [:]
+
+    /// The view of `document` in `pane`, in whichever store made it.
+    package static func existingView(for document: EditorDocument, in pane: PaneID) -> OpenDocumentView? {
+        registry.removeAll { $0.store == nil }
+        return registry.lazy.compactMap { $0.store?.view(for: document, in: pane) }.first
+    }
+    private var views: [ViewKey: OpenDocumentView] = [:]
+    private var servicesByPath: [String: DocumentServices] = [:]
     private var lsp: LSPCoordinator?
+
+    /// The services of the document at `path` (one per open document), once a view of it was made.
+    func services(for path: String) -> DocumentServices? { servicesByPath[path] }
 
     /// Connects the store to the workspace's language-server coordinator, if one is installed. Idempotent.
     func attach(workspace: Workspace) {
         guard let coordinator = workspace.languageServices as? LSPCoordinator, coordinator !== lsp else { return }
         lsp = coordinator
-        coordinator.savedHandler = { [weak self] path in self?.views[path]?.lspSaved() }
-        coordinator.diagnosticsHandler = { [weak self] path in self?.views[path]?.paintDiagnostics() }
-        coordinator.semanticSupportHandler = { [weak self] path, supported in self?.views[path]?.semanticSupport(supported) }
-        coordinator.semanticHandler = { [weak self] path, version, runs in self?.views[path]?.semantic?.apply(runs, version: version) }
+        coordinator.savedHandler = { [weak self] path in self?.servicesByPath[path]?.lspSaved() }
+        coordinator.diagnosticsHandler = { [weak self] path in
+            guard let self else { return }
+            for (key, view) in views where key.path == path { view.paintDiagnostics() }
+        }
+        coordinator.semanticSupportHandler = { [weak self] path, supported in self?.servicesByPath[path]?.semanticSupport(supported) }
+        coordinator.semanticHandler = { [weak self] path, version, runs in self?.servicesByPath[path]?.semantic?.apply(runs, version: version) }
         workspace.goToDefinition = { [weak self, weak workspace] in
             guard let self, let workspace else { return }
-            self.goToDefinition(workspace: workspace)
+            self.goToDefinition(workspace: workspace, pane: workspace.defaultPane)
         }
-        coordinator.reloadHandler = { [weak self] in self?.views.values.forEach { $0.lspSettingsChanged() } }
+        coordinator.reloadHandler = { [weak self] in self?.servicesByPath.values.forEach { $0.lspSettingsChanged() } }
     }
 
     /// The one go-to-definition in flight, for whichever view asked last.
     private var definitionTask: Task<Void, Never>?
 
-    /// Go to Definition at the active tab's caret; replaces (cancels) any request still in flight.
-    func goToDefinition(workspace: Workspace) {
+    /// Go to Definition at `pane`'s active tab's caret; replaces (cancels) any request still in flight.
+    func goToDefinition(workspace: Workspace, pane: PaneID) {
         cancelDefinition()
-        guard let path = workspace.activeTab, let document = workspace.document(path), let view = view(for: document) else { return }
+        guard let path = workspace.activeTab(in: pane), let document = workspace.document(path),
+              let view = view(for: document, in: pane) else { return }
         definitionTask = view.startDefinition(workspace: workspace)
     }
 
@@ -558,42 +467,87 @@ final class CodePanelStore {
         definitionTask = nil
     }
 
-    /// Makes (or replaces, when the path was reopened) the state of `document`. Called outside rendering.
-    func ensureView(for document: EditorDocument) {
+    /// Makes (or replaces, when the path was reopened) the view of `document` in `pane`, and the document's services
+    /// when it has none. Called outside rendering.
+    func ensureView(for document: EditorDocument, in pane: PaneID) {
         if !Self.registry.contains(where: { $0.store === self }) { Self.registry.append(Weak(self)) }
-        if let existing = views[document.path], existing.document === document { return }
-        if views[document.path] != nil { cancelDefinition() }
-        views[document.path]?.close()
-        views[document.path] = OpenDocumentView(document: document, engine: engine, lsp: lsp)
+        let path = document.path
+        if let services = servicesByPath[path], services.document !== document { dropDocument(path) }
+        let key = ViewKey(pane: pane, path: path)
+        if let existing = views[key], existing.document === document { return }
+        let services: DocumentServices
+        if let existing = servicesByPath[path] {
+            services = existing
+        } else {
+            services = DocumentServices(document: document, engine: engine, lsp: lsp)
+            servicesByPath[path] = services
+        }
+        views[key] = OpenDocumentView(document: document, pane: pane, services: services, engine: engine, lsp: lsp)
     }
 
-    /// The state of `document`, once ``ensureView(for:)`` has made it.
-    func view(for document: EditorDocument) -> OpenDocumentView? {
-        guard let view = views[document.path], view.document === document else { return nil }
+    /// The view of `document` in `pane`, once ``ensureView(for:in:)`` has made it.
+    func view(for document: EditorDocument, in pane: PaneID) -> OpenDocumentView? {
+        guard let view = views[ViewKey(pane: pane, path: document.path)], view.document === document else { return nil }
         return view
     }
 
+    /// Closes every view of `path` and its services (the document was replaced or is gone).
+    private func dropDocument(_ path: String) {
+        cancelDefinition()
+        for key in views.keys where key.path == path {
+            views[key]?.close()
+            views[key] = nil
+        }
+        servicesByPath[path]?.close()
+        servicesByPath[path] = nil
+    }
+
     /// Closes the view of every tab whose document was replaced (a read-only file made editable again installs a
-    /// new document), active or not, and makes the new document's view for a tab that had one. A tab that never
+    /// new document), active or not, and makes the new document's view in each pane that had one. A tab that never
     /// had a view gets one when it is first shown.
     func refreshReplaced(workspace: Workspace) {
-        for (path, view) in views where workspace.document(path) !== view.document {
-            cancelDefinition()
-            view.close()
-            views[path] = nil
-            if let document = workspace.document(path) { ensureView(for: document) }
+        for (path, services) in servicesByPath where workspace.document(path) !== services.document {
+            let panes = views.keys.filter { $0.path == path }.map(\.pane)
+            dropDocument(path)
+            if let document = workspace.document(path) {
+                for pane in panes { ensureView(for: document, in: pane) }
+            }
         }
     }
 
-    /// Drops the state of documents that are no longer open.
-    func prune(keeping paths: [String]) {
-        for (path, view) in views where !paths.contains(path) {
+    /// Drops the views of `pane` whose tab is gone. The documents' services stay until ``pruneServices(workspace:)``.
+    func prune(pane: PaneID, keeping paths: [String]) {
+        for (key, view) in views where key.pane == pane && !paths.contains(key.path) {
             cancelDefinition()
             view.close()
-            views[path] = nil
+            views[key] = nil
         }
     }
 
+    /// Chat's tab list changed: drops the views of its closed tabs, then the services of documents nobody holds.
+    func chatTabsChanged(workspace: Workspace) {
+        prune(pane: .chat, keeping: workspace.tabs)
+        pruneServices(workspace: workspace)
+    }
+
+    /// A group's tab list changed or a group closed: drops the views of every group tab that is gone, then the services.
+    func groupsChanged(workspace: Workspace) {
+        for pane in Set(views.keys.map(\.pane)) where pane != .chat { prune(pane: pane, keeping: workspace.tabs(in: pane)) }
+        pruneServices(workspace: workspace)
+    }
+
+    /// Drops the views of every closed tab in every pane (Chat's and the groups'), then the services of documents nobody
+    /// holds. Runs whichever mode is shown, so a close that finishes in the other mode leaves nothing behind.
+    func reconcile(workspace: Workspace) {
+        for pane in Set(views.keys.map(\.pane)) { prune(pane: pane, keeping: workspace.tabs(in: pane)) }
+        pruneServices(workspace: workspace)
+    }
+
+    /// Closes the services of every document that left the workspace (no tab list holds it, or it was replaced), once.
+    func pruneServices(workspace: Workspace) {
+        for path in Array(servicesByPath.keys) where !workspace.holds(path) { dropDocument(path) }
+        refreshReplaced(workspace: workspace)
+    }
 }
 
 /// The code view of one document with its find bar and edit bar.
@@ -605,6 +559,10 @@ struct CodePanel: Component {
     /// The glass bar floating over the panel's top (its height with the gutter below it): the code scrolls under it, so
     /// the code's top margin is this; the find bar, which is not scrolled, sits below the glass bar instead.
     var topClear: Double = 0
+    /// The accessibility id of the code view: `code-view` in Chat, `code-view-<groupID>` in a group.
+    var codeViewIdentifier: String = "code-view"
+    /// Called when the code view gains focus (a group takes the editor focus then).
+    var onFocus: (() -> Void)?
     @FocusState var codeFocused: Bool
 
     var content: some ElementGroup {
@@ -616,8 +574,9 @@ struct CodePanel: Component {
                 VStack(spacing: 0) { FindBar(view: view, onClose: { codeFocused = true }) }
                     .padding(Edges(top: Pixels(Float(topClear)), right: Pixels(0), bottom: Pixels(0), left: Pixels(0)))
             }
-            if document.diffMode == .sideBySide {
-                SideBySideView(workspace: workspace, store: store, document: document, view: view, focused: $codeFocused)
+            if workspace.presentation(of: path, in: view.pane) == .sideBySide {
+                SideBySideView(workspace: workspace, store: store, document: document, view: view, focused: $codeFocused,
+                               idSuffix: Self.sideBySideSuffix(view.pane))
             } else {
                 CodeView(buffer: document.buffer, decorations: view.decorations)
                     .font(family: "Menlo", size: 12)
@@ -626,12 +585,12 @@ struct CodePanel: Component {
                     .onGutterBarClick { hit in view.selectedEdit = hit.tag.flatMap { view.tags[$0] } }
                     .gutterBarContextMenu { hit in
                         if let edit = hit.tag.flatMap({ view.tags[$0] }) {
-                            editMenu(edit: edit, workspace: workspace, store: store, document: document)
+                            editMenu(edit: edit, workspace: workspace, store: store, document: document, pane: view.pane)
                         }
                     }
                     .focused($codeFocused)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .accessibilityIdentifier("code-view")
+                    .accessibilityIdentifier(codeViewIdentifier)
             }
             if let edit = view.selectedEdit, let record = workspace.editRecord(id: edit), record.state == .live {
                 PanelEditBar(workspace: workspace, store: store, record: record)
@@ -642,9 +601,19 @@ struct CodePanel: Component {
             view.rebuildIfNeeded(workspace: workspace)
         }
         .onChange(of: codeFocused) { old, new in
-            workspace.codePanelFocused = new
-            if old && !new { Task { await workspace.focusLeft(path) } }
+            workspace.codeFocusChanged(new, pane: view.pane)
+            if new { onFocus?() }
+            // Switching to Code mode drops the view's focus; a mode switch never saves.
+            if old && !new && workspace.mode == .chat { Task { await workspace.focusLeft(path) } }
         }
+    }
+}
+
+extension CodePanel {
+    /// Side-by-side ids carry the group's id inside a group; Chat keeps `sbs-left` / `sbs-right`.
+    static func sideBySideSuffix(_ pane: PaneID) -> String {
+        if case .group(let id) = pane { return "-\(id)" }
+        return ""
     }
 }
 
@@ -686,7 +655,7 @@ struct FindBar: Component {
 
 /// The gutter-bar menu of one edit, in either diff mode.
 @MainActor @MenuContentBuilder
-func editMenu(edit: UUID, workspace: Workspace, store: SessionUIStore, document: EditorDocument) -> some MenuContent {
+func editMenu(edit: UUID, workspace: Workspace, store: SessionUIStore, document: EditorDocument, pane: PaneID) -> some MenuContent {
     let path = document.path
     Button("Keep") { workspace.keep(edit: edit, path: path) }
         .accessibilityIdentifier("keep-\(edit.uuidString)")
@@ -696,8 +665,9 @@ func editMenu(edit: UUID, workspace: Workspace, store: SessionUIStore, document:
         if let record = workspace.editRecord(id: edit) { showInChat(record, workspace: workspace, store: store) }
     }
     .accessibilityIdentifier("show-in-chat-\(edit.uuidString)")
-    Button(document.diffMode == .inline ? "Side by side" : "Inline") {
-        document.diffMode = document.diffMode == .inline ? .sideBySide : .inline
+    let inline = workspace.presentation(of: path, in: pane) == .inline
+    Button(inline ? "Side by side" : "Inline") {
+        workspace.setPresentation(inline ? .sideBySide : .inline, of: path, in: pane)
     }
-    .accessibilityIdentifier("\(document.diffMode == .inline ? "side-by-side" : "inline")-\(edit.uuidString)")
+    .accessibilityIdentifier("\(inline ? "side-by-side" : "inline")-\(edit.uuidString)")
 }
