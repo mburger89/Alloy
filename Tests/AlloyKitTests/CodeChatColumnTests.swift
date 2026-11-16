@@ -69,7 +69,7 @@ import Testing
         #expect(rig.workspace.selectedSessionID == a.id)
         try openMenu(window)
         let menu = try #require(window.presentedMenu)
-        #expect(menu.item(accessibilityIdentifier: "code-session-\(b.id.uuidString)")?.title == "Bea \u{2014} \(statusWord(b.status))")
+        #expect(menu.item(accessibilityIdentifier: "code-session-\(b.id.uuidString)")?.title == "Bea")
         #expect(menu.item(accessibilityIdentifier: "code-session-new")?.title == "New Session")
         try window.chooseMenuItem(accessibilityIdentifier: "code-session-\(b.id.uuidString)")
         window.tick()
@@ -96,7 +96,8 @@ import Testing
         var tints: [String] = []
         for session in [a, b, c, d] {
             let item = try #require(menu.item(accessibilityIdentifier: "code-session-\(session.id.uuidString)"))
-            #expect(item.title == "\(session.name) \u{2014} \(statusWord(session.status))", "the status word stays in the title for screen readers")
+            #expect(item.title == session.name)
+            #expect(item.accessibilityLabel == "\(session.name), \(statusWord(session.status))", "screen readers hear the status")
             let image = try #require(item.image)
             #expect(image.symbol == "circle.fill")
             let expected = MenuEvaluation { Button("x", systemImage: "circle.fill") {}.tint(statusDotColor(session)) }.items.first?.image?.tint

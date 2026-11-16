@@ -60,12 +60,13 @@ struct SessionMenuHeader: Component, Equatable {
                     .accessibilityLabel(statusWord(current.status))
                     .accessibilityIdentifier("code-session-status")
             }
-            // Each item's tinted dot is its status (`.tint`: a foreground style has no effect in a menu). A menu item carries no
-            // accessibility label of its own (MetalUI declares none), so the status word stays in the title for screen readers.
+            // Each item's tinted dot is its status (`.tint`: a foreground style has no effect in a menu). The title is the name; the
+            // status word is in the item's accessibility label, which screen readers read instead of the title.
             Menu {
                 for session in workspace.sessions {
-                    Button { workspace.selectedSessionID = session.id } label: { Label("\(session.name) \u{2014} \(statusWord(session.status))", systemImage: "circle.fill") }
+                    Button { workspace.selectedSessionID = session.id } label: { Label(session.name, systemImage: "circle.fill") }
                         .tint(statusDotColor(session))
+                        .accessibilityLabel("\(session.name), \(statusWord(session.status))")
                         .accessibilityIdentifier("code-session-\(session.id.uuidString)")
                 }
                 Divider()
