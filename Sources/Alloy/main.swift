@@ -66,6 +66,7 @@ if case .open(let root, _) = initial.choice, let workspace = makeWorkspace(root:
 // The registry and quick open, shared by the window and the menu bar. Created before the window.
 let center = CommandCenter(launcher: model)
 if let workspace = model.workspace { center.bind(workspace) }
+center.standardMenuClaims = { app.standardMenuShortcuts() }
 // The app menu's Settings… (⌘,) and the Go menu; see alloyCommands. It only needs `app`, so it exists before the window.
 let settingsWindow = SettingsWindowController { title, size, minSize, root in
     try app.openWindow(title: title, size: size, minSize: minSize, windowStyle: .hiddenTitleBar) { settingsWindowElement(root) }

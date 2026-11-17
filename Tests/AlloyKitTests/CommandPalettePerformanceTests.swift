@@ -57,6 +57,51 @@ import Testing
         await rig.workspace.stopAll()
     }
 
+    @Test func openKeyboardSectionLeavesTheMainIdleFrameAlone() async throws {
+        let rig = Rig()
+        _ = await rig.workspace.newSession(name: "A")
+        let window = try alloyWindow(rig.workspace)
+        let before = await idleFrame(window)
+        let settings = try window.openSettingsFromMenu()
+        try await settings.runUntil { self.exists(settings, "settings-keyboard") }
+        let after = await idleFrame(window)
+        #expect(after == before, "steady element requests \(before) before, \(after) after")
+        await rig.workspace.stopAll()
+    }
+
+    @Test func openKeyboardSectionIdleRequestsNothing() async throws {
+        let rig = Rig()
+        let window = try alloyWindow(rig.workspace)
+        let settings = try window.openSettingsFromMenu()
+        try await settings.runUntil { self.exists(settings, "settings-keyboard") }
+        for _ in 0..<10 { settings.tick(); await Task.yield() }
+        settings.resetFrameWork()
+        for _ in 0..<5 { settings.tick() }
+        #expect(settings.frameWork.reduce(0) { $0 + $1.elementRequests } == 0)
+    }
+
+    /// A rebind rebuilds the keymap and menus once; the main window's steady frame is the same afterwards, in Chat and
+    /// in Code mode (the guard constants themselves are asserted by `ViewRerunTests` and `CodeModePerformanceTests`).
+    @Test func rebindLeavesMainWindowSteadyCounts() async throws {
+        let rig = Rig()
+        _ = await rig.workspace.newSession(name: "A")
+        let window = try alloyWindow(rig.workspace)
+        for mode in [WorkspaceMode.chat, WorkspaceMode.code] {
+            rig.workspace.setMode(mode)
+            for _ in 0..<10 { window.tick(); await Task.yield() }
+            let before = await idleFrame(window)
+            var s = rig.workspace.settings
+            s.keybindings = ["view.toggleChatColumn": "cmd+alt+shift+j", "go.quickOpen": "none"]
+            try rig.workspace.updateSettings(s)
+            for _ in 0..<10 { window.tick(); await Task.yield() }
+            let after = await idleFrame(window)
+            #expect(after == before, "\(mode): steady element requests \(before) before, \(after) after a rebind")
+            s.keybindings = [:]
+            try rig.workspace.updateSettings(s)
+        }
+        await rig.workspace.stopAll()
+    }
+
     @Test func idleFramesWithTheOpenPaletteRequestNothing() async throws {
         let rig = Rig()
         let window = try alloyWindow(rig.workspace)

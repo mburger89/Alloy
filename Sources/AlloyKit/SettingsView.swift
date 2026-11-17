@@ -10,6 +10,8 @@ struct SettingsView: Component {
     /// Picks the theme; nil hides the theme section.
     var themes: ThemeController?
     let close: @MainActor () -> Void
+    /// The command registry the Keyboard section edits; nil hides the section.
+    var center: CommandCenter?
     @State var path = ""
     @State var loaded = false
     @State var failure: String?
@@ -80,6 +82,10 @@ struct SettingsView: Component {
             TerminalSettingsSection(workspace: workspace)
             Divider()
             GitSettingsSection(workspace: workspace)
+            if let center {
+                Divider()
+                KeyboardSettingsSection(workspace: workspace, center: center)
+            }
             if saved {
                 Text("Saved").font(size: 12).foregroundColor(.mutedInk).accessibilityIdentifier("settings-saved")
             }

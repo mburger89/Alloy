@@ -6,12 +6,14 @@ import MetalUI
 public struct SettingsWindowRoot: Component {
     let workspace: Workspace
     var themes: ThemeController?
+    var center: CommandCenter?
     let close: @MainActor () -> Void
     /// Runs when the window goes away (its `onDisappear`), so the opener forgets it.
     let gone: @MainActor () -> Void
 
-    init(workspace: Workspace, themes: ThemeController?, close: @escaping @MainActor () -> Void, gone: @escaping @MainActor () -> Void) {
-        self.workspace = workspace; self.themes = themes; self.close = close; self.gone = gone
+    init(workspace: Workspace, themes: ThemeController?, center: CommandCenter? = nil, close: @escaping @MainActor () -> Void,
+         gone: @escaping @MainActor () -> Void) {
+        self.workspace = workspace; self.themes = themes; self.center = center; self.close = close; self.gone = gone
     }
 
     public var content: some ElementGroup {
@@ -22,7 +24,7 @@ public struct SettingsWindowRoot: Component {
             VStack(spacing: 0) {
                 SettingsTitleIsland(style: style).equatable()
                 VStack(spacing: 0) {
-                    SettingsView(workspace: workspace, themes: themes, close: close)
+                    SettingsView(workspace: workspace, themes: themes, close: close, center: center)
                         .island(style: style, identifier: "island-settings")
                 }
                 .padding(Edges(top: Pixels(0), right: gutter, bottom: gutter, left: gutter))
@@ -97,7 +99,7 @@ public final class SettingsWindowController {
     public var isOpen: Bool { window != nil }
 
     /// Opens Settings for `workspace`, or fronts the window that is open.
-    public func open(workspace: Workspace, themes: ThemeController?) {
+    public func open(workspace: Workspace, themes: ThemeController?, center: CommandCenter? = nil) {
         if let window {
             window.makeKeyAndOrderFront()
             return
@@ -105,7 +107,7 @@ public final class SettingsWindowController {
         // `claude` is looked for when Settings opens, so the field can show what was found.
         Task { await workspace.detectClaude() }
         let box = WindowBox()
-        let root = SettingsWindowRoot(workspace: workspace, themes: themes,
+        let root = SettingsWindowRoot(workspace: workspace, themes: themes, center: center,
                                       close: { box.window?.close() },
                                       gone: { [weak self] in self?.window = nil })
         guard let opened = try? opener("Settings", Self.windowSize, Self.minimumSize, root) else { return }

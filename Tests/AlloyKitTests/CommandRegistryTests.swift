@@ -116,6 +116,30 @@ import Testing
 }
 
 extension CommandRegistryTests {
+    @Test func noBuiltInDefaultCollidesWithASystemReservedKey() {
+        let h = Harness()
+        let registry = testCenter(for: h.workspace).registry
+        let reserved = KeyboardShortcut.systemReserved(on: .current)
+        // Known, unresolved collisions awaiting a product decision (not changed unasked): ctrl+space is the system's
+        // "Next Input Source" when that shortcut is enabled. Do not add to this list without a decision.
+        let knownCollisions: Set<String> = ["edit.triggerCompletion"]
+        for command in registry.commands {
+            guard let chord = command.descriptor.shortcut, !knownCollisions.contains(command.descriptor.id) else { continue }
+            for claim in reserved where claim.shortcut.conflicts(with: chord.shortcut) {
+                Issue.record("\(command.descriptor.id) default collides with system key \"\(claim.title)\"")
+            }
+        }
+    }
+
+    @Test func skipNextOccurrenceHasNoDefaultOnMacOS() {
+        let h = Harness()
+        let command = testCenter(for: h.workspace).registry.command(id: "editor.skipNextOccurrence")
+        #expect(command?.descriptor.menuID == "cmd-editor.skipNextOccurrence")
+        #if os(macOS)
+        #expect(command?.descriptor.shortcut == nil)
+        #endif
+    }
+
     @Test func centerOwnsOneQuickOpen() throws {
         let h = Harness()
         let center = testCenter(for: h.workspace)

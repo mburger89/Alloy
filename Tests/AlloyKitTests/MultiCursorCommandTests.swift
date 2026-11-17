@@ -47,6 +47,15 @@ import Testing
         }
     }
 
+    /// macOS reserves alt+cmd+d (Show or Hide the Dock), so Skip to Next Occurrence has no default there.
+    private var skipShortcut: PlatformKeyEquivalent? {
+        #if os(macOS)
+        nil
+        #else
+        PlatformKeyEquivalent(key: "d", modifiers: [.option, .command])
+        #endif
+    }
+
     @Test func editMenuListsThemAfterTheIntelItems() async throws {
         let rig = Rig()
         let window = try alloyWindow(rig.workspace)
@@ -59,7 +68,7 @@ import Testing
         #expect(new.map(\.shortcut) == [
             PlatformKeyEquivalent(key: "d", modifiers: [.command]),
             PlatformKeyEquivalent(key: "l", modifiers: [.command, .shift]),
-            PlatformKeyEquivalent(key: "d", modifiers: [.option, .command]),
+            skipShortcut,
             PlatformKeyEquivalent(key: "\u{f700}", modifiers: [.control, .shift]),
             PlatformKeyEquivalent(key: "\u{f701}", modifiers: [.control, .shift]),
         ])
@@ -91,7 +100,12 @@ import Testing
         #expect(ranges(state) == [0..<5])
         window.typeKey("d", modifierFlags: .command)
         #expect(ranges(state) == [0..<5, 11..<16])
+        #if os(macOS)
+        // No default chord on macOS (the system owns alt+cmd+d): drive the menu item instead.
+        try window.testApp.performMenuBarItem(accessibilityIdentifier: "cmd-editor.skipNextOccurrence")
+        #else
         window.typeKey("d", modifierFlags: [.option, .command])
+        #endif
         #expect(ranges(state) == [0..<5, 22..<27])
         window.typeKey("l", modifierFlags: [.command, .shift])
         #expect(ranges(state) == [0..<5, 11..<16, 22..<27])

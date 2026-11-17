@@ -57,6 +57,7 @@ extension TestWindow {
         // The center's built-in commands read these through closures, so installing again swaps them.
         testSettingsControllers[ObjectIdentifier(center)] = rig.controller
         testThemeControllers[ObjectIdentifier(center)] = themes
+        center.standardMenuClaims = { [app = testApp.app] in app.standardMenuShortcuts() }
         testApp.app.commands { alloyCommands(center: center) }
     }
 

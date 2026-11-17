@@ -1,5 +1,6 @@
 import AlloyCore
 import Foundation
+import struct MetalUI.KeyboardShortcut
 import Observation
 
 /// A descriptor with the closures that make it live. The closures are only called from actions (a key, a menu item, a
@@ -118,7 +119,8 @@ public final class CommandRegistry {
     }
 
     private func refreshKeymap() {
-        keymap.update(defaults: storage.map { ($0.descriptor.id, $0.descriptor.shortcut) }, overrides: overrides)
+        keymap.update(defaults: storage.map { ($0.descriptor.id, $0.descriptor.shortcut) }, overrides: overrides,
+                      primaryIsCmd: KeyboardShortcut.Platform.current == .macOS)
     }
 }
 

@@ -50,7 +50,7 @@ workspace when they run (`center.workspace`), because the registry outlives work
 ## Editor commands
 
 `editor.addNextOccurrence` (cmd+d), `editor.selectAllOccurrences` (cmd+shift+l), `editor.skipNextOccurrence`
-(alt+cmd+d), `editor.addCaretAbove` and `editor.addCaretBelow` (ctrl+shift+up/down) sit in the Edit menu (category
+(no default shortcut on macOS: alt+cmd+d is the system's Show or Hide the Dock, so bind one in Settings; alt+cmd+d elsewhere), `editor.addCaretAbove` and `editor.addCaretBelow` (ctrl+shift+up/down) sit in the Edit menu (category
 Selection, menu ids `cmd-<id>`). They act on the focused view's selection state through `Workspace.runMultiCursor`
 and are disabled when no code view is focused (project chooser, no tab, a non-code tab).
 
@@ -78,6 +78,27 @@ first, capped at 10, and unknown ids are kept.
 
 `Workspace.updateSettings` fires `onKeybindingsChanged` only when `keybindings` changed; `CommandCenter.bind(_:)`
 installs the hook and applies the current overrides. A failed save throws before anything is applied.
+
+## Keyboard settings
+
+Settings has a Keyboard section (`settings-keyboard`) after Language servers and before Saved. It lists every registry
+command with its effective shortcut, filtered by title, id or chord text (`keyboard-filter`). Ids: `keyboard-row-<id>`,
+`keyboard-chord-<id>` (a MetalUI `ShortcutRecorder`), `keyboard-reset-<id>` (only when overridden),
+`keyboard-conflict-<id>`, `keyboard-builtin-<n>`, `keyboard-reset-all`, `keyboard-reassign-prompt`,
+`keyboard-reassign-confirm`, `keyboard-reassign-cancel`, `keyboard-error`, `keyboard-empty`.
+
+- Only overrides are stored (`settings.keybindings`). Reset removes the key, clear stores `none`, and unknown ids from a
+  newer Alloy are kept on save and not shown. An unparseable value is ignored and the default shows.
+- Clash kinds. Another command on the chord is a hard clash: recording asks "Reassign from X?" and nothing is written
+  until Reassign. A MetalUI standard menu key, a system-reserved key or a hard code view key is saved and flagged; the
+  built-in still wins. A code view key with `isConditional` is soft: shown with its condition, never blocking. Two
+  commands on one chord (hand-edited settings) flag both rows and the first in registry order keeps the chord.
+- One write: a rebind and its reassignment are one `Workspace.updateSettings` call. On failure nothing is applied and
+  `keyboard-error` shows "Could not save: ...".
+- Closed settings and an idle open section cost no frame work; an armed recorder is idle too.
+- macOS: Skip to Next Occurrence has no default shortcut because the system reserves the Option-Command-D chord (Show or
+  Hide the Dock). It stays in the menu and palette and can be bound here. A registry test checks that no built-in
+  default collides with the platform's system-reserved keys.
 
 ## Plugins
 

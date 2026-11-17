@@ -1,5 +1,6 @@
 import AlloyCore
 import Foundation
+import MetalUI
 
 /// The app-wide objects every window shares: the command registry and quick open. Created once by the entry point
 /// before the window, handed to `rootView`/`launcherRoot`, and kept for the life of the process, so views that compare
@@ -11,6 +12,9 @@ public final class CommandCenter {
     let palette: CommandPaletteModel
     /// Raises the project window (set by the entry point; the palette and plugin commands call it).
     public var bringProjectWindowForward: @MainActor () -> Void = {}
+    /// The app's standard menu items and their keys (`App.standardMenuShortcuts()`), set by the entry point; read only
+    /// when the Keyboard settings classify a clash.
+    public var standardMenuClaims: @MainActor () -> [ClaimedShortcut] = { [] }
 
     private let launcher: LauncherModel
     /// A workspace bound directly (a window that has no launcher adopting it); wins over the launcher's.

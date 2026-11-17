@@ -55,6 +55,15 @@ public struct KeyChord: Hashable, Codable, Sendable {
         return parts.joined(separator: "+")
     }
 
+    /// The chord with `primary` replaced by `cmd` (macOS) or `ctrl` (elsewhere), merged with any existing one.
+    public func resolved(primaryIsCmd: Bool) -> KeyChord {
+        guard modifiers.contains(.primary) else { return self }
+        var m = modifiers
+        m.remove(.primary)
+        m.insert(primaryIsCmd ? .cmd : .ctrl)
+        return KeyChord(modifiers: m, key: key)
+    }
+
     /// Nil for an empty key, a modifier-only chord, an unknown token or a duplicate token. Case-insensitive.
     public static func parse(_ text: String) -> KeyChord? {
         var s = text.trimmingCharacters(in: .whitespaces)

@@ -54,3 +54,19 @@ import Testing
         #expect(k.revision == r + 1)
     }
 }
+
+@MainActor @Suite struct KeymapPlatformTests {
+    private func c(_ s: String) -> KeyChord { KeyChord.parse(s)! }
+
+    @Test func ctrlXAndPrimaryXConflictOffMacOnly() {
+        let defaults: [(id: String, chord: KeyChord?)] = [("a", c("primary+x")), ("b", c("ctrl+x"))]
+        let mac = Keymap()
+        mac.update(defaults: defaults, overrides: [:], primaryIsCmd: true)
+        #expect(mac.conflicts.isEmpty)
+        let other = Keymap()
+        other.update(defaults: defaults, overrides: [:], primaryIsCmd: false)
+        #expect(other.conflicts == ["a", "b"])
+        #expect(other.chord(for: "a") == c("primary+x"))
+        #expect(other.chord(for: "b") == nil)
+    }
+}

@@ -32,7 +32,7 @@ public enum BuiltinCommands {
         add("app.settings", "Settings…", .app, chord(.cmd, ch(",")), .menu, menu: .appSettings, recents: true,
             menuID: "app-settings", enabled: hasWorkspace) {
             // Settings edit the open project's workspace, so it needs a project; the chooser has none.
-            if let workspace = current(), let controller = settings() { controller.open(workspace: workspace, themes: themes()) }
+            if let workspace = current(), let controller = settings() { controller.open(workspace: workspace, themes: themes(), center: center) }
         }
         // F12: a focused handler claims the key first (MetalUI runs menu shortcuts only after the focused view declines),
         // so the code panel's own F12 handling and this item never both fire.
@@ -62,13 +62,19 @@ public enum BuiltinCommands {
                  menuID: "menu-quick-fix", .quickFix)
         // Multi-cursor: MetalUI's selection helpers do the work on the focused view's state. Disabled when no code view
         // is focused. The chords are claimed by the menu items, so the code view never sees them.
-        func addMulti(_ id: String, _ title: String, _ shortcut: KeyChord, _ command: MultiCursorCommand) {
+        func addMulti(_ id: String, _ title: String, _ shortcut: KeyChord?, _ command: MultiCursorCommand) {
             add("editor.\(id)", title, .selection, shortcut, .menu, menu: .edit, menuID: "cmd-editor.\(id)",
                 enabled: { current()?.canRunMultiCursor() ?? false }) { current()?.runMultiCursor(command) }
         }
         addMulti("addNextOccurrence", "Add Next Occurrence", chord(.cmd, ch("d")), .addNextOccurrence)
         addMulti("selectAllOccurrences", "Select All Occurrences", chord([.cmd, .shift], ch("l")), .selectAllOccurrences)
-        addMulti("skipNextOccurrence", "Skip to Next Occurrence", chord([.alt, .cmd], ch("d")), .skipToNextOccurrence)
+        // macOS reserves alt+cmd+d (Show or Hide the Dock), so a default there could never fire: menu and palette only.
+        #if os(macOS)
+        let skipChord: KeyChord? = nil
+        #else
+        let skipChord: KeyChord? = chord([.alt, .cmd], ch("d"))
+        #endif
+        addMulti("skipNextOccurrence", "Skip to Next Occurrence", skipChord, .skipToNextOccurrence)
         addMulti("addCaretAbove", "Add Caret Above", chord([.ctrl, .shift], .named(.up)), .addCaretAbove)
         addMulti("addCaretBelow", "Add Caret Below", chord([.ctrl, .shift], .named(.down)), .addCaretBelow)
         // Folding: acts on the focused view's fold state; the chords are claimed by the menu items in View > Folding.

@@ -59,10 +59,16 @@ import Testing
             "cmd-editor.addNextOccurrence", "cmd-editor.selectAllOccurrences", "cmd-editor.skipNextOccurrence",
             "cmd-editor.addCaretAbove", "cmd-editor.addCaretBelow",
         ])
+        // macOS reserves alt+cmd+d (Show or Hide the Dock), so Skip to Next Occurrence has no default there.
+        #if os(macOS)
+        let skipShortcut: PlatformKeyEquivalent? = nil
+        #else
+        let skipShortcut: PlatformKeyEquivalent? = PlatformKeyEquivalent(key: "d", modifiers: [.option, .command])
+        #endif
         #expect(edit?.items.suffix(5).map(\.shortcut) == [
             PlatformKeyEquivalent(key: "d", modifiers: [.command]),
             PlatformKeyEquivalent(key: "l", modifiers: [.command, .shift]),
-            PlatformKeyEquivalent(key: "d", modifiers: [.option, .command]),
+            skipShortcut,
             PlatformKeyEquivalent(key: "\u{f700}", modifiers: [.control, .shift]),
             PlatformKeyEquivalent(key: "\u{f701}", modifiers: [.control, .shift]),
         ])
