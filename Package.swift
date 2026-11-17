@@ -50,7 +50,12 @@ let package = Package(
         // Shared helpers of the tests that run the fake server (its path, polling, launch and result collectors).
         .target(name: "AlloyLSPTestSupport", dependencies: ["AlloyLSP"]),
         // Test doubles shared by the test targets.
-        .target(name: "AlloyTestSupport", dependencies: ["AlloyCore"]),
+        .target(
+            name: "AlloyTestSupport",
+            dependencies: ["AlloyCore", "AlloyTerminal", .product(name: "MetalUITerminal", package: "MetalUI")]
+        ),
+        // Real shells behind the terminal panel: the pty seam, sessions, manager. UI-free.
+        .target(name: "AlloyTerminal", dependencies: ["AlloyCore", .product(name: "MetalUITerminal", package: "MetalUI")]),
         // Tree-sitter highlighting for CodeView and chat code fences.
         .target(
             name: "AlloyHighlight",
@@ -81,6 +86,7 @@ let package = Package(
                 "AlloyCore",
                 "AlloyHighlight",
                 "AlloyLSP",
+                "AlloyTerminal",
                 .product(name: "MetalUI", package: "MetalUI"),
                 .product(name: "MetalUIMarkdown", package: "MetalUI"),
             ]
@@ -114,9 +120,15 @@ let package = Package(
             ]
         ),
         .testTarget(
+            name: "AlloyTerminalTests",
+            dependencies: ["AlloyTerminal", "AlloyCore", "AlloyTestSupport",
+                           .product(name: "MetalUITerminal", package: "MetalUI")]
+        ),
+        .testTarget(
             name: "AlloyKitTests",
             dependencies: [
                 "AlloyKit",
+                "AlloyTerminal",
                 "AlloyLSP",
                 "AlloyTestSupport",
                 "AlloyLSPTestSupport",

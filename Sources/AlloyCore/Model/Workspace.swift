@@ -290,8 +290,12 @@ public final class Workspace {
             guard terminalLayout != oldValue else { return }
             if terminalVisible != terminalLayout.visible { terminalVisible = terminalLayout.visible }
             scheduleUIStateWrite()
+            onTerminalLayoutChanged?(terminalLayout)
         }
     }
+    /// Called after a real layout change (toggle, tab, select, split, restore); `markSpawned` does not count, so spawning from
+    /// this hook cannot re-fire it. The terminal panel store spawns `panesToSpawn()` here.
+    @ObservationIgnored public var onTerminalLayoutChanged: (@MainActor (TerminalLayout) -> Void)?
     /// Mirrors `terminalLayout.visible` as a property of its own, so a view that reads only this does not rerun on tab changes.
     public internal(set) var terminalVisible = false
     /// Set by the terminal manager: how many terminals run a foreground process. Nil means none.

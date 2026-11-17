@@ -1,5 +1,6 @@
 @testable import AlloyCore
 @testable import AlloyKit
+@testable import AlloyTerminal
 import AlloyTestSupport
 import Foundation
 import MetalUI
@@ -14,8 +15,14 @@ import Testing
 
     private func busyRig(_ count: Int) -> (Rig, LauncherModel, TerminalPanelStore) {
         let rig = Rig()
-        let store = TerminalPanelStore(workspace: rig.workspace)
-        for _ in 0..<count { store.setBusy(true, for: UUID()) }
+        let spawner = ScriptedPtySpawner()
+        let store = TerminalPanelStore(workspace: rig.workspace, spawner: spawner)
+        // One shell per tab, each with a foreground job (its process group differs from the shell's).
+        if count > 0 {
+            rig.workspace.toggleTerminal()
+            for _ in 1..<count { rig.workspace.newTerminalTab() }
+            for pty in spawner.spawned { pty.foreground = pty.processID + 500 }
+        }
         Self.kept = [store]
         return (rig, LauncherModel(workspace: rig.workspace), store)
     }

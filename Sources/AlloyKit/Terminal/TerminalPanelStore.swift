@@ -1,4 +1,5 @@
 import AlloyCore
+import AlloyTerminal
 import Foundation
 import MetalUI
 
@@ -16,26 +17,68 @@ final class TerminalPanelStore {
     @ObservationIgnored private var titles: [UUID: String] = [:]
     @ObservationIgnored private var states: [UUID: TerminalPaneState] = [:]
     private(set) var revision = 0
-    /// Called by `restart(_:)`; the terminal manager wires it later. Nothing restarts on its own.
+    /// Called by `restart(_:)`; the manager's restart is installed by the owning store. Nothing restarts on its own.
     @ObservationIgnored var onRestart: ((UUID) -> Void)?
     @ObservationIgnored lazy var splitStore = UIStateSplitStore(workspace: workspace)
+    /// The last notice per pane (spawn failure, fallback cwd); no view reads it yet.
+    @ObservationIgnored private var notices: [UUID: String] = [:]
 
-    /// Panes whose shell is running a foreground process; quit and window close ask before stopping them.
-    @ObservationIgnored private(set) var busyPanes: Set<UUID> = []
+    /// Owns the shells of this window. Nil on a store that did not become the hooks owner.
+    @ObservationIgnored private(set) var manager: TerminalManager?
 
-    init(workspace: Workspace) {
+    init(workspace: Workspace, spawner: any PtySpawner = LivePtySpawner(),
+         environment: [String: String] = ProcessInfo.processInfo.environment,
+         graceBeforeKill: Duration = .seconds(1)) {
         self.workspace = workspace
         // AlloyScreen.init builds a store on every rebuild and State keeps only the first, so a later store must not
         // replace the hooks of the live one.
         if workspace.terminalHooksOwner == nil {
             workspace.terminalHooksOwner = self
-            workspace.busyTerminalCount = { [weak self] in self?.busyPanes.count ?? 0 }
+            let manager = TerminalManager(
+                spawner: spawner, settings: { [weak workspace] in workspace?.settings.terminal ?? TerminalSettings() },
+                projectRoot: workspace.projectRoot.path, environment: environment, graceBeforeKill: graceBeforeKill,
+                delegate: .init(
+                    title: { [weak self] pane, title in self?.setTitle(title, for: pane) },
+                    workingDirectory: { [weak self] pane, path in self?.setWorkingDirectory(path, for: pane) },
+                    exited: { [weak self] pane, status in self?.markExited(pane, status: status) },
+                    notice: { [weak self] pane, text in self?.setNotice(text, for: pane) }))
+            self.manager = manager
+            workspace.busyTerminalCount = { manager.busyPanes().count }
             workspace.onTerminalHidden = { [weak self] in self?.hasFocus = false }
+            workspace.onTerminalLayoutChanged = { [weak self] layout in self?.spawn(layout) }
+            workspace.addStopHook { await manager.shutdown() }
+            onRestart = { [weak self] pane in
+                guard let self else { return }
+                manager.restart(pane, cwd: self.lastCwd(of: pane))
+            }
         }
     }
 
-    func setBusy(_ busy: Bool, for pane: UUID) {
-        if busy { busyPanes.insert(pane) } else { busyPanes.remove(pane) }
+    private func lastCwd(of pane: UUID) -> String {
+        for tab in workspace.terminalLayout.tabs { if let cwd = tab.panes[pane]?.lastCwd { return cwd } }
+        return workspace.terminalDefaultCwd
+    }
+
+    /// Spawns what the layout says needs a shell now, then records it as spawned.
+    private func spawn(_ layout: TerminalLayout) {
+        guard let manager else { return }
+        let panes = layout.panesToSpawn()
+        guard !panes.isEmpty else { return }
+        manager.spawnIfNeeded(panes.map { (id: $0, cwd: lastCwd(of: $0)) })
+        for pane in panes { workspace.terminalLayout.markSpawned(pane) }
+    }
+
+    func notice(of pane: UUID) -> String? { notices[pane] }
+
+    private func setNotice(_ text: String, for pane: UUID) {
+        guard notices[pane] != text else { return }
+        notices[pane] = text
+        revision &+= 1
+    }
+
+    private func setWorkingDirectory(_ path: String, for pane: UUID) {
+        guard lastCwd(of: pane) != path else { return }
+        workspace.terminalLayout.setCwd(path, for: pane)
     }
 
     static let titleLimit = 256
@@ -96,11 +139,12 @@ final class TerminalPanelStore {
     /// Forgets transient state of panes that no longer exist.
     private func prune() {
         let live = Set(workspace.terminalLayout.tabs.flatMap { $0.tree.paneIDs })
-        let before = titles.count + states.count
+        let before = titles.count + states.count + notices.count
         titles = titles.filter { live.contains($0.key) }
         states = states.filter { live.contains($0.key) }
-        busyPanes.formIntersection(live)
-        if titles.count + states.count != before { revision &+= 1 }
+        notices = notices.filter { live.contains($0.key) }
+        manager?.retain(only: live)
+        if titles.count + states.count + notices.count != before { revision &+= 1 }
     }
 
     var visible: Bool { workspace.terminalVisible }
