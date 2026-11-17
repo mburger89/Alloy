@@ -275,6 +275,15 @@ public actor HighlightEngine {
         return ranges
     }
 
+    /// Like ``foldRanges(documentID:)``, but first waits (the way `captures` does) until the engine holds text of
+    /// `minVersion`, and names the version the ranges are for. A caller applies them only if the buffer is still at
+    /// that version. `nil` for an unknown id, a windowed document or a language with no fold query.
+    public func foldRanges(documentID id: UUID, minVersion: UInt64) async -> (version: UInt64, ranges: [FoldRange])? {
+        if let doc = documents[id], doc.version < minVersion { await waitForVersion(id: id, minVersion: minVersion) }
+        guard let ranges = await foldRanges(documentID: id), let doc = documents[id] else { return nil }
+        return (doc.version, ranges)
+    }
+
     /// The version `captures` answers for an id the engine does not hold.
     public static let unknownVersion = UInt64.max
 

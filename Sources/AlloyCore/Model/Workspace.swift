@@ -132,6 +132,12 @@ public final class Workspace {
     /// Rises when a pane's selection state is dropped (and so may be replaced); the panels read it so they rebuild their code view.
     public internal(set) var selectionRevision = 0
     @ObservationIgnored var paneSelections: [PaneID: [String: CodeSelectionState]] = [:]
+    /// Each pane's fold state per held path, living and dying with `paneSelections` (see Workspace+Folds.swift).
+    @ObservationIgnored var paneFolds: [PaneID: [String: CodeFoldState]] = [:]
+    /// The fold choice last applied per path and the buffer version it was computed against.
+    @ObservationIgnored var latestFold: [String: (choice: FoldChoice, version: UInt64)] = [:]
+    /// Folds restored from `ui-state.json`, held until ranges for the file arrive.
+    @ObservationIgnored var pendingFolds: [PaneID: [String: [FoldLines]]] = [:]
     /// The "Stopped at 10,000 cursors" notice each pane is showing, until its selection changes (see MultiCursor.swift).
     @ObservationIgnored var capNotices: [PaneID: (token: UUID, notice: Notice)] = [:]
     /// Panes by when they last took focus, newest first.
@@ -1600,6 +1606,7 @@ public final class Workspace {
             let doc = EditorDocument(path: path, buffer: buffer, language: ext.isEmpty ? nil : ext,
                                      state: state, diskStamp: stamp)
             documents[path] = doc
+            latestFold.removeValue(forKey: path)
             ensureSelectionStates(forInstalled: path)
             if state == .editable { autosave.watch(doc) { [weak self] d in self?.documents[d.path] === d } }
         }
@@ -1622,6 +1629,7 @@ public final class Workspace {
         // The document, its watch and its sync generation go only with the last holder.
         guard !holds(path) else { return }
         documents.removeValue(forKey: path)
+        latestFold.removeValue(forKey: path)
         autosave.unwatch(path)
         tabMessages.removeValue(forKey: path)
         syncGeneration.removeValue(forKey: path)
@@ -1694,7 +1702,7 @@ public final class Workspace {
         autosave.cancel(path)
         let url = projectRoot.appendingPathComponent(path).standardizedFileURL
         var expected = doc.diskStamp
-        defer { saveEpoch[path, default: 0] += 1 }
+        defer { saveEpoch[path, default: 0] += 1; noteFoldsSaved(path: path) }
         // Each pass writes the buffer only if the file is still as Alloy last saw it. If something else wrote it
         // meanwhile (a session edit, another program), that text is merged into the buffer first and the pass
         // repeats, so neither the user's typing nor the other change is overwritten.

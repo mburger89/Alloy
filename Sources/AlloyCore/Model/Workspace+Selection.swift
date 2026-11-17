@@ -31,6 +31,8 @@ extension Workspace {
         }
         let state = CodeSelectionState(buffer: doc.buffer, selections: seed ?? doc.buffer.selectionState.selections)
         paneSelections[pane, default: [:]][doc.path] = state
+        paneFolds[pane, default: [:]][doc.path] = CodeFoldState(selectionState: state)
+        applyPendingFolds(path: doc.path, in: pane)
         return state
     }
 
@@ -48,10 +50,16 @@ extension Workspace {
     }
 
     func dropSelectionState(_ path: String, from pane: PaneID) {
+        paneFolds[pane]?.removeValue(forKey: path)
+        if pendingFolds[pane]?.removeValue(forKey: path) != nil, pendingFolds[pane]?.isEmpty == true {
+            pendingFolds.removeValue(forKey: pane)
+        }
         if paneSelections[pane]?[path] != nil { paneSelections[pane]?.removeValue(forKey: path); selectionRevision += 1 }
     }
 
     func dropSelectionStates(of pane: PaneID) {
+        paneFolds.removeValue(forKey: pane)
+        pendingFolds.removeValue(forKey: pane)
         if paneSelections.removeValue(forKey: pane) != nil { selectionRevision += 1 }
         paneFocusLog.removeAll { $0 == pane }
     }

@@ -54,6 +54,14 @@ workspace when they run (`center.workspace`), because the registry outlives work
 Selection, menu ids `cmd-<id>`). They act on the focused view's selection state through `Workspace.runMultiCursor`
 and are disabled when no code view is focused (project chooser, no tab, a non-code tab).
 
+### Folding
+
+`editor.fold` (alt+cmd+left), `editor.unfold` (alt+cmd+right), `editor.foldAll` (alt+shift+cmd+left) and
+`editor.unfoldAll` (alt+shift+cmd+right) sit in the Folding submenu at the end of the View menu (category Folding,
+menu ids `cmd-<id>`). They act on the focused view's fold state through `Workspace.runFold` and are disabled when no
+code view is focused. Fold folds the innermost unfolded range around each caret; Unfold opens the fold starting on the
+caret line, else the folds hiding it; Fold All and Unfold All act on every range of the displayed source.
+
 ## Recents
 
 `run(id:)` calls `workspace.noteCommandRun(id:)` for commands with `recordsRecent`. Recents are per project, newest

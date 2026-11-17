@@ -50,6 +50,18 @@ final class LeftPane {
     }
 }
 
+extension OpenDocumentView {
+    /// Moves `target` to the row showing the line that `row` shows in `source`, in `other`'s geometry; the same row when
+    /// either answer is missing (before a first frame). The x offset of the target is kept.
+    func syncScroll(from source: CodeViewGeometry, to other: CodeViewGeometry, row: Double, into target: CodeScrollState) {
+        var newRow = row
+        if let line = source.line(forScrollRow: Int(row)), let converted = other.scrollRow(forLine: line) {
+            newRow = Double(converted) + (row - row.rounded(.down))
+        }
+        target.position = CodeScrollPosition(row: newRow, x: target.position.x)
+    }
+}
+
 /// Old text on the left, the live document on the right, with blank filler rows keeping the lines level and the two
 /// scroll positions locked together. MetalUI does not report an assigned `CodeScrollState.position` through
 /// `onScroll`, so assigning the other pane's position from `onScroll` cannot feed back.
@@ -73,7 +85,8 @@ struct SideBySideView: Component {
                     .font(family: "Menlo", size: 12)
                     .codeViewEditable(false)
                     .scrollState(view.leftScroll)
-                    .onScroll { position in view.scroll.position = CodeScrollPosition(row: position.row, x: view.scroll.position.x) }
+                    .geometry(view.leftGeometry)
+                    .onScroll { position in view.syncScroll(from: view.leftGeometry, to: view.rightGeometry, row: position.row, into: view.scroll) }
                     .onGutterBarClick { hit in
                         if git { view.focusCompareHunk(tag: hit.tag) } else { view.selectedEdit = hit.tag.flatMap { view.leftTags[$0] } }
                     }
@@ -100,7 +113,8 @@ struct SideBySideView: Component {
                     .font(family: "Menlo", size: 12)
                     .codeViewEditable(editable)
                     .scrollState(view.scroll)
-                    .onScroll { position in view.leftScroll.position = CodeScrollPosition(row: position.row, x: view.leftScroll.position.x) }
+                    .geometry(view.rightGeometry)
+                    .onScroll { position in view.syncScroll(from: view.rightGeometry, to: view.leftGeometry, row: position.row, into: view.leftScroll) }
                     .onGutterBarClick { hit in
                         if git { view.focusCompareHunk(tag: hit.tag) } else { view.selectedEdit = hit.tag.flatMap { view.tags[$0] } }
                     }
@@ -123,7 +137,8 @@ struct SideBySideView: Component {
                     .font(family: "Menlo", size: 12)
                     .codeViewEditable(editable)
                     .scrollState(view.scroll)
-                    .onScroll { position in view.leftScroll.position = CodeScrollPosition(row: position.row, x: view.leftScroll.position.x) }
+                    .geometry(view.rightGeometry)
+                    .onScroll { position in view.syncScroll(from: view.rightGeometry, to: view.leftGeometry, row: position.row, into: view.leftScroll) }
                     .onGutterBarClick { hit in
                         if git { view.focusCompareHunk(tag: hit.tag) } else { view.selectedEdit = hit.tag.flatMap { view.tags[$0] } }
                     }

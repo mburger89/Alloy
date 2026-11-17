@@ -156,4 +156,42 @@ struct MemoryProbeTests {
         }
         withExtendedLifetime((window, rig)) {}
     }
+
+    /// `codeModeFullOpen` with 1,000 folds closed on the large file: the fold state and the placeholders must not move
+    /// resident growth past Chat's (when `ALLOY_MEMPROBE_CHAT_MIB` is given) and stay a few MiB. Run in its own process.
+    @Test func foldsThousand() async throws {
+        var m = Marks()
+        let name = ProcessInfo.processInfo.environment["ALLOY_MEMPROBE_NAME"] ?? "large.rs"
+        let rig = Rig()
+        try FileManager.default.copyItem(at: corpusLarge, to: rig.root.appendingPathComponent(name))
+        await rig.workspace.restoreUIState()
+        rig.workspace.setMode(.code)
+        let group = rig.workspace.codeLayout.focusedGroupID
+        await rig.workspace.open(name, in: .group(group))
+        let window = try alloyWindow(rig.workspace)
+        let id = "code-view-\(group.uuidString)"
+        try await window.runUntil { (try? window.element(identifier: id)) != nil }
+        for _ in 0..<20 { window.tick(); try await Task.sleep(for: .milliseconds(50)) }
+        try await Task.sleep(for: .seconds(3))
+        window.tick()
+        m.mark("code view settled, no folds")
+        let before = Footprint.mib - m.start
+        // 1,000 folds over the file's lines, set through the same path the coordinator uses.
+        let doc = try #require(rig.workspace.document(name))
+        let lines = doc.buffer.snapshot().lineCount
+        let step = max(3, lines / 1000)
+        let ranges = (0..<1000).map { FoldRange(startLine: $0 * step, endLine: $0 * step + 1) }.filter { $0.endLine + 1 < lines }
+        rig.workspace.applyFoldRanges(path: name, choice: FoldChoice(source: .indentation, ranges: ranges), version: doc.buffer.version)
+        let state = try #require(rig.workspace.foldState(for: name, in: .group(group)))
+        state.folded = state.foldableRanges
+        for _ in 0..<20 { window.tick(); try await Task.sleep(for: .milliseconds(50)) }
+        m.mark("\(state.folded.count) folds")
+        let total = Footprint.mib - m.start
+        print(String(format: "MEMPROBE folds total growth %.2f MiB (folds added %.2f MiB)", total, total - before))
+        #expect(total - before < 16, "1,000 folds added \(total - before) MiB")
+        if let chat = ProcessInfo.processInfo.environment["ALLOY_MEMPROBE_CHAT_MIB"].flatMap(Double.init) {
+            #expect(total <= chat * 1.05, "Code mode with folds grew \(total) MiB, Chat \(chat) MiB")
+        }
+        withExtendedLifetime((window, rig)) {}
+    }
 }

@@ -43,7 +43,8 @@ extension Workspace {
                        chatCollapsed: codeLayout.chatCollapsed, layout: layout, expandedFolders: expandedFolders.sorted(),
                        terminal: terminalLayout == TerminalLayout() ? nil : terminalLayout,
                        recentCommands: recentCommands,
-                       sidebarTab: codeLayout.sidebarTab, lastSearch: lastSearch, gitCommitDraft: persistedCommitDraft)
+                       sidebarTab: codeLayout.sidebarTab, lastSearch: lastSearch, gitCommitDraft: persistedCommitDraft,
+                       folds: foldSnapshot())
     }
 
     /// Moves `id` to the front of this project's recent commands (capped); does nothing, and writes nothing, when it is
@@ -116,6 +117,8 @@ extension Workspace {
         layout.focus(groups[saved.focused] != nil ? saved.focused : tree.groupIDs[0])
         for id in presentations.keys { if case .group = id { presentations.removeValue(forKey: id) } }
         // The groups' states go (their tabs were replaced); the focus log keeps the entries of groups that survive.
+        for id in paneFolds.keys { if case .group = id { paneFolds.removeValue(forKey: id) } }
+        for id in pendingFolds.keys { if case .group = id { pendingFolds.removeValue(forKey: id) } }
         for id in paneSelections.keys { if case .group = id { paneSelections.removeValue(forKey: id); selectionRevision += 1 } }
         paneFocusLog.removeAll { if case .group(let g) = $0 { return layout.groups[g] == nil } else { return false } }
     }
@@ -147,6 +150,7 @@ extension Workspace {
         search.restore(saved.lastSearch)
         if let layout = saved.layout { installLayout(layout, existing: found.files) }
         expandedFolders = Set(found.folders)
+        restoreFolds(saved.folds)
         mode = saved.mode
         uiStateRestored = true
         // Only Code mode shows groups; the focused group's document loads in the background, the others when their

@@ -70,7 +70,7 @@ import Testing
         #expect(view.items.map(\.title) == [
             "Chat Mode", "Code Mode", "Split Right", "Split Down", "Focus Left Group", "Focus Right Group",
             "Focus Up Group", "Focus Down Group", "Reveal in Tree", "Toggle Chat Column",
-            "Find in Files", "Replace in Files", "Toggle Terminal", "New Terminal", "Command Palette…",
+            "Find in Files", "Replace in Files", "Toggle Terminal", "New Terminal", "Command Palette…", "Folding",
         ])
         #expect(view.items.compactMap(\.accessibilityIdentifier) == [
             "view-mode-chat", "view-mode-code", "view-split-right", "view-split-down", "view-focus-left",

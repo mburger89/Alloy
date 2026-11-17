@@ -21,6 +21,8 @@ final class DocumentServices {
     private let engine: HighlightEngine
     /// The language-server bridge, and whether this document is currently reported open to it.
     private let lsp: LSPCoordinator?
+    /// The fold-range builder; set by the store right after the services are made.
+    private(set) weak var folds: FoldCoordinator?
     private(set) var lspOpen = false
     /// Whether any attached view has a completion scheduler (so a drain looks at the views only then).
     private var hasSchedulers = false
@@ -51,6 +53,13 @@ final class DocumentServices {
         startHighlighting()
     }
 
+    /// Lets the fold coordinator follow this document: now when the engine already holds it (or there is no grammar to
+    /// wait for), else when the engine opens it.
+    func attachFolds(_ coordinator: FoldCoordinator?) {
+        folds = coordinator
+        if !closed, engineIsOpen || !hasGrammar { folds?.opened(self) }
+    }
+
     /// The views attached now.
     var attachedViews: [OpenDocumentView] { views.compactMap(\.view) }
 
@@ -78,6 +87,7 @@ final class DocumentServices {
     /// Stops feeding the engine, closes the document at the server and forgets it there.
     func close() {
         closed = true
+        folds?.closed(path: document.path)
         if lspOpen { lsp?.closed(path: document.path); lspOpen = false }
         stopSemantic()
         feed?.finish()
@@ -119,6 +129,7 @@ final class DocumentServices {
     private func engineOpened() {
         guard !closed, !engineIsOpen else { return }
         engineIsOpen = true
+        folds?.opened(self)
         for view in attachedViews { view.engineReady() }
     }
 
@@ -152,12 +163,14 @@ final class DocumentServices {
             recordedBatches += 1
             for edit in edits { rowLog.record(edit) }
             feed?.yield(.edits(edits, after))
+            folds?.edited(path: document.path, edits: edits)
             forwardToLSP(.edits(edits, after: after), snapshot: after)
             semantic?.documentChanged()
             if hasSchedulers { for entry in views { entry.view?.intelEdited(edits, snapshot: after) } }
         case .resync(let snapshot):
             rowLog.reset(at: snapshot.version)
             feed?.yield(.open(snapshot))
+            folds?.resynced(path: document.path, snapshot: snapshot)
             forwardToLSP(.resync(snapshot), snapshot: snapshot)
             semantic?.documentChanged()
         }

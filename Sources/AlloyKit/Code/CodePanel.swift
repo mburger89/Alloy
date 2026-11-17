@@ -21,6 +21,10 @@ final class OpenDocumentView {
     @ObservationIgnored let scroll = CodeScrollState()
     /// The left pane's scroll position in side-by-side mode; it outlives the pane, which is rebuilt with the ledger.
     @ObservationIgnored let leftScroll = CodeScrollState()
+    /// The two compare panes' geometries: the scroll lock converts by line through them, so it stays right when the rows
+    /// and the lines of the two panes differ.
+    @ObservationIgnored let leftGeometry = CodeViewGeometry()
+    @ObservationIgnored let rightGeometry = CodeViewGeometry()
     @ObservationIgnored private(set) var highlighter: CodeViewHighlighter?
     @ObservationIgnored private let engine: HighlightEngine
     @ObservationIgnored private(set) var closed = false
@@ -771,6 +775,8 @@ final class CodePanelStore {
     private var views: [ViewKey: OpenDocumentView] = [:]
     private var servicesByPath: [String: DocumentServices] = [:]
     private var lsp: LSPCoordinator?
+    /// Builds the fold ranges of every open document and gives them to the workspace.
+    private(set) var foldCoordinator: FoldCoordinator?
 
     /// The services of the document at `path` (one per open document), once a view of it was made.
     func services(for path: String) -> DocumentServices? { servicesByPath[path] }
@@ -778,11 +784,21 @@ final class CodePanelStore {
     /// Connects the store to the workspace's language-server coordinator, if one is installed. Idempotent.
     func attach(workspace: Workspace) {
         installIntelHooks(workspace: workspace)
+        if foldCoordinator == nil {
+            let engine = engine
+            let folds = FoldCoordinator(sources: .production(engine: engine, lsp: { [weak self] in self?.lsp }))
+            folds.attach(workspace: workspace)
+            foldCoordinator = folds
+            for services in servicesByPath.values { services.attachFolds(folds) }
+        }
         guard let coordinator = workspace.languageServices as? LSPCoordinator, coordinator !== lsp else { return }
         lsp = coordinator
         installFormat(workspace: workspace, coordinator: coordinator)
         installCodeActions(workspace: workspace, coordinator: coordinator)
-        coordinator.savedHandler = { [weak self] path in self?.servicesByPath[path]?.lspSaved() }
+        coordinator.savedHandler = { [weak self] path in
+            self?.servicesByPath[path]?.lspSaved()
+            self?.foldCoordinator?.settled(path: path)
+        }
         coordinator.diagnosticsHandler = { [weak self] path in
             guard let self else { return }
             for (key, view) in views where key.path == path { view.paintDiagnostics() }
@@ -793,7 +809,11 @@ final class CodePanelStore {
             guard let self, let workspace else { return }
             self.goToDefinition(workspace: workspace, pane: workspace.defaultPane)
         }
-        coordinator.reloadHandler = { [weak self] in self?.servicesByPath.values.forEach { $0.lspSettingsChanged() } }
+        coordinator.reloadHandler = { [weak self] in
+            guard let self else { return }
+            servicesByPath.values.forEach { $0.lspSettingsChanged() }
+            for path in servicesByPath.keys { foldCoordinator?.settled(path: path) }
+        }
         coordinator.featuresHandler = { [weak self] path in
             guard let self else { return }
             for (key, view) in views where key.path == path { view.refreshFeatures() }
@@ -971,6 +991,7 @@ final class CodePanelStore {
         } else {
             services = DocumentServices(document: document, engine: engine, lsp: lsp)
             servicesByPath[path] = services
+            services.attachFolds(foldCoordinator)
         }
         let view = OpenDocumentView(document: document, pane: pane, services: services, engine: engine, lsp: lsp)
         view.actionService = codeActionService
@@ -1050,6 +1071,9 @@ struct CodePanel: Component {
     let view: OpenDocumentView
     /// The pane's selection state the code view runs on; the equatable panel compares it, so a replaced state rewires the view.
     let selection: CodeSelectionState
+    /// The pane's fold state for the file (nil without one); compared by identity like the selection state. Attached only to
+    /// the plain and inline views: the side-by-side and compare branches never call `codeView(editable:)`.
+    var fold: CodeFoldState?
     /// The glass bar floating over the panel's top (its height with the gutter below it): the code scrolls under it, so
     /// the code's top margin is this; the find bar, which is not scrolled, sits below the glass bar instead.
     var topClear: Double = 0
@@ -1165,6 +1189,9 @@ extension CodePanel {
         // A code action server reserves the marker lane from the first frame, so the lightbulb never moves the text.
         // File blame reserves the lane for as long as it is on: one deliberate shift per toggle.
         if (view.scheduler != nil && view.features.codeAction) || view.blame.fileOn { base = base.gutterMarkerLane(true) }
+        if let fold {
+            base = base.foldState(fold).foldGutter(showsOnHover: true, onToggle: { [weak workspace] _ in workspace?.noteFoldsChanged() })
+        }
         return base
             .onGutterBarClick { hit in
                 if hit.source == .gutterMarker, hit.tag == OpenDocumentView.lightbulbTag {

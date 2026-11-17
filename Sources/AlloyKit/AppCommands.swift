@@ -24,6 +24,9 @@ public func alloyCommands(center: CommandCenter) -> some Commands {
     }
     CommandMenu("View") {
         for command in registry.commands(in: .view) { registryMenuItem(command, registry: registry) }
+        Menu("Folding") {
+            for command in registry.commands(in: .folding) { registryMenuItem(command, registry: registry) }
+        }
     }
     // Plugin commands that ask for a menu. Evaluated when the bar is shown (no observation), so a plugin that registers
     // after launch appears at the next evaluation, and the menu is absent while nothing is placed in it.

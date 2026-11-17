@@ -357,4 +357,77 @@ extension SideBySideTests {
         let restored = window.allGlyphs.filter { abs($0.bounds.origin.x - before.x) < 0.5 && abs($0.bounds.origin.y - before.y) < 0.5 }
         #expect(!restored.isEmpty, "closing find puts the line back")
     }
+
+    // MARK: Scroll lock by line
+
+    /// 40 lines the session removed from the top of a 200-line file: the right pane needs filler rows, so a line and a row differ.
+    private func rigWithTopRemoval() async throws -> Rig {
+        let old = (1...200).map { "let value\($0) = \($0)" }.joined(separator: "\n") + "\n"
+        let new = (41...200).map { "let value\($0) = \($0)" }.joined(separator: "\n") + "\n"
+        let rig = Rig()
+        _ = await rig.workspace.newSession(name: "A")
+        let url = rig.root.appendingPathComponent("login.swift")
+        try new.write(to: url, atomically: true, encoding: .utf8)
+        await rig.transports[0].emit(.toolResult(ToolResultMessage(
+            toolUseID: "t1", isError: false, text: "ok",
+            result: .edit(filePath: url.path, originalFile: old, hunks: [
+                PatchHunk(oldStart: 1, oldLines: 40, newStart: 1, newLines: 0, lines: (1...40).map { "-let value\($0) = \($0)" })]))))
+        for _ in 0..<200_000 where rig.workspace.ledger.files["login.swift"] == nil { await Task.yield() }
+        return rig
+    }
+
+    @Test func scrollSyncConvertsByLine() async throws {
+        let rig = try await rigWithTopRemoval()
+        let window = try await sideBySide(rig)
+        let doc = try #require(rig.workspace.document("login.swift"))
+        let view = try #require(CodePanelStore.existingView(for: doc))
+        let right = try window.element(identifier: "sbs-right")
+        window.scroll(at: Point(x: right.frame.origin.x + 40, y: right.frame.origin.y + 40), byDeltaX: 0, deltaY: Float(-30 * 14))
+        try await window.runUntil { view.scroll.position.row > 5 }
+        window.tick(); window.tick()
+        let row = Int(view.scroll.position.row)
+        let line = try #require(view.rightGeometry.line(forScrollRow: row))
+        let expected = try #require(view.leftGeometry.scrollRow(forLine: line))
+        #expect(Int(view.leftScroll.position.row) == expected, "left \(view.leftScroll.position.row) expected \(expected) for right row \(row)")
+        // Left to right.
+        let left = try window.element(identifier: "sbs-left")
+        window.scroll(at: Point(x: left.frame.origin.x + 40, y: left.frame.origin.y + 40), byDeltaX: 0, deltaY: Float(-10 * 14))
+        window.tick(); window.tick()
+        let lrow = Int(view.leftScroll.position.row)
+        let lline = try #require(view.leftGeometry.line(forScrollRow: lrow))
+        #expect(Int(view.scroll.position.row) == view.rightGeometry.scrollRow(forLine: lline))
+    }
+
+    @Test func foldsInTheBufferDoNotAffectTheComparePanes() async throws {
+        let text = (0..<30).map { "func f\($0)() {\n    let x = \($0)\n}\n" }.joined()
+        let rig = try await rigWithEdit(old: text, new: text + "let tail = 1\n")
+        let window = try await sideBySide(rig)
+        let doc = try #require(rig.workspace.document("login.swift"))
+        let view = try #require(CodePanelStore.existingView(for: doc))
+        let state = try #require(rig.workspace.foldState(for: "login.swift", in: view.pane))
+        // Folds on the buffer's state (the inline view's), as the coordinator would leave them.
+        #expect(state.setFoldableRanges((0..<10).map { ($0 * 3)..<($0 * 3 + 3) }, asOf: doc.buffer.version))
+        for r in state.foldableRanges.prefix(5) { #expect(state.fold(r)) }
+        for _ in 0..<10 { window.tick(); await Task.yield() }
+        // Both panes show every line: a line's row is the line itself, down to the last one.
+        let last = 30 * 3
+        #expect(view.rightGeometry.scrollRow(forLine: last) == last)
+        #expect(view.leftGeometry.scrollRow(forLine: last - 1) == last - 1)
+        let chevrons = try window.elements(role: .button).filter { ($0.identifier ?? "").hasPrefix("fold-") }
+        #expect(chevrons.isEmpty)
+        // Back inline: the fold is still there.
+        rig.workspace.setPresentation(.inline, of: "login.swift", in: view.pane)
+        for _ in 0..<10 { window.tick(); await Task.yield() }
+        #expect(state.folded.count == 5)
+    }
+
+    @Test func compareHeadHasNoFoldChevrons() async throws {
+        let rig = try await rigWithEdit()
+        let window = try await sideBySide(rig)
+        for _ in 0..<10 { window.tick(); await Task.yield() }
+        let chevrons = try window.elements(role: .button).filter { ($0.identifier ?? "").hasPrefix("fold-chevron-") }
+        #expect(chevrons.isEmpty)
+        let placeholders = try window.elements(role: .button).filter { ($0.identifier ?? "").hasPrefix("fold-placeholder-") }
+        #expect(placeholders.isEmpty)
+    }
 }

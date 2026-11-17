@@ -71,6 +71,15 @@ public enum BuiltinCommands {
         addMulti("skipNextOccurrence", "Skip to Next Occurrence", chord([.alt, .cmd], ch("d")), .skipToNextOccurrence)
         addMulti("addCaretAbove", "Add Caret Above", chord([.ctrl, .shift], .named(.up)), .addCaretAbove)
         addMulti("addCaretBelow", "Add Caret Below", chord([.ctrl, .shift], .named(.down)), .addCaretBelow)
+        // Folding: acts on the focused view's fold state; the chords are claimed by the menu items in View > Folding.
+        func addFold(_ id: String, _ title: String, _ shortcut: KeyChord, _ command: FoldCommand) {
+            add("editor.\(id)", title, .folding, shortcut, .menu, menu: .folding, menuID: "cmd-editor.\(id)",
+                enabled: { current()?.canRunFold() ?? false }) { current()?.runFold(command) }
+        }
+        addFold("fold", "Fold", chord([.alt, .cmd], .named(.left)), .fold)
+        addFold("unfold", "Unfold", chord([.alt, .cmd], .named(.right)), .unfold)
+        addFold("foldAll", "Fold All", chord([.alt, .shift, .cmd], .named(.left)), .foldAll)
+        addFold("unfoldAll", "Unfold All", chord([.alt, .shift, .cmd], .named(.right)), .unfoldAll)
         // ⌘S: MetalUI has no File menu placement for it, and a hidden key button would add elements to every frame, so
         // the code panel's key handler delivers the chord and this entry is the palette's.
         add("file.save", "Save", .file, chord(.cmd, ch("s")), .none, recents: true,

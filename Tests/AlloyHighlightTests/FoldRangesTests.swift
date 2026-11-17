@@ -43,6 +43,26 @@ private func open(_ language: Language, _ text: String, engine: HighlightEngine 
         #expect(await engine.foldRanges(documentID: id) == nil)
     }
 
+    @Test func foldRangesWaitsForTheVersionAndNamesIt() async {
+        let (engine, id) = await open(.swift, "struct A {\n  var x = 1\n}\n")
+        let text = "// c\nstruct A {\n  var x = 1\n}\n"
+        let pending = Task { await engine.foldRanges(documentID: id, minVersion: 1) }
+        for _ in 0..<20 { await Task.yield() }
+        await engine.edit(id: id, edits: [insertion(at: 0, "// c\n")], newText: text, version: 1)
+        let answer = await pending.value
+        #expect(answer?.version == 1)
+        #expect(answer?.ranges.contains(r(1, 2)) == true)
+        // An answer for a version already held comes at once and names it.
+        #expect(await engine.foldRanges(documentID: id, minVersion: 0)?.version == 1)
+    }
+
+    @Test func foldRangesWithVersionIsNilForWindowed() async {
+        let text = String(repeating: "struct A {\n  var x = 1\n}\n", count: 4)
+        let (engine, id) = await open(.swift, text, engine: HighlightEngine(windowedThreshold: 16))
+        #expect(await engine.foldRanges(documentID: id, minVersion: 0) == nil)
+        #expect(await HighlightEngine().foldRanges(documentID: UUID(), minVersion: 0) == nil)
+    }
+
     @Test func unknownDocumentIsNil() async {
         #expect(await HighlightEngine().foldRanges(documentID: UUID()) == nil)
     }

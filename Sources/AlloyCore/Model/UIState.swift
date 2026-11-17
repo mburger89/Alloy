@@ -32,19 +32,24 @@ public struct UIState: Codable, Equatable, Sendable {
     /// The Git tab's unsent commit message; nil when empty.
     public var gitCommitDraft: String?
 
+    /// Saved folds by pane (`"chat"` or the group's UUID string), then project-relative path.
+    public var folds: [String: [String: [FoldLines]]]
+
     public static let recentCommandLimit = 10
 
     public init(version: Int = UIState.currentVersion, mode: WorkspaceMode = .chat, paneSizes: [String: [Double]] = [:],
                 chatCollapsed: Bool = false, layout: CodeLayoutState? = nil, expandedFolders: [String] = [],
                 terminal: TerminalLayout? = nil, recentCommands: [String] = [],
-                sidebarTab: SidebarTab = .files, lastSearch: SearchQuery? = nil, gitCommitDraft: String? = nil) {
+                sidebarTab: SidebarTab = .files, lastSearch: SearchQuery? = nil, gitCommitDraft: String? = nil,
+                folds: [String: [String: [FoldLines]]] = [:]) {
+        self.folds = folds
         self.gitCommitDraft = gitCommitDraft
         self.version = version; self.mode = mode; self.paneSizes = paneSizes
         self.chatCollapsed = chatCollapsed; self.layout = layout; self.expandedFolders = expandedFolders
         self.terminal = terminal; self.recentCommands = recentCommands; self.sidebarTab = sidebarTab; self.lastSearch = lastSearch
     }
 
-    private enum CodingKeys: String, CodingKey { case version, mode, paneSizes, chatCollapsed, layout, expandedFolders, terminal, recentCommands, sidebarTab, lastSearch, gitCommitDraft }
+    private enum CodingKeys: String, CodingKey { case version, mode, paneSizes, chatCollapsed, layout, expandedFolders, terminal, recentCommands, sidebarTab, lastSearch, gitCommitDraft, folds }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -62,6 +67,7 @@ public struct UIState: Codable, Equatable, Sendable {
         lastSearch = (try? c.decodeIfPresent(SearchQuery.self, forKey: .lastSearch)) ?? nil
         recentCommands = (try? c.decodeIfPresent([String].self, forKey: .recentCommands)) ?? []
         gitCommitDraft = (try? c.decodeIfPresent(String.self, forKey: .gitCommitDraft)) ?? nil
+        folds = (try? c.decodeIfPresent([String: [String: [FoldLines]]].self, forKey: .folds)) ?? [:]
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -77,6 +83,7 @@ public struct UIState: Codable, Equatable, Sendable {
         try c.encode(sidebarTab, forKey: .sidebarTab)
         try c.encodeIfPresent(lastSearch, forKey: .lastSearch)
         try c.encodeIfPresent(gitCommitDraft, forKey: .gitCommitDraft)
+        if !folds.isEmpty { try c.encode(folds, forKey: .folds) }
     }
 }
 

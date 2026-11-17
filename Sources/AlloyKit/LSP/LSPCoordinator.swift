@@ -199,6 +199,15 @@ public final class LSPCoordinator {
         return await manager.definitionOutcome(path: path, utf8Offset: utf8Offset, snapshot: snapshot)
     }
 
+    /// The folding ranges of `snapshot`, once the server has every edit reported so far. Cancel the calling task to
+    /// abandon the request (the server is told).
+    func foldingRanges(path: String, snapshot: CodeSnapshot) async -> FoldingOutcome {
+        guard openPaths.contains(path), commands != nil, let manager else { return .unavailable }
+        await withCheckedContinuation { (done: CheckedContinuation<Void, Never>) in send(.barrier(done)) }
+        guard !Task.isCancelled else { return .unavailable }
+        return await manager.foldingRanges(path: path, snapshot: snapshot)
+    }
+
     /// What the symbol at `utf8Offset` of `snapshot` is, once the server has every edit reported so far. Cancel the
     /// calling task to abandon the request (the server is told).
     func hover(path: String, utf8Offset: Int, snapshot: CodeSnapshot) async -> LSPOutcome<HoverInfo?> {

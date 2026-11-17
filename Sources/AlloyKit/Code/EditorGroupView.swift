@@ -38,7 +38,7 @@ struct EditorGroupView: Component {
                 VStack(spacing: 0) { FilePanelMessage(text: message) }.padding(top)
             } else if let document, let view {
                 let _ = workspace.selectionRevision
-                CodePanel(workspace: workspace, store: store, document: document, view: view, selection: view.selection(in: workspace), topClear: clear,
+                CodePanel(workspace: workspace, store: store, document: document, view: view, selection: view.selection(in: workspace), fold: workspace.foldState(for: path, in: view.pane), topClear: clear,
                           codeViewIdentifier: "code-view-\(groupID)", onFocus: focus).equatable()
                     .id(document.id.uuidString)
             } else {
