@@ -413,7 +413,8 @@ Each task is independently reviewable and lands green.
    `alloyCommands` signature in `main.swift` and the test helpers, the generated `GlobalKeys`, the parity test, and all
    existing tests and guards unchanged. The riskiest task; review it alone.
 4. **Palette UI.** `CommandPaletteModel`, `CommandPaletteView`, `PaletteLayer`, the View menu item, palette tests and
-   perf guards. Rows ship without the shortcut column until MetalUI gap 1 lands; adding it is one call site.
+   perf guards. Rows first shipped without the shortcut column; MetalUI gap 1 landed and the column is now one call site
+   (`CommandPaletteModel.shortcutText`).
 5. **Disabled-command setting.** Only if Decision 2 is (a).
 6. **Plugin seam test.** The fake plugin source and the "Plugins" menu tests.
 

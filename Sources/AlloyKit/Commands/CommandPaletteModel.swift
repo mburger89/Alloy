@@ -1,5 +1,6 @@
 import AlloyCore
 import Foundation
+import MetalUI
 import Observation
 
 /// One line of the palette.
@@ -9,7 +10,7 @@ struct PaletteRow: Equatable {
     let displayTitle: String
     /// UTF-8 byte ranges of `displayTitle` the query matched.
     let matched: [Range<Int>]
-    /// The command's chord as text, once MetalUI can show one (see `CommandPaletteModel.shortcutText`).
+    /// The command's effective chord as the platform spells it (⇧⌘P, Ctrl+Shift+P); nil for a command with none.
     let shortcutText: String?
     let isEnabled: Bool
     let isRecent: Bool
@@ -46,9 +47,11 @@ final class CommandPaletteModel {
     @ObservationIgnored private var storedRecents: [String] = []
     @ObservationIgnored private weak var registry: CommandRegistry?
 
-    /// The one call that turns a chord into text for the shortcut column. MetalUI has no shortcut display text yet
-    /// (gap G1), so there is no column and no substitute formatter: when MetalUI ships one, this is the only line to change.
-    nonisolated static func shortcutText(for chord: KeyChord) -> String? { nil }
+    /// The one call that turns a chord into text for the shortcut column: MetalUI's own display text for the chord's
+    /// `KeyboardShortcut`. Run once per command when the palette opens, never per frame or keystroke.
+    nonisolated static func shortcutText(for chord: KeyChord, platform: KeyboardShortcut.Platform = .current) -> String? {
+        chord.shortcut(for: platform).displayText(for: platform)
+    }
 
     func toggle(registry: CommandRegistry, workspace: Workspace) {
         if isShowing { hide() } else { show(registry: registry, workspace: workspace) }
@@ -66,7 +69,7 @@ final class CommandPaletteModel {
             if !enabled && !showsDisabled { return nil }
             let d = command.descriptor
             return PaletteEntry(id: d.id, displayTitle: d.displayTitle, category: d.category.name, title: d.title,
-                                shortcutText: registry.keymap.chord(for: d.id).flatMap(Self.shortcutText(for:)),
+                                shortcutText: registry.keymap.chord(for: d.id).flatMap { Self.shortcutText(for: $0) },
                                 isEnabled: enabled, isRecent: recentSet.contains(d.id))
         }
         titles = entries.map(\.displayTitle)

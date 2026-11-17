@@ -11,7 +11,8 @@ command once and gets all of them. Menus, ids and behaviour are pinned by `Comma
 - `id`: stable, dotted (`view.splitRight`). Never reused; user key overrides and recents refer to it.
 - `title`, `category`: the palette shows `Category: Title`.
 - `shortcut`: the default `KeyChord` (nil for none). The user's `AlloySettings.keybindings` override it through `Keymap`
-  (`"none"` unbinds; an unknown id or a malformed chord is ignored).
+  (`"none"` unbinds; an unknown id or a malformed chord is ignored). The palette shows the effective chord (override applied) right-aligned on each row, spelled by MetalUI's
+  `KeyboardShortcut.displayText` (⇧⌘P on macOS, Ctrl+Shift+P elsewhere); a command with no chord shows nothing.
 - `binding`: how the chord is delivered. `.menu` (the command's menu item carries it), `.global` (a hidden key button
   that is always present), `.globalInCode` (the same, only in Code mode), `.none` (palette only).
 - `menu`: `.appSettings`, `.go`, `.view` or `.plugins`; nil means the palette only.

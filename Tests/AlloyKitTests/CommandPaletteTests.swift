@@ -100,6 +100,73 @@ import Testing
         try await window.runUntil { !self.exists(window, "command-palette-field") }
     }
 
+    private func shortcutText(_ window: TestWindow, _ i: Int) -> String? {
+        guard let e = try? window.element(identifier: "command-palette-row-\(i)-shortcut") else { return nil }
+        return e.value ?? e.label
+    }
+
+    /// Opens the palette on `query` and returns the shortcut text of the first row (which must be `title`).
+    private func firstRowShortcut(_ window: TestWindow, query: String, title: String) async throws -> String? {
+        try await open(window)
+        window.typeText(query)
+        try await window.runUntil { self.rowText(window, 0) == title }
+        return shortcutText(window, 0)
+    }
+
+    @Test func rowsShowTheShortcutInTheMacForm() async throws {
+        let rig = Rig()
+        let window = try alloyWindow(rig.workspace)
+        #expect(try await firstRowShortcut(window, query: "Command Palette", title: "View: Command Palette…") == "⇧⌘P")
+        #expect(try shortcutTexts(window, "Add Next Occurrence", "Selection: Add Next Occurrence") == "⌘D")
+        #expect(try shortcutTexts(window, "Next Result", "Go: Next Result") == "F4")
+        #expect(try shortcutTexts(window, "Toggle Terminal", "View: Toggle Terminal") == "⌃`")
+    }
+
+    /// Replaces the query of the open palette.
+    private func shortcutTexts(_ window: TestWindow, _ query: String, _ title: String) throws -> String? {
+        window.typeKey("a", modifierFlags: .command)
+        window.typeText(query)
+        for _ in 0..<20 where rowText(window, 0) != title { window.tick() }
+        #expect(rowText(window, 0) == title)
+        return shortcutText(window, 0)
+    }
+
+    @Test func linuxAndWindowsFormsComeFromMetalUI() {
+        let palette = KeyChord.parse("primary+shift+p")!
+        #expect(CommandPaletteModel.shortcutText(for: palette, platform: .macOS) == "⇧⌘P")
+        #expect(CommandPaletteModel.shortcutText(for: palette, platform: .linux) == "Ctrl+Shift+P")
+        #expect(CommandPaletteModel.shortcutText(for: palette, platform: .windows) == "Ctrl+Shift+P")
+        let f4 = KeyChord(modifiers: [], key: .named(.f4))
+        #expect(CommandPaletteModel.shortcutText(for: f4, platform: .macOS) == "F4")
+        #expect(CommandPaletteModel.shortcutText(for: f4, platform: .linux) == "F4")
+        let ctrlTick = KeyChord(modifiers: .ctrl, key: .character("`"))
+        #expect(CommandPaletteModel.shortcutText(for: ctrlTick, platform: .macOS) == "⌃`")
+        #expect(CommandPaletteModel.shortcutText(for: ctrlTick, platform: .windows) == "Ctrl+`")
+        let cmdD = KeyChord(modifiers: .cmd, key: .character("d"))
+        #expect(CommandPaletteModel.shortcutText(for: cmdD, platform: .macOS) == "⌘D")
+        #expect(CommandPaletteModel.shortcutText(for: cmdD, platform: .linux) == "Super+D")
+        #expect(CommandPaletteModel.shortcutText(for: cmdD, platform: .windows) == "Win+D")
+    }
+
+    @Test func anOverriddenBindingShowsTheOverrideAndAnUnboundOneNothing() async throws {
+        let rig = Rig()
+        let window = try alloyWindow(rig.workspace)
+        var s = rig.workspace.settings
+        s.keybindings = ["view.splitRight": "primary+shift+d", "terminal.toggle": "none"]
+        try rig.workspace.updateSettings(s)
+        window.tick(); window.tick()
+        #expect(try await firstRowShortcut(window, query: "Split Right", title: "View: Split Right") == "⇧⌘D")
+        #expect(try shortcutTexts(window, "Toggle Terminal", "View: Toggle Terminal") == nil)
+    }
+
+    @Test func rowsWithoutAShortcutShowNoneAndADisabledRowGreysIt() async throws {
+        let rig = Rig()
+        let window = try alloyWindow(rig.workspace)
+        #expect(try await firstRowShortcut(window, query: "Compare with HEAD", title: "Git: Compare with HEAD") == nil)
+        #expect(try shortcutTexts(window, "Split Right", "View: Split Right") == "⌘\\")
+        #expect(try window.element(identifier: "command-palette-row-0").value == "unavailable")
+    }
+
     @Test func disabledRowIsMutedAndReturnOnlyCloses() async throws {
         let rig = Rig()
         let window = try alloyWindow(rig.workspace)

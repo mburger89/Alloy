@@ -24,7 +24,7 @@ struct PaletteLayer: Component, Equatable {
 
 /// The palette panel: a field and up to 50 rows, the selected one highlighted. ↑ ↓ move over every row (disabled ones
 /// too), Return or a click runs, Esc or losing focus closes. Ids: `command-palette`, `command-palette-field`,
-/// `command-palette-row-<i>`, `command-palette-recent-header`, `command-palette-empty`.
+/// `command-palette-row-<i>`, `command-palette-row-<i>-shortcut`, `command-palette-recent-header`, `command-palette-empty`.
 struct CommandPaletteView: Component, Equatable {
     let model: CommandPaletteModel
     @FocusState var focused: Bool
@@ -91,6 +91,10 @@ private struct PaletteRowView: Component {
         HStack(spacing: Pixels(10)) {
             Text(Self.styled(row)).font(size: 13)
             Spacer()
+            if let shortcut = row.shortcutText {
+                Text(shortcut).font(size: 12).foregroundColor(.mutedInk)
+                    .accessibilityIdentifier("command-palette-row-\(index)-shortcut")
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(inset(12, 5))

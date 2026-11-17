@@ -5,9 +5,13 @@ import MetalUI
 extension KeyChord {
     /// The MetalUI shortcut for this chord. `primary` maps to MetalUI's `.primary` (Command on macOS), `cmd` to
     /// `.command`, `ctrl` to `.control`, `alt` to `.option`.
-    public var shortcut: KeyboardShortcut {
+    public var shortcut: KeyboardShortcut { shortcut(for: .current) }
+
+    /// The shortcut as it would be on `platform`: `primary` becomes that platform's primary modifier (so its display text
+    /// reads right when shown for another platform), everything else is as in `shortcut`.
+    public func shortcut(for platform: KeyboardShortcut.Platform) -> KeyboardShortcut {
         var mods: EventModifiers = []
-        if modifiers.contains(.primary) { mods.insert(.primary) }
+        if modifiers.contains(.primary) { mods.formUnion(platform.primaryModifiers) }
         if modifiers.contains(.cmd) { mods.insert(.command) }
         if modifiers.contains(.ctrl) { mods.insert(.control) }
         if modifiers.contains(.alt) { mods.insert(.option) }
