@@ -71,6 +71,15 @@ public final class Workspace {
     @ObservationIgnored public var fileTreeActive = false { didSet { if fileTreeActive, !oldValue { updateFileTreeMarks() } } }
     /// The tree's selected row (a repo-relative path).
     public var fileTreeSelection: String?
+    /// The project search's model. Nothing but the Search tab observes it.
+    @ObservationIgnored public let search = SearchModel()
+    /// A file event that changes the file list arrived while no tree view listens (or the index was never scanned):
+    /// the next search awaits one `fileIndex.refresh()` first. One Bool write per event batch, no task.
+    @ObservationIgnored var fileIndexStale = true
+    /// The last project search that ran; saved in `ui-state.json`.
+    @ObservationIgnored public var lastSearch: SearchQuery?
+    /// Whether the Search tab shows its replace row (Replace in Files reveals it).
+    public var searchReplaceRevealed = false
     /// Set by the tree view while one is shown: scrolls the tree to a row. Reveal calls it in the same transaction as
     /// the expansion and the selection.
     @ObservationIgnored public var fileTreeScroll: ((String) -> Void)?
@@ -145,8 +154,18 @@ public final class Workspace {
     /// Saves in flight, by path; a second save of the same file waits for the first.
     @ObservationIgnored var saving: [String: Task<Void, Error>] = [:]
     /// Counts finished saves per path, so a read can tell that a save finished while it ran.
-    @ObservationIgnored private var saveEpoch: [String: Int] = [:]
+    @ObservationIgnored var saveEpoch: [String: Int] = [:]
     @ObservationIgnored private var ledgerWrite: Task<Void, Never>?
+    /// Open `withLedgerBatch` scopes; while any is open `persistLedger` only notes that a write is due.
+    @ObservationIgnored private var ledgerBatchDepth = 0
+    @ObservationIgnored private var ledgerDirty = false
+    /// Ledger snapshots queued for writing (for tests).
+    @ObservationIgnored public private(set) var ledgerPersistCount = 0
+    /// Runs off the main actor just before a replace writes a closed file (tests move the file's stamp here).
+    @ObservationIgnored var replaceWriteGate: (@Sendable (String) async -> Void)?
+    /// The group of a replace edit an open document has not yet written: the save pass that writes tags its ledger
+    /// edit with it (a pass that only merges disk changes leaves it for the next one).
+    @ObservationIgnored var pendingGroup: [String: UUID] = [:]
     /// The newest compaction-generations write (`generations.json`).
     @ObservationIgnored var generationsWrite: Task<Void, Never>?
     @ObservationIgnored var toldWrite: Task<Void, Never>?
@@ -394,7 +413,7 @@ public final class Workspace {
     @ObservationIgnored private var cachedLoginPATH: String??
     @ObservationIgnored let now: () -> Date
     /// Writes the file; `abortIf` is asked right before the rename and a true answer leaves the file alone (the result is then true).
-    @ObservationIgnored private let writeFile: @Sendable (Data, URL, () -> Bool) throws -> Bool
+    @ObservationIgnored let writeFile: @Sendable (Data, URL, () -> Bool) throws -> Bool
     @ObservationIgnored var live: [UUID: (transport: any SessionTransport, task: Task<Void, Never>)] = [:]
     /// Sessions whose `stop()` arrived while they were still launching.
     @ObservationIgnored private var stoppedDuringLaunch: Set<UUID> = []
@@ -483,6 +502,8 @@ public final class Workspace {
         self.hookRootForms = Self.hookRootForms(of: projectRoot)
         self.branchName = Self.readBranchName(projectRoot: projectRoot)
         codeLayout.onChatCollapsedChange = { [weak self] in self?.scheduleUIStateWrite() }
+        codeLayout.onSidebarTabChange = { [weak self] in self?.scheduleUIStateWrite() }
+        search.attach(self)
         codeLayout.onFocus = { [weak self] id in self?.noteFocus(.group(id)) }
         fileTree.snapshotDidChange = { [weak self] in
             guard let self, let path = fileTreeSelection, !fileTree.snapshot.contains(path) else { return }
@@ -1379,6 +1400,7 @@ public final class Workspace {
     /// SIGKILL, bounded at about 3 s) concurrently, and this returns only once they have exited.
     public func stopAll() async {
         isShuttingDown = true
+        search.shutdown()
         await flushUIState()
         warningSleeper?.cancel(); warningSleeper = nil; warningSleeperExpiry = nil
         for id in Array(idleWaiters.keys) { releaseIdleWaiters(id, reachedIdle: false) }
@@ -1642,9 +1664,11 @@ public final class Workspace {
                     expected = stamp
                     continue
                 }
-                await appendToLedger(path, saved: doc.savedSnapshot, edits: [(.user, text)])
+                await appendToLedger(path, saved: doc.savedSnapshot, edits: [(.user, text)],
+                                     group: pendingGroup.removeValue(forKey: path))
                 doc.markSaved(snapshot: snap, stamp: stamp)
                 onSaved?(path)
+                search.noteChanged(path)
                 return
             }
         }
@@ -1710,12 +1734,15 @@ public final class Workspace {
 
     /// Records `edits` in the file's ledger (created with `saved` as its baseline), computing the diffs off the
     /// main actor. If the ledger moved meanwhile the edits are applied again on the current state.
-    func appendToLedger(_ path: String, saved: CodeSnapshot?, baseline: String? = nil, edits: [(Author, String)]) async {
+    func appendToLedger(_ path: String, saved: CodeSnapshot?, baseline: String? = nil, edits: [(Author, String)],
+                        group: UUID? = nil) async {
         let existing = ledger.files[path], date = now()
-        let updated = await Task.detached { Self.applying(edits, to: existing, path: path, saved: saved, baseline: baseline, date: date) }.value
+        let updated = await Task.detached {
+            Self.applying(edits, to: existing, path: path, saved: saved, baseline: baseline, date: date, group: group)
+        }.value
         let current = ledger.files[path]
         ledger.files[path] = current?.version == existing?.version && (current == nil) == (existing == nil)
-            ? updated : Self.applying(edits, to: current, path: path, saved: saved, baseline: baseline, date: date)
+            ? updated : Self.applying(edits, to: current, path: path, saved: saved, baseline: baseline, date: date, group: group)
         reindex(path)
         noteFileChanged(path)
         persistLedger()
@@ -1723,10 +1750,11 @@ public final class Workspace {
     }
 
     nonisolated private static func applying(_ edits: [(Author, String)], to existing: FileLedger?, path: String,
-                                             saved: CodeSnapshot?, baseline: String?, date: Date) -> FileLedger {
+                                             saved: CodeSnapshot?, baseline: String?, date: Date,
+                                             group: UUID? = nil) -> FileLedger {
         var f = existing ?? FileLedger(path: path, baseline: baseline
             ?? saved.map { String(decoding: $0.utf8(in: 0..<$0.utf8Count), as: UTF8.self) } ?? "")
-        for (author, text) in edits { f.applyFullText(author: author, newText: text, toolUseID: nil, date: date) }
+        for (author, text) in edits { f.applyFullText(author: author, newText: text, toolUseID: nil, date: date, group: group) }
         return f
     }
 
@@ -2115,7 +2143,7 @@ public final class Workspace {
     func report(_ message: String) { errors.append(message) }
 
     /// Loads persisted state once, on first use. A corrupt file is moved aside and reported, never overwritten.
-    private func ensureLoaded() {
+    func ensureLoaded() {
         guard !loaded else { return }
         loaded = true
         if let l = loadFile(ledgerURL, { try JSONDecoder().decode(ProjectLedger.self, from: $0) }) { ledger = l; for p in l.files.keys { reindex(p, detectTug: false); overlapIndex.invalidate(path: p) } }
@@ -2156,7 +2184,9 @@ public final class Workspace {
 
     /// Writes a snapshot of the ledger off the main actor. Writes run one after another, so an older snapshot never
     /// lands after a newer one.
-    private func persistLedger() {
+    func persistLedger() {
+        if ledgerBatchDepth > 0 { ledgerDirty = true; return }
+        ledgerPersistCount += 1
         let snapshot = ledger, url = ledgerURL, previous = ledgerWrite
         ledgerWrite = Task.detached { [weak self] in
             await previous?.value
@@ -2165,6 +2195,17 @@ public final class Workspace {
                 await self?.report(message)
             }
         }
+    }
+
+    /// Runs `body` with ledger writes deferred: however many edits it records, the ledger is written once when the
+    /// outermost batch ends. Batches nest.
+    func withLedgerBatch<T>(_ body: () async throws -> T) async rethrows -> T {
+        ledgerBatchDepth += 1
+        defer {
+            ledgerBatchDepth -= 1
+            if ledgerBatchDepth == 0, ledgerDirty { ledgerDirty = false; persistLedger() }
+        }
+        return try await body()
     }
 
     private func persistSessions() {

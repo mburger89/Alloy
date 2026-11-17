@@ -62,6 +62,7 @@ extension Workspace {
     public func refreshFileTreeNow() async {
         fileTreeRefreshCount += 1
         updateFileTreeMarks()
+        fileIndexStale = false
         await fileIndex.refresh()
         let paths = await fileIndex.paths(), truncated = await fileIndex.isTruncated
         await fileTree.update(paths: paths, truncated: truncated)

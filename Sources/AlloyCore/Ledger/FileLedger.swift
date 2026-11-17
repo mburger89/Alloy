@@ -11,10 +11,28 @@ public struct EditRecord: Identifiable, Codable, Sendable, Equatable {
     public var toolUseID: String?
     public var hunks: [PatchHunk]
     public var state: State
+    /// Edits made by one bulk operation (project replace, code intelligence) share a group, so they can be
+    /// reviewed, kept or reverted together. `nil` for every ordinary edit; ledgers saved before the field decode as nil.
+    public var group: UUID?
 
-    public init(id: UUID, author: Author, path: String, date: Date, toolUseID: String?, hunks: [PatchHunk], state: State) {
+    public init(id: UUID, author: Author, path: String, date: Date, toolUseID: String?, hunks: [PatchHunk], state: State,
+                group: UUID? = nil) {
         self.id = id; self.author = author; self.path = path; self.date = date
-        self.toolUseID = toolUseID; self.hunks = hunks; self.state = state
+        self.toolUseID = toolUseID; self.hunks = hunks; self.state = state; self.group = group
+    }
+
+    private enum CodingKeys: String, CodingKey { case id, author, path, date, toolUseID, hunks, state, group }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(UUID.self, forKey: .id)
+        author = try c.decode(Author.self, forKey: .author)
+        path = try c.decode(String.self, forKey: .path)
+        date = try c.decode(Date.self, forKey: .date)
+        toolUseID = try c.decodeIfPresent(String.self, forKey: .toolUseID)
+        hunks = try c.decode([PatchHunk].self, forKey: .hunks)
+        state = try c.decode(State.self, forKey: .state)
+        group = try c.decodeIfPresent(UUID.self, forKey: .group)
     }
 }
 
@@ -105,8 +123,9 @@ public struct FileLedger: Codable, Sendable, Equatable {
     }
 
     @discardableResult
-    public mutating func applyFullText(author: Author, newText: String, toolUseID: String?, date: Date) -> EditRecord? {
-        record(author, to: newText, hunks: nil, toolUseID: toolUseID, date: date)
+    public mutating func applyFullText(author: Author, newText: String, toolUseID: String?, date: Date,
+                                       group: UUID? = nil) -> EditRecord? {
+        record(author, to: newText, hunks: nil, toolUseID: toolUseID, date: date, group: group)
     }
 
     /// `.outside` records and the session records Bash attribution made (no tool call id) can be adopted.
@@ -142,14 +161,14 @@ public struct FileLedger: Codable, Sendable, Equatable {
     /// The one core path: line-diff the visible text against `newText`, character-diff each changed
     /// region and apply the resulting operations to the fragments.
     private mutating func record(_ author: Author, to newText: String, hunks: [PatchHunk]?,
-                                 toolUseID: String?, date: Date) -> EditRecord? {
+                                 toolUseID: String?, date: Date, group: UUID? = nil) -> EditRecord? {
         let old = history.visibleText
         guard !TextDiff.same(old, newText) else { return nil }
         let id = UUID()
         history.register(id)
         history.apply(TextDiff.ops(old: old, new: newText), as: id)
         let rec = EditRecord(id: id, author: author, path: path, date: date, toolUseID: toolUseID,
-                             hunks: hunks ?? TextDiff.hunks(old: old, new: newText), state: .live)
+                             hunks: hunks ?? TextDiff.hunks(old: old, new: newText), state: .live, group: group)
         edits.append(rec)
         return rec
     }

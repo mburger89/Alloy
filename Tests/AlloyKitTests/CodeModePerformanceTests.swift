@@ -181,6 +181,178 @@ import Testing
         }
     }
 
+    /// The Search tab open and idle: typing in the editor holds the same guard, and neither SearchView nor the sidebar re-runs.
+    @Test func typingWithTheSearchTabOpenHoldsTheGuard() async throws {
+        for (layout, steady) in [(Layout.code1, Self.steadyCode1), (.code2, Self.steadyCode2), (.code3, Self.steadyCode3)] {
+            let (rig, window, id) = try await rigged(layout)
+            rig.workspace.codeLayout.sidebarTab = .search
+            for _ in 0..<5 { window.tick(); await Task.yield() }
+            #expect(exists(window, "search-query"))
+            let t = try await typing(window, rig, codeViewID: id, names: Self.watched + ["SearchView"])
+            #expect(t.documentGrew)
+            #expect(t.perFrame.allSatisfy { $0 <= steady + 2 }, "\(layout) per-frame element requests \(t.perFrame)")
+            #expect(t.requests <= steady * 20 * 102 / 100, "\(layout) element requests \(t.requests)")
+            for n in ["SearchView", "CodeSidebarView"] { #expect(t.reruns[n] == 0, "\(layout) \(n) re-ran \(t.reruns[n] ?? -1) times") }
+            withExtendedLifetime((rig, window)) {}
+        }
+    }
+
+    /// 2,000 files with one match each, searched from the Search tab and waited for; the results are on screen.
+    private func finishedSearch(_ rig: Rig, _ window: TestWindow) async throws {
+        for i in 0..<2_000 {
+            try "needle \(i)\n".write(to: rig.root.appendingPathComponent("hit\(i).txt"), atomically: true, encoding: .utf8)
+        }
+        let model = rig.workspace.search
+        rig.workspace.fileIndexStale = true         // no watcher event here: the files are new to the index
+        model.setQuery(SearchQuery(text: "needle"))
+        model.submit()
+        try await window.runUntil { model.facts != nil && !model.isRunning }
+        for _ in 0..<6 { window.tick(); await Task.yield() }
+        #expect(model.groups.count == 2_000, "\(model.groups.count) groups, \(model.summary)")
+    }
+
+    /// Finished results (2,000 files) on screen, then typing in the editor: the same guard, and no search view re-runs.
+    @Test func typingWithFinishedSearchResultsHoldsTheGuard() async throws {
+        for (layout, steady) in [(Layout.code1, Self.steadyCode1), (.code2, Self.steadyCode2), (.code3, Self.steadyCode3)] {
+            let (rig, window, id) = try await rigged(layout)
+            rig.workspace.codeLayout.sidebarTab = .search
+            for _ in 0..<5 { window.tick(); await Task.yield() }
+            try await finishedSearch(rig, window)
+            #expect(exists(window, "search-file-0"))
+            let t = try await typing(window, rig, codeViewID: id, names: Self.watched + ["SearchView", "SearchResultsView", "SearchResultRow"])
+            #expect(t.documentGrew)
+            #expect(t.perFrame.allSatisfy { $0 <= steady + 2 }, "\(layout) per-frame element requests \(t.perFrame)")
+            #expect(t.requests <= steady * 20 * 102 / 100, "\(layout) element requests \(t.requests)")
+            for n in ["SearchView", "SearchResultsView", "SearchResultRow", "CodeSidebarView"] {
+                #expect(t.reruns[n] == 0, "\(layout) \(n) re-ran \(t.reruns[n] ?? -1) times")
+            }
+            withExtendedLifetime((rig, window)) {}
+        }
+    }
+
+    /// Stale results (already marked) while typing, with autosave firing on the manual clock: saves hit the model's
+    /// guard and cost nothing; the search views never re-run.
+    @Test func staleResultsWhileTypingWithAutosaveRerunNothing() async throws {
+        let (rig, window, id) = try await rigged(.code1)
+        rig.workspace.codeLayout.sidebarTab = .search
+        for _ in 0..<5 { window.tick(); await Task.yield() }
+        try await finishedSearch(rig, window)
+        rig.workspace.search.noteChanged("hit0.txt")
+        for _ in 0..<6 { window.tick(); await Task.yield() }
+        #expect(rig.workspace.search.isStale)
+        let names = Self.watched + ["SearchView", "SearchResultsView", "SearchResultRow"]
+        let t = try await typing(window, rig, codeViewID: id, names: names)
+        for n in ["SearchView", "SearchResultsView", "SearchResultRow"] { #expect(t.reruns[n] == 0, "\(n) re-ran \(t.reruns[n] ?? -1) times") }
+        #expect(t.perFrame.allSatisfy { $0 <= Self.steadyCode1 + 2 }, "per-frame element requests \(t.perFrame)")
+        // Autosave fires and saves the typed text: every save calls `noteChanged`, which returns at its guard.
+        let before = BodyProbe.counts.filter { $0.key.hasPrefix("Search") }
+        rig.clock.advance(by: 30)
+        for _ in 0..<10 { window.tick(); await Task.yield() }
+        #expect(BodyProbe.counts.filter { $0.key.hasPrefix("Search") } == before)
+        withExtendedLifetime((rig, window)) {}
+    }
+
+    /// Idle ticks with finished results on screen re-run nothing and cost no more than idle ticks with the empty tab.
+    @Test func idleTicksWithFinishedSearchRerunNothing() async throws {
+        let (rig, window, _) = try await rigged(.code1)
+        rig.workspace.codeLayout.sidebarTab = .search
+        for _ in 0..<10 { window.tick(); await Task.yield() }
+        try await finishedSearch(rig, window)
+        for _ in 0..<15 { window.tick(); await Task.yield() }
+        window.resetFrameWork()
+        var reruns: [String: Int] = [:]
+        for _ in 0..<20 {
+            for (k, v) in allProbes({ window.tick() }) { reruns[k, default: 0] += v }
+            await Task.yield()
+        }
+        #expect(reruns.isEmpty, "idle ticks with finished results re-ran \(reruns)")
+        let requests = window.frameWork.reduce(0) { $0 + $1.elementRequests }
+        print("IDLE finished-search requests=\(requests)")
+        #expect(requests == 0, "idle frames cost \(window.frameWork.map(\.elementRequests))")
+        withExtendedLifetime((rig, window)) {}
+    }
+
+    /// Replace across 200 files, then the review list on screen: typing in the editor holds the Code guards, no search
+    /// view re-runs, and the replace itself runs the sidebar's body at most once.
+    @Test func reviewListHoldsTheGuardAndReplaceRerunsTheSidebarOnce() async throws {
+        for (layout, steady) in [(Layout.code1, Self.steadyCode1), (.code2, Self.steadyCode2), (.code3, Self.steadyCode3)] {
+            let (rig, window, id) = try await rigged(layout)
+            rig.workspace.codeLayout.sidebarTab = .search
+            rig.workspace.searchReplaceRevealed = true
+            for _ in 0..<5 { window.tick(); await Task.yield() }
+            let model = rig.workspace.search
+            for i in 0..<200 { try "needle \(i)\n".write(to: rig.root.appendingPathComponent("hit\(i).txt"), atomically: true, encoding: .utf8) }
+            rig.workspace.fileIndexStale = true
+            model.setQuery(SearchQuery(text: "needle")); model.submit()
+            try await window.runUntil { model.facts != nil && !model.isRunning }
+            for _ in 0..<6 { window.tick(); await Task.yield() }
+            model.replacement = "thread"
+            let sidebar = BodyProbe.count("CodeSidebarView")
+            model.replaceAll()
+            try await window.runUntil { model.review != nil }
+            for _ in 0..<10 { window.tick(); await Task.yield() }
+            #expect(model.review?.rows.count == 200)
+            #expect(BodyProbe.count("CodeSidebarView") - sidebar <= 1, "\(layout) sidebar ran \(BodyProbe.count("CodeSidebarView") - sidebar) times")
+            #expect(exists(window, "search-review-keep-all"))
+            let t = try await typing(window, rig, codeViewID: id, names: Self.watched + ["SearchView", "SearchResultsView", "SearchReviewList", "SearchReplaceBar"])
+            #expect(t.documentGrew)
+            #expect(t.perFrame.allSatisfy { $0 <= steady + 2 }, "\(layout) per-frame element requests \(t.perFrame)")
+            #expect(t.requests <= steady * 20 * 102 / 100, "\(layout) element requests \(t.requests)")
+            for n in ["SearchView", "SearchResultsView", "SearchReviewList", "SearchReplaceBar", "CodeSidebarView"] {
+                #expect(t.reruns[n] == 0, "\(layout) \(n) re-ran \(t.reruns[n] ?? -1) times")
+            }
+            withExtendedLifetime((rig, window)) {}
+        }
+    }
+
+    /// Chat mode with a finished search held by the workspace: the Chat guard (88) is unchanged.
+    @Test func chatModeWithAFinishedSearchHoldsTheGuard() async throws {
+        let (rig, window, id) = try await rigged(.chat)
+        let model = rig.workspace.search
+        for i in 0..<200 { try "needle \(i)\n".write(to: rig.root.appendingPathComponent("hit\(i).txt"), atomically: true, encoding: .utf8) }
+        rig.workspace.fileIndexStale = true
+        model.setQuery(SearchQuery(text: "needle")); model.submit()
+        try await window.runUntil { model.facts != nil && !model.isRunning }
+        #expect(model.groups.count == 200)
+        let t = try await typing(window, rig, codeViewID: id, names: Self.watched + ["SearchView", "SearchResultsView"])
+        #expect(t.perFrame.allSatisfy { $0 <= 88 + 2 }, "chat per-frame element requests \(t.perFrame)")
+        #expect(t.reruns["SearchView"] ?? 0 == 0 && t.reruns["SearchResultsView"] ?? 0 == 0)
+        withExtendedLifetime((rig, window)) {}
+    }
+
+    /// Idle ticks with the Search tab open re-run nothing and cost no more than the file tree's idle frames.
+    @Test func idleTicksWithTheSearchTabOpenCostNothing() async throws {
+        var idle: [String: Int] = [:]
+        for tab in [SidebarTab.files, .search] {
+            let (rig, window, _) = try await rigged(.code1)
+            rig.workspace.codeLayout.sidebarTab = tab
+            for _ in 0..<15 { window.tick(); await Task.yield() }
+            window.resetFrameWork()
+            var reruns: [String: Int] = [:]
+            for _ in 0..<20 {
+                for (k, v) in allProbes({ window.tick() }) { reruns[k, default: 0] += v }
+                await Task.yield()
+            }
+            let requests = window.frameWork.reduce(0) { $0 + $1.elementRequests }
+            print("IDLE tab=\(tab.rawValue) requests=\(requests) reruns=\(reruns)")
+            #expect(reruns.isEmpty, "\(tab) idle ticks re-ran \(reruns)")
+            idle[tab.rawValue] = requests
+            withExtendedLifetime((rig, window)) {}
+        }
+        #expect(idle["search"]! <= idle["files"]!, "search idle \(idle["search"]!) > files idle \(idle["files"]!)")
+    }
+
+    /// Chat mode with the Search tab saved as the sidebar tab: the Chat guard (88) is unchanged, the tab builds nothing.
+    @Test func chatModeIgnoresTheSavedSearchTab() async throws {
+        let (rig, window, id) = try await rigged(.chat)
+        rig.workspace.codeLayout.sidebarTab = .search
+        let t = try await typing(window, rig, codeViewID: id, names: Self.watched + ["SearchView"])
+        #expect(t.perFrame.allSatisfy { $0 <= 88 + 2 }, "chat per-frame element requests \(t.perFrame)")
+        #expect(t.reruns["SearchView"] ?? 0 == 0)
+        #expect(!exists(window, "search-query"))
+        withExtendedLifetime((rig, window)) {}
+    }
+
     /// The mode not shown builds nothing and costs nothing per frame.
     @Test func theHiddenModeBuildsNothing() async throws {
         let (rig, window, _) = try await rigged(.code1)

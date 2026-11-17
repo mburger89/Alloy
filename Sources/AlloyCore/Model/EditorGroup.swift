@@ -33,6 +33,9 @@ public final class EditorGroup: Identifiable {
     }
 }
 
+/// The tabs of Code mode's sidebar.
+public enum SidebarTab: String, Codable, Sendable { case files, search }
+
 /// Code mode's editor groups and which one has focus. Starts with one empty group.
 @MainActor @Observable
 public final class CodeLayout {
@@ -45,6 +48,11 @@ public final class CodeLayout {
         didSet { if chatCollapsed != oldValue { onChatCollapsedChange?() } }
     }
     @ObservationIgnored var onChatCollapsedChange: (() -> Void)?
+    /// Which tab the sidebar shows. A change runs `onSidebarTabChange` (the workspace schedules a state write).
+    public var sidebarTab: SidebarTab = .files {
+        didSet { if sidebarTab != oldValue { onSidebarTabChange?() } }
+    }
+    @ObservationIgnored var onSidebarTabChange: (() -> Void)?
     /// Runs when `focus(_:)` names a group (the workspace tracks which pane was focused last).
     @ObservationIgnored var onFocus: ((UUID) -> Void)?
     /// How the groups are split; leaves are the keys of `groups`.

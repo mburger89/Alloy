@@ -287,6 +287,48 @@ public struct IdleCPUScenario: Scenario {
     }
 }
 
+/// Project search over the corpus directory: time to the first result batch, total search time, and the worst main-thread
+/// frame while the search runs; Replace All of 1,000 matches across 200 files, its time and its ledger persist count.
+/// It is deliberately not a `Metric`: the published Zed parity table has no search row, so the scenario reports through
+/// `Report` only and never changes `RunResult` completeness.
+///
+/// Targets (reported, not gated): first batch under 50 ms, a literal search over a 50k-file project under 1 s, and no
+/// main-thread frame over 8 ms while results stream. Replace All of `replaceMatches` matches must persist the ledger
+/// once per batch (`replacePersistCount` is expected to stay a small constant, not one per file).
+///
+/// The measures come from a driver that types into the Search tab of a running Alloy and watches captured frames, which
+/// needs a launched GUI. Until a run on a machine with display capture permission wires that driver, every measure is
+/// reported as not measured with that reason rather than a made-up number.
+public struct ProjectSearchScenario: Sendable {
+    public static let measures = ["firstBatchMilliseconds", "totalMilliseconds", "worstFrameMilliseconds", "replaceAll1000Milliseconds", "replacePersistCount"]
+    public static let replaceFiles = 200
+    public static let replaceMatches = 1_000
+    public var query: String
+    public var windowTimeout: Duration
+    public init(query: String = "fn ", windowTimeout: Duration = .seconds(30)) {
+        self.query = query; self.windowTimeout = windowTimeout
+    }
+
+    /// Writes the Replace All fixture into `directory`: `replaceFiles` files holding `replaceMatches` occurrences of
+    /// "alloy_bench_token" between them (an even split), each line with some text before and after the match.
+    public static func writeReplaceFixture(into directory: URL) throws {
+        let perFile = replaceMatches / replaceFiles
+        for i in 0..<replaceFiles {
+            var text = ""
+            for j in 0..<perFile { text += "let value\(j) = alloy_bench_token + \(i) // line \(j)\n" }
+            try text.write(to: directory.appendingPathComponent(String(format: "replace_%03d.txt", i)), atomically: true, encoding: .utf8)
+        }
+    }
+
+    /// One outcome per entry of `measures`.
+    public func run(_ app: TargetApp, corpus: Corpus, runs: Int) async -> [String: Outcome] {
+        let why = app.id == "alloy"
+            ? "not measured: the Search tab driver needs a launched GUI with display capture, which this run did not use"
+            : "n/a: only Alloy has project search in this harness"
+        return Dictionary(uniqueKeysWithValues: Self.measures.map { ($0, Outcome.notMeasured(why)) })
+    }
+}
+
 /// Standalone `memoryIdle`; the runner shares one launch with `IdleCPUScenario` when both metrics are requested.
 public struct MemoryIdleScenario: Scenario {
     public var metric: Metric { .memoryIdle }

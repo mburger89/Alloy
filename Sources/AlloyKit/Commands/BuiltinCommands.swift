@@ -38,6 +38,10 @@ public enum BuiltinCommands {
         // so the code panel's own F12 handling and this item never both fire.
         add("go.definition", "Go to Definition", .go, chord([], .named(.f12)), .menu, menu: .go, recents: true,
             enabled: hasWorkspace) { current()?.goToDefinition?() }
+        add("search.nextResult", "Next Result", .go, chord([], .named(.f4)), .menu, menu: .go,
+            menuID: "go-next-result", enabled: hasWorkspace) { current()?.search.step(1) }
+        add("search.previousResult", "Previous Result", .go, chord(.shift, .named(.f4)), .menu, menu: .go,
+            menuID: "go-previous-result", enabled: hasWorkspace) { current()?.search.step(-1) }
 
         add("view.chatMode", "Chat Mode", .view, chord([.ctrl, .cmd], ch("1")), .menu, menu: .view, recents: true,
             menuID: "view-mode-chat", enabled: hasWorkspace) { current()?.setMode(.chat) }
@@ -62,6 +66,10 @@ public enum BuiltinCommands {
             menuID: "view-reveal-in-tree", enabled: inCode) { current()?.revealInTree() }
         add("view.toggleChatColumn", "Toggle Chat Column", .view, chord([.cmd, .shift], ch("c")), .menu, menu: .view, recents: true,
             menuID: "view-toggle-chat-column", enabled: inCode) { current()?.codeLayout.chatCollapsed.toggle() }
+        add("search.findInFiles", "Find in Files", .view, chord([.cmd, .shift], ch("f")), .menu, menu: .view, recents: true,
+            menuID: "view-find-in-files", enabled: hasWorkspace) { current()?.showSearch(replace: false) }
+        add("search.replaceInFiles", "Replace in Files", .view, chord([.cmd, .shift], ch("h")), .menu, menu: .view, recents: true,
+            menuID: "view-replace-in-files", enabled: hasWorkspace) { current()?.showSearch(replace: true) }
 
         add("view.commandPalette", "Command Palette…", .view, chord([.primary, .shift], ch("p")), .menu, menu: .view,
             menuID: "view-command-palette", enabled: hasWorkspace) { [unowned center] in

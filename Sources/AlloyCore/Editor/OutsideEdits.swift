@@ -206,7 +206,11 @@ extension Workspace {
         guard !isShuttingDown else { return }
         let arrival = autosaveClock.now
         for p in paths { pendingOutside[p] = arrival }
-        if fileTreeActive, paths.contains(where: affectsFileTree) { scheduleFileTreeRefresh() }
+        if fileTreeActive {
+            if paths.contains(where: affectsFileTree) { scheduleFileTreeRefresh() }
+        } else if !fileIndexStale, paths.contains(where: affectsFileTree) {
+            fileIndexStale = true
+        }
         guard outsideDebounce == nil else { return }
         // The deadline is taken now, so a manual clock advanced before the timer task runs still fires it.
         let deadline = arrival + Self.outsideCoalesce, clock = autosaveClock
@@ -233,7 +237,7 @@ extension Workspace {
                 for known in knownPaths(under: rel) where rels[known] == nil { rels[known] = arrival }
             } else if rels[rel] == nil { rels[rel] = arrival }
         }
-        for rel in rels.keys { noteFileChanged(rel) }
+        for rel in rels.keys { noteFileChanged(rel); search.noteChanged(rel) }
         var toProcess: [(String, Double)] = []
         var unknown: [(String, Double)] = []
         var shellAround: [Double: Bool] = [:]       // per distinct arrival time

@@ -37,7 +37,8 @@ extension Workspace {
         let sizes = savedPaneSizes.filter { !$0.key.hasPrefix("code-split-") || live.contains($0.key) }
         return UIState(version: UIState.currentVersion, mode: mode, paneSizes: sizes,
                        chatCollapsed: codeLayout.chatCollapsed, layout: layout, expandedFolders: expandedFolders.sorted(),
-                       recentCommands: recentCommands)
+                       recentCommands: recentCommands,
+                       sidebarTab: codeLayout.sidebarTab, lastSearch: lastSearch)
     }
 
     /// Moves `id` to the front of this project's recent commands (capped); does nothing, and writes nothing, when it is
@@ -130,6 +131,12 @@ extension Workspace {
         codeLayout.onChatCollapsedChange = nil
         codeLayout.chatCollapsed = saved.chatCollapsed
         codeLayout.onChatCollapsedChange = callback
+        let tabCallback = codeLayout.onSidebarTabChange
+        codeLayout.onSidebarTabChange = nil
+        codeLayout.sidebarTab = saved.sidebarTab
+        codeLayout.onSidebarTabChange = tabCallback
+        lastSearch = saved.lastSearch
+        search.restore(saved.lastSearch)
         if let layout = saved.layout { installLayout(layout, existing: found.files) }
         expandedFolders = Set(found.folders)
         mode = saved.mode

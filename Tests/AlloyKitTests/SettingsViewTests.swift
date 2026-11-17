@@ -445,3 +445,20 @@ import Testing
         #expect((try? settings.element(identifier: "settings-lsp-mylint")) == nil)
     }
 }
+
+@MainActor
+@Suite struct SettingsSearchTests {
+    @Test func searchGroupEditsPersist() async throws {
+        let rig = Rig()
+        let main = try alloyWindow(rig.workspace)
+        let window = try main.openSettingsFromMenu()
+        try await window.runUntil { (try? window.element(identifier: "settings-search-excludes")) != nil }
+        _ = try window.element(identifier: "settings-search-max-results")
+        try window.click(window.element(identifier: "settings-search-excludes"))
+        window.typeText("dist/**")
+        for _ in 0..<3 { window.tick() }
+        #expect(rig.workspace.settings.searchExcludes == ["dist/**"])
+        let reloaded = AlloySettings.load(appSupport: rig.workspace.appSupport)
+        #expect(reloaded.searchExcludes == ["dist/**"])
+    }
+}

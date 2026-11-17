@@ -49,6 +49,15 @@ public struct AlloySettings: Codable, Equatable, Sendable {
     /// empty string to hide the image the theme file names. A theme with no entry shows its file's own image, if any.
     public var backgroundImages: [String: String]
 
+    /// The most matches a project search collects before it stops (clamped to `searchResultRange`).
+    public var searchMaxResults: Int
+
+    /// Glob patterns excluded from every project search, on top of the search box's own exclude field.
+    public var searchExcludes: [String]
+
+    public static let searchResultRange = 100...50_000
+    public static let defaultSearchMaxResults = 10_000
+
     /// Key overrides by command id: a canonical chord such as `primary+shift+p`, or `"none"` to unbind. Unknown ids are
     /// kept; malformed chords are ignored when resolved.
     public var keybindings: [String: String]
@@ -60,7 +69,10 @@ public struct AlloySettings: Codable, Equatable, Sendable {
                 languageServers: [String: ServerConfigOverride] = [:],
                 appearance: AppearanceOverrides = AppearanceOverrides(), glass: Bool = true,
                 backgroundImages: [String: String] = [:],
-                keybindings: [String: String] = [:]) {
+                keybindings: [String: String] = [:],
+                searchMaxResults: Int = AlloySettings.defaultSearchMaxResults, searchExcludes: [String] = []) {
+        self.searchMaxResults = min(max(searchMaxResults, Self.searchResultRange.lowerBound), Self.searchResultRange.upperBound)
+        self.searchExcludes = searchExcludes
         self.keybindings = keybindings
         self.backgroundImages = backgroundImages
         self.glass = glass
@@ -80,7 +92,7 @@ public struct AlloySettings: Codable, Equatable, Sendable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case claudePath, lastProjectPath, shareKnowledge, shareAcrossProjects, askBeforeSharedNotes, followEdits, paletteShowsDisabled, themeMode, theme, lightTheme, darkTheme, languageServers, appearance, glass, backgroundImages, keybindings
+        case claudePath, lastProjectPath, shareKnowledge, shareAcrossProjects, askBeforeSharedNotes, followEdits, paletteShowsDisabled, themeMode, theme, lightTheme, darkTheme, languageServers, appearance, glass, backgroundImages, keybindings, searchMaxResults, searchExcludes
     }
 
     /// Every key is optional, so a file written by an older Alloy still loads with its values intact.
@@ -102,6 +114,9 @@ public struct AlloySettings: Codable, Equatable, Sendable {
         appearance = (try? c.decodeIfPresent(AppearanceOverrides.self, forKey: .appearance)) ?? AppearanceOverrides()
         glass = try c.decodeIfPresent(Bool.self, forKey: .glass) ?? true
         backgroundImages = (try? c.decodeIfPresent([String: String].self, forKey: .backgroundImages)) ?? [:]
+        let maxResults = (try? c.decodeIfPresent(Int.self, forKey: .searchMaxResults)) ?? Self.defaultSearchMaxResults
+        searchMaxResults = min(max(maxResults, Self.searchResultRange.lowerBound), Self.searchResultRange.upperBound)
+        searchExcludes = (try? c.decodeIfPresent([String].self, forKey: .searchExcludes)) ?? []
         keybindings = (try? c.decodeIfPresent([String: String].self, forKey: .keybindings)) ?? [:]
         // Entry by entry: one malformed override is dropped without losing the others.
         let lossy = (try? c.decodeIfPresent([String: LossyOverride].self, forKey: .languageServers)) ?? nil

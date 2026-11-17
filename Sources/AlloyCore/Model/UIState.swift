@@ -20,19 +20,24 @@ public struct UIState: Codable, Equatable, Sendable {
     public var layout: CodeLayoutState?
     /// Project-relative paths of the file tree's open folders.
     public var expandedFolders: [String]
+    /// Which tab Code mode's sidebar shows.
+    public var sidebarTab: SidebarTab
+    /// The last project search that ran; nil until one did.
+    public var lastSearch: SearchQuery?
     /// Ids of the commands run most recently in this project, newest first (at most `recentCommandLimit`).
     public var recentCommands: [String]
 
     public static let recentCommandLimit = 10
 
     public init(version: Int = UIState.currentVersion, mode: WorkspaceMode = .chat, paneSizes: [String: [Double]] = [:],
-                chatCollapsed: Bool = false, layout: CodeLayoutState? = nil, expandedFolders: [String] = [], recentCommands: [String] = []) {
+                chatCollapsed: Bool = false, layout: CodeLayoutState? = nil, expandedFolders: [String] = [], recentCommands: [String] = [],
+                sidebarTab: SidebarTab = .files, lastSearch: SearchQuery? = nil) {
         self.version = version; self.mode = mode; self.paneSizes = paneSizes
         self.chatCollapsed = chatCollapsed; self.layout = layout; self.expandedFolders = expandedFolders
-        self.recentCommands = recentCommands
+        self.recentCommands = recentCommands; self.sidebarTab = sidebarTab; self.lastSearch = lastSearch
     }
 
-    private enum CodingKeys: String, CodingKey { case version, mode, paneSizes, chatCollapsed, layout, expandedFolders, recentCommands }
+    private enum CodingKeys: String, CodingKey { case version, mode, paneSizes, chatCollapsed, layout, expandedFolders, recentCommands, sidebarTab, lastSearch }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -44,6 +49,8 @@ public struct UIState: Codable, Equatable, Sendable {
         chatCollapsed = (try? c.decodeIfPresent(Bool.self, forKey: .chatCollapsed)) ?? false
         layout = (try? c.decodeIfPresent(CodeLayoutState.self, forKey: .layout)) ?? nil
         expandedFolders = (try? c.decodeIfPresent([String].self, forKey: .expandedFolders)) ?? []
+        sidebarTab = (try? c.decodeIfPresent(SidebarTab.self, forKey: .sidebarTab)) ?? .files
+        lastSearch = (try? c.decodeIfPresent(SearchQuery.self, forKey: .lastSearch)) ?? nil
         recentCommands = (try? c.decodeIfPresent([String].self, forKey: .recentCommands)) ?? []
     }
 
@@ -56,6 +63,8 @@ public struct UIState: Codable, Equatable, Sendable {
         try c.encodeIfPresent(layout, forKey: .layout)
         try c.encode(expandedFolders, forKey: .expandedFolders)
         try c.encode(Array(recentCommands.prefix(Self.recentCommandLimit)), forKey: .recentCommands)
+        try c.encode(sidebarTab, forKey: .sidebarTab)
+        try c.encodeIfPresent(lastSearch, forKey: .lastSearch)
     }
 }
 

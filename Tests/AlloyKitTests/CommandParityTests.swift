@@ -43,16 +43,17 @@ import Testing
         }
         // Today's order: the Go menu, then the View menu.
         let go = try #require(window.testApp.menuBar.first { $0.title == "Go" })
-        #expect(go.items.map(\.title) == ["Go to Definition"])
+        #expect(go.items.map(\.title) == ["Go to Definition", "Next Result", "Previous Result"])
         let view = try #require(window.testApp.menuBar.first { $0.title == "View" })
         #expect(view.items.map(\.title) == [
             "Chat Mode", "Code Mode", "Split Right", "Split Down", "Focus Left Group", "Focus Right Group",
-            "Focus Up Group", "Focus Down Group", "Reveal in Tree", "Toggle Chat Column", "Command Palette…",
+            "Focus Up Group", "Focus Down Group", "Reveal in Tree", "Toggle Chat Column",
+            "Find in Files", "Replace in Files", "Command Palette…",
         ])
         #expect(view.items.compactMap(\.accessibilityIdentifier) == [
             "view-mode-chat", "view-mode-code", "view-split-right", "view-split-down", "view-focus-left",
             "view-focus-right", "view-focus-up", "view-focus-down", "view-reveal-in-tree", "view-toggle-chat-column",
-            "view-command-palette",
+            "view-find-in-files", "view-replace-in-files", "view-command-palette",
         ])
         #expect(menuItem(window, "app-settings")?.shortcut == PlatformKeyEquivalent(key: ",", modifiers: [.command]))
         #expect(menuItem(window, "view-split-down")?.shortcut == PlatformKeyEquivalent(key: "\\", modifiers: [.option, .command]))

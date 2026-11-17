@@ -70,6 +70,8 @@ struct SettingsView: Component {
                 Text("Running sessions pick up a change when they are next idle.").font(size: 11).foregroundColor(.mutedInk)
                 Button("Back to defaults") { resetKnowledge() }.accessibilityIdentifier("settings-reset")
             }
+            Divider()
+            SearchSettingsSection(workspace: workspace)
             if let coordinator = workspace.languageServices as? LSPCoordinator {
                 Divider()
                 LanguageServersSection(workspace: workspace, builtIn: coordinator.builtIn, locator: coordinator.locator)
@@ -141,6 +143,57 @@ struct SettingsView: Component {
             saved = false
             failure = "Could not save: \(error.localizedDescription)"
         }
+    }
+}
+
+/// The project search part of Settings: the result cap and the globs every search leaves out. Both save at once.
+struct SearchSettingsSection: Component {
+    let workspace: Workspace
+    /// The excludes as typed, one glob per line; kept here so a trailing newline survives while typing.
+    @State var excludes = ""
+    @State var loaded = false
+    @State var failure: String?
+
+    var content: some ElementGroup {
+        let workspace = workspace
+        VStack(alignment: .leading, spacing: Pixels(8)) {
+            Text("Search").font(size: 12).foregroundColor(.mutedInk)
+            Stepper("Most results: \(workspace.settings.searchMaxResults)", value: maxResults, in: AlloySettings.searchResultRange, step: 1_000)
+            .accessibilityIdentifier("settings-search-max-results")
+            Text("Never search these (one glob per line)").font(size: 11).foregroundColor(.mutedInk)
+            TextEditor("node_modules/**", text: excludesBinding)
+                .frame(maxWidth: .infinity, minHeight: Pixels(48), maxHeight: Pixels(120))
+                .accessibilityIdentifier("settings-search-excludes")
+            if let failure {
+                Text(failure).font(size: 12).foregroundColor(.errorInk).accessibilityIdentifier("settings-search-error")
+            }
+        }
+        .onAppear {
+            if !loaded { loaded = true; excludes = workspace.settings.searchExcludes.joined(separator: "\n") }
+        }
+    }
+
+    private var maxResults: Binding<Int> {
+        let workspace = workspace
+        return Binding(get: { workspace.settings.searchMaxResults }, set: { value in
+            var s = workspace.settings
+            s.searchMaxResults = min(max(value, AlloySettings.searchResultRange.lowerBound), AlloySettings.searchResultRange.upperBound)
+            write(s)
+        })
+    }
+
+    private var excludesBinding: Binding<String> {
+        let workspace = workspace
+        return Binding(get: { excludes }, set: { text in
+            excludes = text
+            var s = workspace.settings
+            s.searchExcludes = text.split(separator: "\n").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+            write(s)
+        })
+    }
+
+    private func write(_ s: AlloySettings) {
+        do { try workspace.updateSettings(s); failure = nil } catch { failure = "Could not save: \(error.localizedDescription)" }
     }
 }
 

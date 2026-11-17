@@ -51,11 +51,12 @@ import Testing
         #expect(abs((area.maxY.value - area.minY.value) - (island.maxY.value - island.minY.value)) < 0.5)
     }
 
-    @Test func sidebarShowsOnlyTheFilesTab() async throws {
+    @Test func sidebarStartsOnTheFilesTab() async throws {
         let (_, window) = try await codeWindow()
         #expect(exists(window, "code-sidebar-tab-files"))
         #expect(exists(window, "file-tree"))
-        #expect(!exists(window, "code-sidebar-tab-search") && !exists(window, "code-sidebar-tab-git"))
+        #expect(exists(window, "code-sidebar-tab-search") && !exists(window, "code-sidebar-tab-git"))
+        #expect(!exists(window, "search-query"))
     }
 
     private struct NestedSpike: Component {
