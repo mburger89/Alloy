@@ -52,6 +52,12 @@ final class OpenDocumentView {
 
     /// The old-text pane of the side-by-side diff; nil in inline mode and until the first build.
     private(set) var left: LeftPane?
+    /// Which language features the servers of this file offer (written only when they change; the hover is attached by it).
+    private(set) var features = FeatureSet()
+    /// The hover popover's slot: the view's one text-anchored presentation.
+    @ObservationIgnored let popoverSlot = PopoverSlotModel()
+    @ObservationIgnored private var hoverTask: Task<Void, Never>?
+    @ObservationIgnored private var hoverGeneration = 0
     var selectedEdit: UUID?
     var findVisible = false
     var findQuery = ""
@@ -73,6 +79,7 @@ final class OpenDocumentView {
         self.lsp = lsp
         self.decorations = CodeDecorations(buffer: document.buffer)
         self.decorations.theme = .alloy
+        features = lsp?.features(for: document.path) ?? FeatureSet()
         services.attach(self)
     }
 
@@ -85,6 +92,7 @@ final class OpenDocumentView {
     func close() {
         closed = true
         messageTask?.cancel()
+        dismissHover()
         services.detach(self)
         left?.close()
         left = nil
@@ -196,6 +204,67 @@ final class OpenDocumentView {
         applyLineLayers(clearing: hadDiff)
     }
 
+    // MARK: Hover
+
+    /// Whether the hover is attached to the code view: the server offers it and the document is open at it, editable.
+    func hoverAttached(editable: Bool) -> Bool { features.hover && editable && services.lspOpen && lsp != nil }
+
+    /// Re-reads the features the document's servers offer; writes only a change, and drops an open hover when they go.
+    func refreshFeatures() {
+        let now = lsp?.features(for: document.path) ?? FeatureSet()
+        guard now != features else { return }
+        features = now
+        if !now.hover { dismissHover() }
+    }
+
+    /// Asks for the hover at `offset` (the primary caret when nil) and opens the popover when something comes back. Each
+    /// call supersedes the one before; the answer is dropped when the text, the tab or the request moved on.
+    func showHover(at offset: Int?, workspace: Workspace) {
+        hoverTask?.cancel()
+        hoverGeneration += 1
+        let generation = hoverGeneration
+        guard let lsp, !closed, features.hover, document.state == .editable, services.lspOpen else { return }
+        services.drainEdits()
+        let snapshot = document.buffer.snapshot()
+        let at = min(offset ?? selection(in: workspace).primarySelection.head, snapshot.utf8Count)
+        let path = document.path, pane = pane
+        hoverTask = Task { @MainActor [weak self] in
+            let outcome = await lsp.hover(path: path, utf8Offset: at, snapshot: snapshot)
+            guard !Task.isCancelled, let self, !self.closed, self.hoverGeneration == generation,
+                  workspace.activeTab(in: pane) == path, self.document.buffer.version == snapshot.version else { return }
+            var info: HoverInfo?
+            switch outcome {
+            case .stale: return
+            case .answered(let answer): info = answer
+            case .unavailable, .timedOut, .failed: break
+            }
+            let marks = DiagnosticDecorations.current(lsp.diagnostics.entry(for: path), in: self.document.buffer)
+                .filter { $0.range.contains(at) || ($0.range.isEmpty && $0.range.lowerBound == at) }
+            let markdown = info?.markdown ?? ""
+            guard !markdown.isEmpty || !marks.isEmpty else {
+                self.popoverSlot.hover = nil
+                return
+            }
+            self.popoverSlot.hover = HoverPresentation(markdown: markdown, diagnostics: marks, range: info?.range ?? at..<at)
+        }
+    }
+
+    /// Closes the popover and abandons a request in flight.
+    func dismissHover() {
+        hoverTask?.cancel()
+        hoverTask = nil
+        hoverGeneration += 1
+        if popoverSlot.hover != nil { popoverSlot.hover = nil }
+    }
+
+    /// The pointer's rest on text: asks once per grapheme; the end of the hover closes the popover.
+    func textHover(_ phase: CodeHoverPhase, workspace: Workspace) {
+        switch phase {
+        case .active(let hit), .moved(let hit): showHover(at: hit.character?.lowerBound ?? hit.offset, workspace: workspace)
+        case .ended: dismissHover()
+        }
+    }
+
     // MARK: Go to definition
 
     /// A short message about the last go-to-definition ("No definition found", or where an outside file lies); the header shows it.
@@ -211,7 +280,7 @@ final class OpenDocumentView {
         definitionMessage = nil
         messageTask?.cancel()
         guard let lsp, services.lspOpen, !closed else {
-            showDefinitionMessage("No definition found", seconds: Self.noDefinitionSeconds)
+            flash("No definition found", seconds: Self.noDefinitionSeconds)
             return nil
         }
         services.drainEdits()
@@ -225,10 +294,10 @@ final class OpenDocumentView {
                   self.document.buffer.version == snapshot.version, selection.primarySelection.head == offset else { return }
             switch outcome {
             case .stale: return
-            case .unavailable: self.showDefinitionMessage("No definition found", seconds: Self.noDefinitionSeconds)
+            case .unavailable: self.flash("No definition found", seconds: Self.noDefinitionSeconds)
             case .answered(let result):
                 guard let first = result.targets.first else {
-                    self.showDefinitionMessage("No definition found", seconds: Self.noDefinitionSeconds)
+                    self.flash("No definition found", seconds: Self.noDefinitionSeconds)
                     return
                 }
                 await self.go(to: first, encoding: result.encoding, workspace: workspace)
@@ -243,18 +312,98 @@ final class OpenDocumentView {
             await workspace.open(path, selecting: { Positions.utf8Range(of: range, in: $0, encoding: encoding) }, in: pane)
         case .external(let url, let range):
             // Alloy has no read-only view for files outside the project (`Workspace.open` refuses them): say where it is.
-            showDefinitionMessage("Definition: \(url.path):\(range.start.line + 1):\(range.start.character + 1)",
+            flash("Definition: \(url.path):\(range.start.line + 1):\(range.start.character + 1)",
                                   seconds: Self.externalSeconds)
         }
     }
 
-    private func showDefinitionMessage(_ text: String, seconds: Double) {
+    func flash(_ text: String, seconds: Double) {
         definitionMessage = text
         messageTask?.cancel()
         messageTask = Task { @MainActor [weak self] in
             try? await Task.sleep(for: .seconds(seconds))
             guard !Task.isCancelled else { return }
             self?.definitionMessage = nil
+        }
+    }
+
+    // MARK: Symbols and references
+
+    /// How long the busy / timeout / empty messages of symbols and references stay.
+    nonisolated static let messageSeconds = 2.0
+
+    /// Whether the document can be asked for its outline now (the server offers it, the document is open at it, editable).
+    func symbolsAttached(editable: Bool) -> Bool { features.documentSymbol && editable && services.lspOpen && lsp != nil }
+
+    /// Whether the document can be asked for the uses of the symbol at the caret now.
+    func referencesAttached(editable: Bool) -> Bool { features.references && editable && services.lspOpen && lsp != nil }
+
+    /// Asks for the outline and hands it to `quickOpen` for `palette`. After a silent retry on a stale answer it says the
+    /// server is busy; whatever goes wrong, the palette ends up showing its empty row. The answer is kept across edits (it is
+    /// mapped through them when picked) but dropped when the tab changed.
+    func startSymbols(workspace: Workspace, quickOpen: QuickOpenModel, palette: ListPaletteModel) -> Task<Void, Never>? {
+        guard let lsp, symbolsAttached(editable: document.state == .editable), !closed else {
+            palette.setItems([])
+            return nil
+        }
+        let path = document.path, pane = pane
+        return Task { @MainActor [weak self, weak quickOpen] in
+            for attempt in 0..<2 {
+                guard let self, !self.closed else { return }
+                self.services.drainEdits()
+                let snapshot = self.document.buffer.snapshot()
+                let outcome = await lsp.documentSymbols(path: path, snapshot: snapshot)
+                guard !Task.isCancelled, !self.closed, workspace.activeTab(in: pane) == path else { return }
+                switch outcome {
+                case .answered(let symbols):
+                    quickOpen?.provideSymbols(symbols, version: snapshot.version, for: palette)
+                    return
+                case .stale where attempt == 0: continue
+                case .stale:
+                    self.flash("Server busy, try again", seconds: Self.messageSeconds)
+                case .timedOut:
+                    self.flash("Symbols timed out", seconds: Self.messageSeconds)
+                case .unavailable, .failed: break
+                }
+                palette.setItems([])
+                return
+            }
+        }
+    }
+
+    /// Asks for the uses of the symbol at the caret and opens the references palette with them. The answer is dropped
+    /// silently when the tab, the text or the caret changed since the request.
+    func startReferences(workspace: Workspace, quickOpen: QuickOpenModel) -> Task<Void, Never>? {
+        definitionMessage = nil
+        messageTask?.cancel()
+        guard let lsp, referencesAttached(editable: document.state == .editable), !closed else { return nil }
+        let path = document.path, pane = pane
+        let selection = self.selection(in: workspace)
+        let offset = selection.primarySelection.head
+        return Task { @MainActor [weak self, weak quickOpen] in
+            for attempt in 0..<2 {
+                guard let self, !self.closed else { return }
+                self.services.drainEdits()
+                let snapshot = self.document.buffer.snapshot()
+                let outcome = await lsp.references(path: path, utf8Offset: min(offset, snapshot.utf8Count), snapshot: snapshot)
+                guard !Task.isCancelled, !self.closed, workspace.activeTab(in: pane) == path,
+                      self.document.buffer.version == snapshot.version, selection.primarySelection.head == offset else { return }
+                switch outcome {
+                case .answered(let result):
+                    guard !result.hits.isEmpty || result.outsideRoot > 0 else {
+                        self.flash("No references found", seconds: Self.messageSeconds)
+                        return
+                    }
+                    quickOpen?.showReferences(model: QuickOpenModel.referencesPalette(
+                        result, snapshot: snapshot, path: path, pane: pane, workspace: workspace, quickOpen: quickOpen))
+                    return
+                case .stale where attempt == 0: continue
+                case .stale: self.flash("Server busy, try again", seconds: Self.messageSeconds)
+                case .timedOut: self.flash("References timed out", seconds: Self.messageSeconds)
+                case .unavailable, .failed: self.flash("No references found", seconds: Self.messageSeconds)
+                }
+                return
+            }
         }
     }
 
@@ -432,6 +581,14 @@ final class CodePanelStore {
         registry.removeAll { $0.store == nil }
         return registry.lazy.compactMap { $0.store?.view(for: document, in: pane) }.first
     }
+    /// The format service of whichever store made the Chat view of `document`, so a test can shorten its timeouts.
+    package static func existingFormatService(for document: EditorDocument) -> FormatService? {
+        registry.removeAll { $0.store == nil }
+        return registry.lazy.compactMap { entry -> FormatService? in
+            guard let store = entry.store, store.view(for: document, in: .chat) != nil else { return nil }
+            return store.formatService
+        }.first
+    }
     private var views: [ViewKey: OpenDocumentView] = [:]
     private var servicesByPath: [String: DocumentServices] = [:]
     private var lsp: LSPCoordinator?
@@ -441,8 +598,10 @@ final class CodePanelStore {
 
     /// Connects the store to the workspace's language-server coordinator, if one is installed. Idempotent.
     func attach(workspace: Workspace) {
+        installIntelHooks(workspace: workspace)
         guard let coordinator = workspace.languageServices as? LSPCoordinator, coordinator !== lsp else { return }
         lsp = coordinator
+        installFormat(workspace: workspace, coordinator: coordinator)
         coordinator.savedHandler = { [weak self] path in self?.servicesByPath[path]?.lspSaved() }
         coordinator.diagnosticsHandler = { [weak self] path in
             guard let self else { return }
@@ -455,6 +614,103 @@ final class CodePanelStore {
             self.goToDefinition(workspace: workspace, pane: workspace.defaultPane)
         }
         coordinator.reloadHandler = { [weak self] in self?.servicesByPath.values.forEach { $0.lspSettingsChanged() } }
+        coordinator.featuresHandler = { [weak self] path in
+            guard let self else { return }
+            for (key, view) in views where key.path == path { view.refreshFeatures() }
+        }
+    }
+
+    /// Installs the code-intelligence commands the menus and keys run. Idempotent; `quickOpen` is read when a command runs.
+    func installIntelHooks(workspace: Workspace) {
+        workspace.intelHooks.run[.showHover] = { [weak self, weak workspace] in
+            guard let self, let workspace else { return }
+            self.focusedView(workspace: workspace)?.showHover(at: nil, workspace: workspace)
+        }
+        workspace.intelHooks.run[.goToSymbol] = { [weak self, weak workspace] in
+            guard let self, let workspace, let quickOpen = self.quickOpen, self.focusedView(workspace: workspace) != nil else { return }
+            self.goToSymbol(workspace: workspace, quickOpen: quickOpen)
+        }
+        workspace.intelHooks.run[.findReferences] = { [weak self, weak workspace] in
+            guard let self, let workspace, let quickOpen = self.quickOpen else { return }
+            self.findReferences(workspace: workspace, quickOpen: quickOpen, pane: workspace.defaultPane)
+        }
+        workspace.intelHooks.run[.formatDocument] = { [weak self, weak workspace] in
+            guard let self, let workspace, let service = self.formatService, let view = self.focusedView(workspace: workspace) else { return }
+            self.formatTask = Task { @MainActor in await service.formatDocument(view: view) }
+        }
+        workspace.intelHooks.run[.formatSelection] = { [weak self, weak workspace] in
+            guard let self, let workspace, let service = self.formatService, let view = self.focusedView(workspace: workspace) else { return }
+            self.formatTask = Task { @MainActor in await service.formatSelection(view: view) }
+        }
+        workspace.intelHooks.isEnabled = { [weak self, weak workspace] command in
+            guard let self, let workspace, let view = self.focusedView(workspace: workspace) else { return false }
+            let editable = view.document.state == .editable
+            switch command {
+            case .showHover: return view.hoverAttached(editable: editable)
+            case .goToSymbol: return view.symbolsAttached(editable: editable)
+            case .findReferences: return view.referencesAttached(editable: editable)
+            case .formatDocument: return editable && view.services.lspOpen && view.features.formatting && formatService != nil
+            case .formatSelection:
+                return editable && view.services.lspOpen && view.features.rangeFormatting && formatService != nil
+                    && !view.selection(in: workspace).primarySelection.range.isEmpty
+            }
+        }
+    }
+
+    /// Format document, selection and on save; made once a coordinator is attached.
+    private(set) var formatService: FormatService?
+    private var formatTask: Task<Void, Never>?
+
+    private func installFormat(workspace: Workspace, coordinator: LSPCoordinator) {
+        let service = FormatService(workspace: workspace, coordinator: coordinator,
+                                    applier: WorkspaceEditApplier(workspace: workspace, coordinator: coordinator))
+        service.viewFor = { [weak self, weak workspace] path in
+            guard let self, let workspace else { return nil }
+            let focused = workspace.defaultPane
+            if workspace.activeTab(in: focused) == path, let document = workspace.document(path),
+               let view = self.view(for: document, in: focused) { return view }
+            return self.views.first { $0.key.path == path && !$0.value.closed }?.value
+        }
+        formatService = service
+        workspace.formatBeforeSave = { [weak service] doc in await service?.formatForSave(doc) }
+    }
+
+    /// The view of the focused pane's active tab.
+    func focusedView(workspace: Workspace) -> OpenDocumentView? {
+        let pane = workspace.defaultPane
+        guard let path = workspace.activeTab(in: pane), let document = workspace.document(path) else { return nil }
+        return view(for: document, in: pane)
+    }
+
+    /// Quick-open (⌘P), set by the root: the palette the symbols and references answers go to.
+    @ObservationIgnored weak var quickOpen: QuickOpenModel?
+    /// The one outline or references request in flight.
+    private var intelTask: Task<Void, Never>?
+
+    /// Opens the symbols palette on the focused editor (⇧⌘O).
+    func goToSymbol(workspace: Workspace, quickOpen: QuickOpenModel) { quickOpen.showSymbols(workspace: workspace) }
+
+    /// Loads the outline of `target` into `palette`; replaces any intel request in flight.
+    func loadSymbols(workspace: Workspace, quickOpen: QuickOpenModel, palette: ListPaletteModel, target: QuickOpenModel.Target) {
+        cancelIntel()
+        guard let document = workspace.document(target.path), let view = view(for: document, in: target.pane) else {
+            palette.setItems([])
+            return
+        }
+        intelTask = view.startSymbols(workspace: workspace, quickOpen: quickOpen, palette: palette)
+    }
+
+    /// Find References at `pane`'s active tab's caret; replaces any intel request in flight.
+    func findReferences(workspace: Workspace, quickOpen: QuickOpenModel, pane: PaneID) {
+        cancelIntel()
+        guard let path = workspace.activeTab(in: pane), let document = workspace.document(path),
+              let view = view(for: document, in: pane) else { return }
+        intelTask = view.startReferences(workspace: workspace, quickOpen: quickOpen)
+    }
+
+    func cancelIntel() {
+        intelTask?.cancel()
+        intelTask = nil
     }
 
     /// The one go-to-definition in flight, for whichever view asked last.
@@ -470,6 +726,7 @@ final class CodePanelStore {
 
     /// Abandons the request in flight (a tab switch, a closed view).
     func cancelDefinition() {
+        cancelIntel()
         definitionTask?.cancel()
         definitionTask = nil
     }
@@ -586,6 +843,28 @@ struct CodePanel: Component {
             if workspace.presentation(of: path, in: view.pane) == .sideBySide {
                 SideBySideView(workspace: workspace, store: store, document: document, view: view, focused: $codeFocused,
                                idSuffix: Self.sideBySideSuffix(view.pane))
+            } else if view.hoverAttached(editable: editable) {
+                // The server offers hover: the view carries the text hover and its one text-anchored popover (slot B).
+                let slot = view.popoverSlot
+                CodeView(buffer: document.buffer, decorations: view.decorations)
+                    .selectionState(selection)
+                    .font(family: "Menlo", size: 12)
+                    .codeViewEditable(editable)
+                    .scrollState(view.scroll)
+                    .onGutterBarClick { hit in view.selectedEdit = hit.tag.flatMap { view.tags[$0] } }
+                    .gutterBarContextMenu { hit in
+                        if let edit = hit.tag.flatMap({ view.tags[$0] }) {
+                            editMenu(edit: edit, workspace: workspace, store: store, document: document, pane: view.pane)
+                        }
+                    }
+                    .focused($codeFocused)
+                    .onTextHover(delay: .milliseconds(500)) { phase in view.textHover(phase, workspace: workspace) }
+                    .popover(item: Binding(get: { slot.hover }, set: { slot.hover = $0 }),
+                             attachmentAnchor: .range(slot.hover?.range ?? 0..<0), arrowEdge: .bottom) { presentation in
+                        HoverView(presentation: presentation, cache: slot.markdownCache)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .accessibilityIdentifier(codeViewIdentifier)
             } else {
                 CodeView(buffer: document.buffer, decorations: view.decorations)
                     .selectionState(selection)

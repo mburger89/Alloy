@@ -22,10 +22,12 @@ public struct ServerConfigOverride: Codable, Equatable, Sendable {
     public var role: ServerRole?
     /// rust-analyzer: use Clippy for its checks.
     public var clippy: Bool?
+    /// Format the file with this server before a deliberate save.
+    public var formatOnSave: Bool?
 
     public init(name: String? = nil, languageID: String? = nil, languageIDs: [String: String]? = nil, extensions: [String]? = nil, fileNames: [String]? = nil,
                 command: String? = nil, arguments: [String]? = nil, initializationOptions: JSONValue? = nil, enabled: Bool? = nil,
-                role: ServerRole? = nil, clippy: Bool? = nil) {
+                role: ServerRole? = nil, clippy: Bool? = nil, formatOnSave: Bool? = nil) {
         self.name = name
         self.languageID = languageID
         self.languageIDs = languageIDs
@@ -37,10 +39,11 @@ public struct ServerConfigOverride: Codable, Equatable, Sendable {
         self.enabled = enabled
         self.role = role
         self.clippy = clippy
+        self.formatOnSave = formatOnSave
     }
 
     private enum CodingKeys: String, CodingKey {
-        case name, languageID, languageIDs, extensions, fileNames, command, arguments, initializationOptions, enabled, role, clippy
+        case name, languageID, languageIDs, extensions, fileNames, command, arguments, initializationOptions, enabled, role, clippy, formatOnSave
     }
 
     public init(from decoder: Decoder) throws {
@@ -56,5 +59,6 @@ public struct ServerConfigOverride: Codable, Equatable, Sendable {
         enabled = try c.decodeIfPresent(Bool.self, forKey: .enabled)
         role = (try? c.decodeIfPresent(String.self, forKey: .role)).flatMap { ServerRole(rawValue: $0) }
         clippy = try c.decodeIfPresent(Bool.self, forKey: .clippy)
+        formatOnSave = try c.decodeIfPresent(Bool.self, forKey: .formatOnSave)
     }
 }

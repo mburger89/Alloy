@@ -75,19 +75,15 @@ extension LSPManager {
     /// ``definition(path:utf8Offset:snapshot:)`` with the position encoding of the answer, and `.stale` when the document
     /// moved on before the request could be made.
     public func definitionOutcome(path: String, utf8Offset: Int, snapshot: CodeSnapshot) async -> DefinitionOutcome {
-        guard let target = requestTarget(path: path) else { return .unavailable }
-        guard let rpc = try? await target.server.connection(), !Task.isCancelled,
-              let caps = await target.server.capabilities, caps.definition else { return .unavailable }
-        await target.sync.waitUntilSent()
-        // The caret belongs to `snapshot`; if the manager has moved on, the position would point elsewhere.
-        guard !Task.isCancelled, let now = requestTarget(path: path) else { return .unavailable }
-        guard now.snapshot.version == snapshot.version else { return .stale }
-        let position = Positions.lspPosition(utf8Offset: utf8Offset, in: snapshot, encoding: caps.positionEncoding)
-        let params: JSONValue = .object([
-            "textDocument": .object(["uri": .string(target.uri.absoluteString)]),
-            "position": .object(["line": .number(Double(position.line)), "character": .number(Double(position.character))]),
-        ])
-        guard let answer = try? await rpc.request("textDocument/definition", params), !Task.isCancelled else { return .unavailable }
-        return .answered(DefinitionResult(targets: DefinitionParsing.parse(answer, root: target.root), encoding: caps.positionEncoding))
+        guard let root = requestTarget(path: path)?.root else { return .unavailable }
+        let outcome: LSPOutcome<DefinitionResult> = await send(
+            .definition, path: path, snapshot: snapshot, timeout: .seconds(10),
+            params: { uri, encoding in Self.textDocumentPosition(uri: uri, offset: utf8Offset, snapshot: snapshot, encoding: encoding) },
+            parse: { answer, encoding, _ in DefinitionResult(targets: DefinitionParsing.parse(answer, root: root), encoding: encoding) })
+        switch outcome {
+        case .answered(let result): return .answered(result)
+        case .stale: return .stale
+        case .unavailable, .timedOut, .failed: return .unavailable
+        }
     }
 }

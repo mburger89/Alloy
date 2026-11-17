@@ -56,3 +56,48 @@ import Testing
         #expect(s.languageServers["ok"]?.languageIDs == ["x": "xx"])
     }
 }
+
+@Suite struct FormatSettingsTests {
+    private func tempSupport() -> URL {
+        FileManager.default.temporaryDirectory.appendingPathComponent("alloy-fmt-settings-\(UUID().uuidString)")
+    }
+
+    private func write(_ json: String, to support: URL) throws {
+        let url = AlloySettings.url(appSupport: support)
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try json.write(to: url, atomically: true, encoding: .utf8)
+    }
+
+    @Test func formatOnSaveAndFormattersRoundTrip() throws {
+        let support = tempSupport()
+        defer { try? FileManager.default.removeItem(at: support) }
+        var s = AlloySettings()
+        s.languageServers = ["gopls": ServerConfigOverride(formatOnSave: true)]
+        s.formatters = ["swift": "swiftformat"]
+        try s.save(appSupport: support)
+        let back = AlloySettings.load(appSupport: support)
+        #expect(back.languageServers["gopls"]?.formatOnSave == true)
+        #expect(back.formatters == ["swift": "swiftformat"])
+    }
+
+    @Test func oldFileWithoutEitherDecodesWithDefaults() throws {
+        let support = tempSupport()
+        defer { try? FileManager.default.removeItem(at: support) }
+        try write(#"{"theme":"nord","languageServers":{"gopls":{"enabled":false}}}"#, to: support)
+        let s = AlloySettings.load(appSupport: support)
+        #expect(s.theme == "nord")
+        #expect(s.formatters.isEmpty)
+        #expect(s.languageServers["gopls"]?.formatOnSave == nil)
+        #expect(s.languageServers["gopls"]?.enabled == false)
+    }
+
+    @Test func malformedFormattersFallBackWithoutDroppingOtherKeys() throws {
+        let support = tempSupport()
+        defer { try? FileManager.default.removeItem(at: support) }
+        try write(#"{"theme":"nord","formatters":["a","b"],"languageServers":{"gopls":{"formatOnSave":true}}}"#, to: support)
+        let s = AlloySettings.load(appSupport: support)
+        #expect(s.theme == "nord")
+        #expect(s.formatters.isEmpty)
+        #expect(s.languageServers["gopls"]?.formatOnSave == true)
+    }
+}

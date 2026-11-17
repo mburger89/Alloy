@@ -65,6 +65,9 @@ public struct AlloySettings: Codable, Equatable, Sendable {
     /// kept; malformed chords are ignored when resolved.
     public var keybindings: [String: String]
 
+    /// The server that formats a language when it has a main server and linters: language id -> server id. A language with no entry uses the automatic choice.
+    public var formatters: [String: String]
+
     public init(claudePath: String? = nil, lastProjectPath: String? = nil,
                 shareKnowledge: Bool = true, shareAcrossProjects: Bool = true, askBeforeSharedNotes: Bool = false, followEdits: Bool = true, paletteShowsDisabled: Bool = true,
                 themeMode: ThemeMode = .single, theme: String = "dracula",
@@ -73,11 +76,13 @@ public struct AlloySettings: Codable, Equatable, Sendable {
                 appearance: AppearanceOverrides = AppearanceOverrides(), glass: Bool = true,
                 backgroundImages: [String: String] = [:], terminal: TerminalSettings = TerminalSettings(),
                 keybindings: [String: String] = [:],
-                searchMaxResults: Int = AlloySettings.defaultSearchMaxResults, searchExcludes: [String] = []) {
+                searchMaxResults: Int = AlloySettings.defaultSearchMaxResults, searchExcludes: [String] = [],
+                formatters: [String: String] = [:]) {
         self.terminal = terminal
         self.searchMaxResults = min(max(searchMaxResults, Self.searchResultRange.lowerBound), Self.searchResultRange.upperBound)
         self.searchExcludes = searchExcludes
         self.keybindings = keybindings
+        self.formatters = formatters
         self.backgroundImages = backgroundImages
         self.glass = glass
         self.appearance = appearance
@@ -96,7 +101,7 @@ public struct AlloySettings: Codable, Equatable, Sendable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case claudePath, lastProjectPath, shareKnowledge, shareAcrossProjects, askBeforeSharedNotes, followEdits, paletteShowsDisabled, themeMode, theme, lightTheme, darkTheme, languageServers, appearance, glass, backgroundImages, keybindings, searchMaxResults, searchExcludes, terminal
+        case claudePath, lastProjectPath, shareKnowledge, shareAcrossProjects, askBeforeSharedNotes, followEdits, paletteShowsDisabled, themeMode, theme, lightTheme, darkTheme, languageServers, appearance, glass, backgroundImages, keybindings, searchMaxResults, searchExcludes, terminal, formatters
     }
 
     /// Every key is optional, so a file written by an older Alloy still loads with its values intact.
@@ -118,6 +123,7 @@ public struct AlloySettings: Codable, Equatable, Sendable {
         appearance = (try? c.decodeIfPresent(AppearanceOverrides.self, forKey: .appearance)) ?? AppearanceOverrides()
         glass = try c.decodeIfPresent(Bool.self, forKey: .glass) ?? true
         backgroundImages = (try? c.decodeIfPresent([String: String].self, forKey: .backgroundImages)) ?? [:]
+        formatters = (try? c.decodeIfPresent([String: String].self, forKey: .formatters)) ?? [:]
         terminal = (try? c.decodeIfPresent(TerminalSettings.self, forKey: .terminal)) ?? TerminalSettings()
         let maxResults = (try? c.decodeIfPresent(Int.self, forKey: .searchMaxResults)) ?? Self.defaultSearchMaxResults
         searchMaxResults = min(max(maxResults, Self.searchResultRange.lowerBound), Self.searchResultRange.upperBound)

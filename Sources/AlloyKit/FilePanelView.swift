@@ -98,14 +98,36 @@ struct FilePanelView: Component {
 }
 
 extension ElementGroup {
-    /// The code panel's keys for `pane`'s active tab: Cmd-F (Ctrl-F off macOS) opens find, F8 / Shift-F8 step through
-    /// the problems, F12 goes to the definition. A text field elsewhere, such as the composer, keeps its keys.
+    /// The code panel's keys for `pane`'s active tab: Cmd-F (Ctrl-F off macOS) opens find, Cmd-S saves, F8 / Shift-F8 step through
+    /// the problems, F12 goes to the definition, Shift-F12 lists the references, Cmd-I shows the hover. A text field elsewhere, such as the composer, keeps its keys.
     func codeKeyHandlers(workspace: Workspace, panel: CodePanelStore, pane: PaneID) -> some ElementGroup {
         self
             .onKeyPress(keys: ["f"], phases: .down) { press in
                 guard press.modifiers == .primary, let path = workspace.activeTab(in: pane), let document = workspace.document(path),
                       let view = panel.view(for: document, in: pane) else { return .ignored }
                 view.showFind()
+                return .handled
+            }
+            // Cmd-S: a deliberate save of the pane's active tab, so the format-on-save hook runs. A key handler, not a
+            // hidden button: a button would add elements to every frame.
+            .onKeyPress(keys: ["s"], phases: .down) { press in
+                guard press.modifiers == .primary, workspace.activeTab(in: pane) != nil else { return .ignored }
+                workspace.requestSaveActive(in: pane)
+                return .handled
+            }
+            // Cmd-I: the hover of the symbol at the primary caret.
+            .onKeyPress(keys: ["i"], phases: .down) { press in
+                guard press.modifiers == .primary, let path = workspace.activeTab(in: pane), let document = workspace.document(path),
+                      let view = panel.view(for: document, in: pane), view.hoverAttached(editable: document.state == .editable) else { return .ignored }
+                view.showHover(at: nil, workspace: workspace)
+                return .handled
+            }
+            // Shift-Cmd-O: the symbols of the pane's file, even when no server offers them. A key handler, not a hidden
+            // button: a button would add elements to every frame.
+            .onKeyPress(keys: ["o", "O"], phases: .down) { press in
+                guard press.modifiers == [.primary, .shift], workspace.activeTab(in: pane) != nil,
+                      let quickOpen = panel.quickOpen else { return .ignored }
+                quickOpen.showSymbols(workspace: workspace)
                 return .handled
             }
             // F8 / Shift-F8: the next / previous problem of the pane's file.
@@ -116,10 +138,16 @@ extension ElementGroup {
                 return .handled
             }
             // F12: go to the definition of the symbol at the caret.
+            // Shift-F12: the references of the symbol at the caret.
             .onKeyPress(keys: [FilePanelView.f12], phases: .down) { press in
-                guard press.modifiers.isEmpty, let path = workspace.activeTab(in: pane), let document = workspace.document(path),
-                      panel.view(for: document, in: pane) != nil else { return .ignored }
-                panel.goToDefinition(workspace: workspace, pane: pane)
+                guard press.modifiers.isEmpty || press.modifiers == .shift, let path = workspace.activeTab(in: pane),
+                      let document = workspace.document(path), panel.view(for: document, in: pane) != nil else { return .ignored }
+                if press.modifiers == .shift {
+                    guard let quickOpen = panel.quickOpen else { return .ignored }
+                    panel.findReferences(workspace: workspace, quickOpen: quickOpen, pane: pane)
+                } else {
+                    panel.goToDefinition(workspace: workspace, pane: pane)
+                }
                 return .handled
             }
     }

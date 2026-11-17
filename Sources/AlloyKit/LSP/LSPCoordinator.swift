@@ -51,6 +51,9 @@ public final class LSPCoordinator {
     var semanticHandler: ((String, Int, [(Range<Int>, SyntaxToken)]) -> Void)?
     /// Tells the panel's views whether the server of a document offers semantic tokens.
     var semanticSupportHandler: ((String, Bool) -> Void)?
+    /// Tells the panel's views that the features the servers of a document offer changed.
+    var featuresHandler: ((String) -> Void)?
+    private var featureSets: [String: FeatureSet] = [:]
 
     public init(root: URL, builtIn: [ServerConfig] = ServerRegistry.builtIn,
                 overrides: [String: ServerConfigOverride] = [:], locator: ServerLocator, launcher: ServerLauncher) {
@@ -115,9 +118,11 @@ public final class LSPCoordinator {
     func closed(path: String) {
         guard openPaths.remove(path) != nil else { return }
         effectiveLinters[path] = nil
+        let hadFeatures = featureSets.removeValue(forKey: path) != nil
         status.remove(path: path)
         diagnostics.remove(path: path)
         send(.close(path))
+        if hadFeatures { featuresHandler?(path) }
     }
 
     private func documentSaved(_ path: String) {
@@ -142,6 +147,7 @@ public final class LSPCoordinator {
         for path in openPaths where !Self.handles(registry, path) {
             openPaths.remove(path)
             effectiveLinters[path] = nil
+            if featureSets.removeValue(forKey: path) != nil { featuresHandler?(path) }
             status.remove(path: path)
             if diagnostics.remove(path: path) { diagnosticsHandler?(path) }
         }
@@ -161,6 +167,7 @@ public final class LSPCoordinator {
     /// Stops every server and waits for them to exit. Nothing is reported afterwards.
     func shutdown() async {
         shutDown = true
+        featuresHandler = nil
         await withCheckedContinuation { (done: CheckedContinuation<Void, Never>) in
             guard commands != nil else { done.resume(); return }
             send(.shutdown(done))
@@ -172,9 +179,13 @@ public final class LSPCoordinator {
         diagnostics.removeAll()
         openPaths = []
         effectiveLinters = [:]
+        featureSets = [:]
     }
 
     // MARK: - Requests
+
+    /// The features the servers of `path` offer; empty when unknown.
+    func features(for path: String) -> FeatureSet { featureSets[path] ?? FeatureSet() }
 
     /// Where the symbol at `utf8Offset` of `snapshot` is defined, once the server has every edit reported so far. Cancel
     /// the calling task to abandon the request (the server is told).
@@ -183,6 +194,58 @@ public final class LSPCoordinator {
         await withCheckedContinuation { (done: CheckedContinuation<Void, Never>) in send(.barrier(done)) }
         guard !Task.isCancelled else { return .unavailable }
         return await manager.definitionOutcome(path: path, utf8Offset: utf8Offset, snapshot: snapshot)
+    }
+
+    /// What the symbol at `utf8Offset` of `snapshot` is, once the server has every edit reported so far. Cancel the
+    /// calling task to abandon the request (the server is told).
+    func hover(path: String, utf8Offset: Int, snapshot: CodeSnapshot) async -> LSPOutcome<HoverInfo?> {
+        guard openPaths.contains(path), commands != nil, let manager else { return .unavailable }
+        await withCheckedContinuation { (done: CheckedContinuation<Void, Never>) in send(.barrier(done)) }
+        guard !Task.isCancelled else { return .unavailable }
+        return await manager.hover(path: path, utf8Offset: utf8Offset, snapshot: snapshot)
+    }
+
+    /// The outline of `snapshot`, once the server has every edit reported so far. Cancel the calling task to abandon it.
+    func documentSymbols(path: String, snapshot: CodeSnapshot) async -> LSPOutcome<[DocSymbol]> {
+        guard openPaths.contains(path), commands != nil, let manager else { return .unavailable }
+        await withCheckedContinuation { (done: CheckedContinuation<Void, Never>) in send(.barrier(done)) }
+        guard !Task.isCancelled else { return .unavailable }
+        return await manager.documentSymbols(path: path, snapshot: snapshot)
+    }
+
+    /// The uses of the symbol at `utf8Offset` of `snapshot`, once the server has every edit reported so far. Cancel the
+    /// calling task to abandon the request (the server is told).
+    func references(path: String, utf8Offset: Int, snapshot: CodeSnapshot) async -> LSPOutcome<ReferenceResult> {
+        guard openPaths.contains(path), commands != nil, let manager else { return .unavailable }
+        await withCheckedContinuation { (done: CheckedContinuation<Void, Never>) in send(.barrier(done)) }
+        guard !Task.isCancelled else { return .unavailable }
+        return await manager.references(path: path, utf8Offset: utf8Offset, snapshot: snapshot)
+    }
+
+    /// Which server would format `path` (or a range of it), once the server has every edit reported so far.
+    func formatChoice(path: String, formatters: [String: String], rangeOnly: Bool) async -> FormatTargetChoice? {
+        guard openPaths.contains(path), commands != nil, let manager else { return nil }
+        await withCheckedContinuation { (done: CheckedContinuation<Void, Never>) in send(.barrier(done)) }
+        guard !Task.isCancelled else { return nil }
+        return await manager.formatChoice(path: path, formatters: formatters, rangeOnly: rangeOnly)
+    }
+
+    /// The edits `serverID` suggests to format `snapshot` (or the byte `range` of it), once the server has every edit
+    /// reported so far. Cancel the calling task to abandon the request (the server is told).
+    func format(path: String, snapshot: CodeSnapshot, range: Range<Int>?, serverID: String,
+                timeout: Duration) async -> LSPOutcome<[ByteEdit]> {
+        guard openPaths.contains(path), commands != nil, let manager else { return .unavailable }
+        await withCheckedContinuation { (done: CheckedContinuation<Void, Never>) in send(.barrier(done)) }
+        guard !Task.isCancelled else { return .unavailable }
+        return await manager.format(path: path, snapshot: snapshot, range: range, serverID: serverID, timeout: timeout)
+    }
+
+    /// The buffer version of the text the language server of `path` was last given, once every edit reported so far was
+    /// handled; 0 when no server tracks the path.
+    func syncedVersion(path: String) async -> Int {
+        guard openPaths.contains(path), commands != nil, let manager else { return 0 }
+        await withCheckedContinuation { (done: CheckedContinuation<Void, Never>) in send(.barrier(done)) }
+        return await manager.syncedVersion(path: path) ?? 0
     }
 
     // MARK: - Pipeline
@@ -235,6 +298,10 @@ public final class LSPCoordinator {
         case .semanticSupport(let path, let supported):
             guard openPaths.contains(path) else { return }
             semanticSupportHandler?(path, supported)
+        case .features(let path, let set):
+            guard openPaths.contains(path), featureSets[path] ?? FeatureSet() != set else { return }
+            featureSets[path] = set
+            featuresHandler?(path)
         case .linters(let path, let ids):
             guard openPaths.contains(path) else { return }
             effectiveLinters[path] = Set(ids)

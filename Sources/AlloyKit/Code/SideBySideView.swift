@@ -85,21 +85,45 @@ struct SideBySideView: Component {
                 Color.clear.frame(maxWidth: .infinity, maxHeight: .infinity)
             }
             Divider()
-            CodeView(buffer: document.buffer, decorations: view.decorations)
-                .selectionState(view.selection(in: workspace))
-                .font(family: "Menlo", size: 12)
-                .codeViewEditable(editable)
-                .scrollState(view.scroll)
-                .onScroll { position in view.leftScroll.position = CodeScrollPosition(row: position.row, x: view.leftScroll.position.x) }
-                .onGutterBarClick { hit in view.selectedEdit = hit.tag.flatMap { view.tags[$0] } }
-                .gutterBarContextMenu { hit in
-                    if let edit = hit.tag.flatMap({ view.tags[$0] }) {
-                        editMenu(edit: edit, workspace: workspace, store: store, document: document, pane: view.pane)
+            if view.hoverAttached(editable: editable) {
+                let slot = view.popoverSlot
+                CodeView(buffer: document.buffer, decorations: view.decorations)
+                    .selectionState(view.selection(in: workspace))
+                    .font(family: "Menlo", size: 12)
+                    .codeViewEditable(editable)
+                    .scrollState(view.scroll)
+                    .onScroll { position in view.leftScroll.position = CodeScrollPosition(row: position.row, x: view.leftScroll.position.x) }
+                    .onGutterBarClick { hit in view.selectedEdit = hit.tag.flatMap { view.tags[$0] } }
+                    .gutterBarContextMenu { hit in
+                        if let edit = hit.tag.flatMap({ view.tags[$0] }) {
+                            editMenu(edit: edit, workspace: workspace, store: store, document: document, pane: view.pane)
+                        }
                     }
-                }
-                .focused(focused)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .accessibilityIdentifier("sbs-right" + idSuffix)
+                    .focused(focused)
+                    .onTextHover(delay: .milliseconds(500)) { phase in view.textHover(phase, workspace: workspace) }
+                    .popover(item: Binding(get: { slot.hover }, set: { slot.hover = $0 }),
+                             attachmentAnchor: .range(slot.hover?.range ?? 0..<0), arrowEdge: .bottom) { presentation in
+                        HoverView(presentation: presentation, cache: slot.markdownCache)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .accessibilityIdentifier("sbs-right" + idSuffix)
+            } else {
+                CodeView(buffer: document.buffer, decorations: view.decorations)
+                    .selectionState(view.selection(in: workspace))
+                    .font(family: "Menlo", size: 12)
+                    .codeViewEditable(editable)
+                    .scrollState(view.scroll)
+                    .onScroll { position in view.leftScroll.position = CodeScrollPosition(row: position.row, x: view.leftScroll.position.x) }
+                    .onGutterBarClick { hit in view.selectedEdit = hit.tag.flatMap { view.tags[$0] } }
+                    .gutterBarContextMenu { hit in
+                        if let edit = hit.tag.flatMap({ view.tags[$0] }) {
+                            editMenu(edit: edit, workspace: workspace, store: store, document: document, pane: view.pane)
+                        }
+                    }
+                    .focused(focused)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .accessibilityIdentifier("sbs-right" + idSuffix)
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }

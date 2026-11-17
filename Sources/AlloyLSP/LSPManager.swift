@@ -14,6 +14,8 @@ public enum LSPResult: Sendable {
     case semanticSupport(path: String, supported: Bool)
     /// The linters that actually run for `path` (those that are enabled and whose config files exist), in order.
     case linters(path: String, ids: [String])
+    /// The features the servers of `path` offer (union of main and linters); sent when it changes.
+    case features(path: String, FeatureSet)
 }
 
 /// Starts a server process: the config, the resolved executable path and the workspace root.
@@ -55,6 +57,8 @@ public actor LSPManager {
         var pullTasks: [String: Task<Void, Never>] = [:]
         /// The server's last reported state (set on the actor); a failed or missing linter is skipped for sync.
         var state: ServerState?
+        /// The capabilities of the ready server; nil while it is not ready.
+        var capabilities: ServerCapabilities?
         var isDead: Bool {
             switch state {
             case .failed, .notInstalled: return true
@@ -173,6 +177,7 @@ public actor LSPManager {
     private var failedLinters: Set<String> = []
     /// The effective linter ids last reported per path.
     private var reportedLinters: [String: [String]] = [:]
+    private var reportedFeatures: [String: FeatureSet] = [:]
     /// How long an unused linter keeps running before it is stopped (a file using it may reopen meanwhile).
     private let linterIdleDelay: Duration
 
@@ -222,6 +227,7 @@ public actor LSPManager {
             schedulePull(path: path, entry: entry)
         }
         await reconcileLinters(path: path, onlyNew: false)
+        reportFeatures(path: path)
     }
 
     public func documentChanged(path: String, change: DocumentChange) async {
@@ -288,6 +294,7 @@ public actor LSPManager {
 
     private func untrack(_ path: String) async {
         reportedLinters[path] = nil
+        reportedFeatures[path] = nil
         dropSemantic(path: path)
         diagnostics[path] = nil
         guard let doc = tracked.removeValue(forKey: path) else { return }
@@ -383,6 +390,7 @@ public actor LSPManager {
         let configured = await configuredLinters(path: path)
         // A reload during the probe has its own pass over this path with the new registry.
         guard !isShutDown, generation == resolveGeneration, let doc = tracked[path] else { return }
+        defer { reportFeatures(path: path) }
         reportLinters(path: path, ids: configured.map(\.id))
         let wanted = configured.filter { !missing.contains($0.id) }
         let ids = wanted.map(\.id)
@@ -404,6 +412,18 @@ public actor LSPManager {
             await entry.sync.open(uri: uri(path), languageID: linterLanguageID(config, path: path), snapshot: latest.snapshot)
             schedulePull(path: path, entry: entry)
         }
+    }
+
+    /// Yields the union of the capabilities of `path`'s live servers when it differs from the last report.
+    private func reportFeatures(path: String) {
+        guard let doc = tracked[path] else { return }
+        var set = FeatureSet()
+        for id in doc.members {
+            if let entry = entries[id], !entry.isDead, let caps = entry.capabilities { set.formUnion(FeatureSet(caps)) }
+        }
+        guard reportedFeatures[path, default: FeatureSet()] != set else { return }
+        reportedFeatures[path] = set
+        continuation.yield(.features(path: path, set))
     }
 
     private func reportLinters(path: String, ids: [String]) {
@@ -758,9 +778,20 @@ public actor LSPManager {
 
     /// A server's state changed. One that went dead (failed, or missing) loses its diagnostics at once and the union
     /// of the others is yielded again; a failed linter is not launched again until the next `reload`.
-    private func noteState(_ state: ServerState, of entry: Entry) {
+    private func noteState(_ state: ServerState, of entry: Entry) async {
         guard entries[entry.config.id] === entry else { return }
         entry.state = state
+        if state == .ready {
+            let caps = await entry.server.capabilities
+            // The lookup suspended this actor: the server may have gone down or been replaced meanwhile.
+            guard entries[entry.config.id] === entry, entry.state == .ready else { return }
+            entry.capabilities = caps
+        } else {
+            entry.capabilities = nil
+        }
+        for path in tracked.keys.sorted() where tracked[path]?.members.contains(entry.config.id) == true {
+            reportFeatures(path: path)
+        }
         guard entry.isDead else { return }
         if entry.config.role == .linter, case .failed = state { failedLinters.insert(entry.config.id) }
         for path in diagnostics.keys.sorted() where diagnostics[path]?[entry.config.id] != nil {
@@ -869,20 +900,52 @@ public actor LSPManager {
 
     // MARK: - Requests
 
-    /// What a request about `path` needs: its running server, that server's sync and the document's URI, and the
-    /// text the manager last passed on. Nil when no server holds the document.
+    /// What a request about `path` needs: a running server, its sync and the document's URI, and the text the manager
+    /// last passed on. Nil when no server holds the document.
     struct RequestTarget {
+        var id: String
+        var role: ServerRole
         var server: LanguageServer
         var sync: DocumentSync
         var uri: URL
         var snapshot: CodeSnapshot
         var root: URL
+        /// The capabilities cached when the server became ready; nil until then.
+        var capabilities: ServerCapabilities?
+        /// The language id of the server's configuration.
+        var languageID: String = ""
     }
 
+    private func makeTarget(_ entry: Entry, path: String, doc: Tracked) -> RequestTarget {
+        RequestTarget(id: entry.config.id, role: entry.config.role, server: entry.server, sync: entry.sync, uri: uri(path),
+                      snapshot: doc.snapshot, root: root, capabilities: entry.capabilities,
+                      languageID: entry.config.languageID)
+    }
+
+    /// The main server's target for `path`.
     func requestTarget(path: String) -> RequestTarget? {
         guard let doc = tracked[path], let id = doc.serverID, let entry = entries[id] else { return nil }
-        return RequestTarget(server: entry.server, sync: entry.sync, uri: uri(path), snapshot: doc.snapshot, root: root)
+        return makeTarget(entry, path: path, doc: doc)
     }
+
+    /// The live servers of `path` whose role is in `roles`: the main server first, then its linters; dead ones skipped.
+    func requestTargets(path: String, roles: Set<ServerRole>) -> [RequestTarget] {
+        guard let doc = tracked[path] else { return [] }
+        var list: [RequestTarget] = []
+        if let id = doc.serverID, let entry = entries[id], !entry.isDead, roles.contains(entry.config.role) {
+            list.append(makeTarget(entry, path: path, doc: doc))
+        }
+        for id in doc.linterIDs {
+            if let entry = entries[id], !entry.isDead, roles.contains(entry.config.role) { list.append(makeTarget(entry, path: path, doc: doc)) }
+        }
+        return list
+    }
+
+    /// The text the manager last passed on for `path`.
+    func currentSnapshot(path: String) -> CodeSnapshot? { tracked[path]?.snapshot }
+
+    /// The buffer version of the text the manager last passed on for `path`; nil when it does not track the path.
+    public func syncedVersion(path: String) -> Int? { tracked[path].map { Int($0.snapshot.version) } }
 
     private func uri(_ path: String) -> URL {
         if path.hasPrefix("/") { return URL(fileURLWithPath: path).standardizedFileURL }

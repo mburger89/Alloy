@@ -144,7 +144,7 @@ struct AlloyScreen: Component {
             .windowTitleBarMetrics(height: Pixels(Float(style.titleBandHeight)),
                                    controlsLeading: Pixels(Float(style.titleControlsLeading)))
             GlobalKeys(workspace: workspace, registry: center.registry).equatable()
-            HeldReconciler(workspace: workspace, panel: panel).equatable()
+            HeldReconciler(workspace: workspace, panel: panel, quickOpen: quickOpen).equatable()
             PaletteLayer(model: center.palette, titleBandHeight: style.titleBandHeight).equatable()
         }
     }
@@ -156,16 +156,25 @@ struct AlloyScreen: Component {
 struct HeldReconciler: Component, Equatable {
     let workspace: Workspace
     let panel: CodePanelStore
+    let quickOpen: QuickOpenModel
 
-    nonisolated static func == (a: Self, b: Self) -> Bool { a.workspace === b.workspace && a.panel === b.panel }
+    nonisolated static func == (a: Self, b: Self) -> Bool {
+        a.workspace === b.workspace && a.panel === b.panel && a.quickOpen === b.quickOpen
+    }
 
     var content: some ElementGroup {
-        let workspace = workspace, panel = panel
+        let workspace = workspace, panel = panel, quickOpen = quickOpen
         Spacer()
             .frame(width: Pixels(0), height: Pixels(0))
             .allowsHitTesting(false)
             .accessibilityHidden(true)
-            .onChange(of: workspace.heldSignature(), initial: true) { panel.reconcile(workspace: workspace) }
+            .onChange(of: workspace.heldSignature(), initial: true) {
+                // The panel and quick-open know each other: symbol and reference answers open the palette.
+                panel.quickOpen = quickOpen
+                quickOpen.panel = panel
+                panel.installIntelHooks(workspace: workspace)
+                panel.reconcile(workspace: workspace)
+            }
     }
 }
 

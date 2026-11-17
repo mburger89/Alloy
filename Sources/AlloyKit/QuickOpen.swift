@@ -1,5 +1,7 @@
 import AlloyCore
+import AlloyLSP
 import Foundation
+import MetalUICodeBuffer
 import MetalUI
 import Observation
 
@@ -9,7 +11,20 @@ import Observation
 final class QuickOpenModel {
     nonisolated static let rowLimit = 50
 
+    /// What the palette lists: file paths, or the rows of a symbols / references ``ListPaletteModel``.
+    enum Mode {
+        case files
+        case list(ListPaletteModel)
+    }
+
+    /// The document a symbol jump belongs to, captured when the palette opens.
+    struct Target: Equatable {
+        var path: String
+        var pane: PaneID
+    }
+
     private(set) var isShowing = false
+    private(set) var mode = Mode.files
     var query = ""
     private(set) var rows: [String] = []
     var selected = 0
@@ -21,9 +36,15 @@ final class QuickOpenModel {
     /// Test hooks: rankings that landed, and a gate every ranking waits at (with its query) before it computes.
     @ObservationIgnored private(set) var landedCount = 0
     @ObservationIgnored var rankGate: (@Sendable (String) async -> Void)?
+    /// The panel store that answers symbol requests (set by the root).
+    @ObservationIgnored weak var panel: CodePanelStore?
+    @ObservationIgnored private var target: Target?
+    @ObservationIgnored private var symbols: [DocSymbol] = []
+    @ObservationIgnored private var symbolVersion: UInt64 = 0
 
     /// Shows the palette. The cached index ranks at once; a rescan then refreshes it off the main actor.
     func show(workspace: Workspace) {
+        leaveList()
         isShowing = true
         query = ""
         selected = 0
@@ -39,6 +60,7 @@ final class QuickOpenModel {
     }
 
     func hide() {
+        leaveList()
         isShowing = false
         generation += 1
         pendingSubmit = false
@@ -48,14 +70,167 @@ final class QuickOpenModel {
 
     func setQuery(_ new: String, workspace: Workspace) {
         guard new != query else { return }
-        query = new
+        switch mode {
+        case .files:
+            query = new
+            pendingSubmit = false
+            if new.hasPrefix("@") {
+                // `@` first: the symbols of the focused document, the rest of the text filters them.
+                generation += 1
+                rows = []
+                rankedQuery = nil
+                enterSymbols(workspace: workspace)
+                if case .list(let list) = mode { list.setQuery(String(new.dropFirst())) }
+            } else {
+                rank(workspace: workspace)
+            }
+        case .list(let list):
+            query = new
+            if list.kind == .symbols {
+                if new.hasPrefix("@") {
+                    list.setQuery(String(new.dropFirst()))
+                } else {
+                    // The `@` was deleted: back to files.
+                    leaveList()
+                    pendingSubmit = false
+                    rank(workspace: workspace)
+                }
+            } else {
+                list.setQuery(new)
+            }
+        }
+    }
+
+    // MARK: Lists
+
+    /// Opens the palette in symbols mode (⇧⌘O) for the focused pane's active document.
+    func showSymbols(workspace: Workspace) {
+        leaveList()
+        isShowing = true
+        query = "@"
+        selected = 0
+        rows = []
+        rankedQuery = nil
         pendingSubmit = false
-        rank(workspace: workspace)
+        generation += 1
+        enterSymbols(workspace: workspace)
+    }
+
+    /// Opens a references palette (the store built `model`); Esc or `hide()` closes it.
+    func showReferences(model: ListPaletteModel) {
+        leaveList()
+        isShowing = true
+        query = ""
+        selected = 0
+        rows = []
+        generation += 1
+        pendingSubmit = false
+        mode = .list(model)
+    }
+
+    private func enterSymbols(workspace: Workspace) {
+        let pane = workspace.defaultPane
+        let captured = workspace.activeTab(in: pane).map { Target(path: $0, pane: pane) }
+        target = captured
+        symbols = []
+        let palette = ListPaletteModel(kind: .symbols, items: [], loading: true) { [weak self, weak workspace] item in
+            guard let self, let workspace else { return }
+            self.jump(toSymbol: item.tag, workspace: workspace)
+        }
+        mode = .list(palette)
+        guard let captured, let panel else {
+            palette.setItems([])
+            return
+        }
+        panel.loadSymbols(workspace: workspace, quickOpen: self, palette: palette, target: captured)
+    }
+
+    /// The outline arrived for `palette` (still the open one).
+    func provideSymbols(_ list: [DocSymbol], version: UInt64, for palette: ListPaletteModel) {
+        guard case .list(let current) = mode, current === palette, isShowing else { return }
+        symbols = list
+        symbolVersion = version
+        palette.setItems(list.enumerated().map { i, symbol in
+            ListPaletteModel.Item(title: symbol.name, detail: symbol.detail ?? "", depth: symbol.depth,
+                                  glyph: Self.glyph(kind: symbol.kind), tag: i)
+        })
+    }
+
+    /// Selects symbol `index` of the outline in the captured document: its range is mapped through the edits made since the
+    /// request, and dropped when it cannot be.
+    private func jump(toSymbol index: Int, workspace: Workspace) {
+        guard symbols.indices.contains(index), let target, let document = workspace.document(target.path) else { return }
+        let range = symbols[index].range, version = symbolVersion
+        hide()
+        Task { @MainActor in
+            await workspace.open(target.path, selecting: { _ in
+                guard let lower = document.buffer.map(range.lowerBound, from: version, bias: .after),
+                      let upper = document.buffer.map(range.upperBound, from: version, bias: .before) else { return 0..<0 }
+                return lower..<max(lower, upper)
+            }, in: target.pane)
+        }
+    }
+
+    private func leaveList() {
+        if case .list(let list) = mode { list.cancel() }
+        mode = .files
+        target = nil
+        symbols = []
+    }
+
+    /// A short mark for an LSP `SymbolKind`.
+    nonisolated static func glyph(kind: Int) -> String {
+        switch kind {
+        case 2, 3, 4: "M"      // module, namespace, package
+        case 5: "C"            // class
+        case 6, 9: "m"         // method, constructor
+        case 7, 8: "p"         // property, field
+        case 10: "E"           // enum
+        case 11: "I"           // interface
+        case 12: "f"           // function
+        case 13, 14: "v"       // variable, constant
+        case 22, 23: "S"       // enum member, struct
+        case 26: "T"           // type parameter
+        default: "·"
+        }
+    }
+
+    /// The references palette for `result`: rows "path:line  preview", picking one opens it in `pane`.
+    static func referencesPalette(_ result: ReferenceResult, snapshot: CodeSnapshot, path: String, pane: PaneID,
+                                  workspace: Workspace, quickOpen: QuickOpenModel?) -> ListPaletteModel {
+        let hits = result.hits
+        let items = hits.enumerated().map { i, hit in
+            ListPaletteModel.Item(title: "\(hit.path):\(hit.line + 1)", detail: hit.preview, group: hit.path, tag: i)
+        }
+        var notes: [String] = []
+        if result.truncated { notes.append("first \(ReferenceParsing.hitLimit) shown") }
+        if result.outsideRoot > 0 { notes.append("\(result.outsideRoot) more outside the project") }
+        let encoding = result.encoding
+        return ListPaletteModel(kind: .references, items: items, note: notes.isEmpty ? nil : notes.joined(separator: ", ")) {
+            [weak workspace, weak quickOpen] item in
+            guard let workspace, hits.indices.contains(item.tag) else { return }
+            let hit = hits[item.tag]
+            quickOpen?.hide()
+            Task { @MainActor in
+                if hit.path == path, let document = workspace.document(path) {
+                    // The answer is for `snapshot`; the text may have moved on while the palette was open.
+                    let range = Positions.utf8Range(of: hit.range, in: snapshot, encoding: encoding)
+                    await workspace.open(path, selecting: { _ in
+                        guard let lower = document.buffer.map(range.lowerBound, from: snapshot.version, bias: .after),
+                              let upper = document.buffer.map(range.upperBound, from: snapshot.version, bias: .before) else { return 0..<0 }
+                        return lower..<max(lower, upper)
+                    }, in: pane)
+                } else {
+                    await workspace.open(hit.path, selecting: { Positions.utf8Range(of: hit.range, in: $0, encoding: encoding) }, in: pane)
+                }
+            }
+        }
     }
 
     /// Return: opens the selected row, or, while the rows are for an older query, waits for the current query's ranking
     /// and then opens its top row.
     func submit(workspace: Workspace) {
+        if case .list(let list) = mode { list.submit(); return }
         if rankedQuery == query { open(workspace: workspace) } else { pendingSubmit = true }
     }
 
@@ -63,6 +238,7 @@ final class QuickOpenModel {
     func refresh(workspace: Workspace) { rank(workspace: workspace) }
 
     func move(_ step: Int) {
+        if case .list(let list) = mode { list.move(step); return }
         guard !rows.isEmpty else { return }
         selected = min(max(selected + step, 0), rows.count - 1)
     }
@@ -129,9 +305,10 @@ struct QuickOpenField: Component {
     var content: some ElementGroup {
         let workspace = workspace, model = model
         let query = Binding<String>(get: { model.query }, set: { model.setQuery($0, workspace: workspace) })
-        let showRows = Binding<Bool>(get: { model.isShowing && !model.rows.isEmpty }, set: { _ in })
+        let listModel: ListPaletteModel? = if case .list(let list) = model.mode { list } else { nil }
+        let showRows = Binding<Bool>(get: { model.isShowing && (listModel != nil || !model.rows.isEmpty) }, set: { _ in })
         HStack(spacing: Pixels(8)) {
-            TextField("Open file by name", text: query)
+            TextField(listModel?.kind.placeholder ?? "Open file by name", text: query)
                 .onSubmit { model.submit(workspace: workspace) }
                 .focused($focused)
                 .onAppear { focused = true }
@@ -150,7 +327,11 @@ struct QuickOpenField: Component {
         .padding(inset(12, 6))
         .background(.panelFill)
         .suggestionOverlay(isPresented: showRows, edge: .bottom, alignment: .leading) {
-            QuickOpenList(rows: model.rows, selected: model.selected) { model.open($0, workspace: workspace) }
+            if let listModel {
+                ListPaletteList(model: listModel) { listModel.pick($0) }
+            } else {
+                QuickOpenList(rows: model.rows, selected: model.selected) { model.open($0, workspace: workspace) }
+            }
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("quick-open")

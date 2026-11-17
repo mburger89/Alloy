@@ -277,6 +277,8 @@ public final class Workspace {
     @ObservationIgnored private var mergeBusy: Set<String> = []
     @ObservationIgnored private var mergeQueue: [String: [CheckedContinuation<Void, Never>]] = [:]
     @ObservationIgnored let autosaveClock: any AutosaveClock
+    /// Runs before the write of a deliberate save (`save(_:format:)` with `format`); installed by the UI. It bounds its own time.
+    @ObservationIgnored public var formatBeforeSave: (@MainActor (EditorDocument) async -> Void)?
     /// Chat or Code (see Workspace+UIState.swift). Set through `setMode`, which also schedules the `ui-state.json` write.
     public internal(set) var mode: WorkspaceMode = .chat
     /// True once `restoreUIState` has finished (also with no, a corrupt or a newer file). Split views read their saved sizes when
@@ -470,6 +472,8 @@ public final class Workspace {
     @ObservationIgnored public var onKeybindingsChanged: (@MainActor ([String: String]) -> Void)?
     /// Go to Definition for the active tab's caret (set by the code panel; the menu and F12 call it).
     @ObservationIgnored public var goToDefinition: (@MainActor () -> Void)?
+    /// The code-intelligence commands the code panel offers (hover, symbols, references, format); empty until it installs them.
+    @ObservationIgnored public var intelHooks = IntelHooks()
     /// An opaque slot for the UI layer's language-server coordinator (AlloyCore cannot name that type).
     @ObservationIgnored public var languageServices: AnyObject?
     /// Set by `stopAll()` and never cleared: from then on nothing launches a process.
@@ -1581,7 +1585,7 @@ public final class Workspace {
         reopened.remove(key)
         defer { closing.remove(key); reopened.remove(key) }
         if let doc = documents[path], doc.isDirty {
-            do { try await save(path) } catch { return }
+            do { try await save(path, format: true) } catch { return }
             if doc.isDirty || reopened.contains(key) { return }
         }
         guard tabs(in: pane).contains(path) else { return }
@@ -1618,7 +1622,7 @@ public final class Workspace {
     // MARK: Saving
 
     /// Called when focus leaves the code view showing `path` (Task 6 wires it): saves the file.
-    public func focusLeft(_ path: String) async { try? await save(path) }
+    public func focusLeft(_ path: String) async { try? await save(path, format: true) }
 
     /// Saves every dirty open document.
     public func saveAll() async {
@@ -1629,20 +1633,33 @@ public final class Workspace {
     /// POSIX permissions. If the file changed on disk since Alloy last saw it and the ledger does not know that
     /// text, it is recorded as an `.outside` edit first. A failed write is reported and thrown. Saves of one
     /// file are serialised, and a save of a clean document does nothing.
-    public func save(_ path: String) async throws {
+    ///
+    /// `format` is true only for deliberate saves (⌘S, focus leaving the editor, closing a tab): the injected
+    /// `formatBeforeSave` hook then runs once, after the clean/editable check and before the write, and the buffer it
+    /// leaves is what gets written. Autosave, tab switches and `saveAll` pass false and never format.
+    public func save(_ path: String, format: Bool = false, group: UUID? = nil) async throws {
         while let running = saving[path] { _ = try? await running.value }
         guard let doc = documents[path], doc.state == .editable, doc.isDirty else { return }
         let task = Task<Void, Error> { @MainActor [weak self] in
             guard let self else { return }
             // Cleared by the task itself, so a waiter that wakes sees the save as finished at once.
             defer { saving.removeValue(forKey: path) }
-            try await performSave(doc)
+            autosave.cancel(path)
+            if format, let hook = formatBeforeSave { await hook(doc) }
+            try await performSave(doc, group: group)
         }
         saving[path] = task
         try await task.value
     }
 
-    private func performSave(_ doc: EditorDocument) async throws {
+    /// ⌘S: saves the pane's active tab (the focused pane's by default) with formatting.
+    public func saveActive(in pane: PaneID? = nil) async {
+        let pane = pane ?? defaultPane
+        guard let path = activeTab(in: pane) else { return }
+        try? await save(path, format: true)
+    }
+
+    private func performSave(_ doc: EditorDocument, group: UUID? = nil) async throws {
         ensureLoaded()
         let path = doc.path
         autosave.cancel(path)
@@ -1687,7 +1704,7 @@ public final class Workspace {
                     continue
                 }
                 await appendToLedger(path, saved: doc.savedSnapshot, edits: [(.user, text)],
-                                     group: pendingGroup.removeValue(forKey: path))
+                                     group: pendingGroup.removeValue(forKey: path) ?? group)
                 doc.markSaved(snapshot: snap, stamp: stamp)
                 onSaved?(path)
                 search.noteChanged(path)

@@ -464,6 +464,44 @@ import Testing
     }
 }
 
+/// Settings > Language servers: format on save and the formatter choice.
+@MainActor
+@Suite struct SettingsFormatTests {
+    private func open(_ rig: Rig) async throws -> TestWindow {
+        let coordinator = LSPCoordinator.install(on: rig.workspace,
+                                                 locator: ServerLocator(loginPATH: { nil }, xcrunFind: { _ in nil }),
+                                                 launcher: ServerLauncher { _, _, _ in throw CancellationError() })
+        let main = try alloyWindow(rig.workspace)
+        let settings = try main.openSettingsFromMenu()
+        try await settings.runUntil { (try? settings.element(identifier: "settings-lsp-rust-analyzer")) != nil }
+        withExtendedLifetime(coordinator) {}
+        return settings
+    }
+
+    @Test func formatOnSaveToggleExistsForServersAndLintersAndPersists() async throws {
+        let rig = Rig()
+        let settings = try await open(rig)
+        _ = try settings.element(identifier: "settings-lsp-format-on-save-ruff")
+        try settings.click(settings.element(identifier: "settings-lsp-format-on-save-rust-analyzer"))
+        #expect(rig.workspace.settings.languageServers["rust-analyzer"]?.formatOnSave == true)
+        let reloaded = AlloySettings.load(appSupport: rig.root.appendingPathComponent("support"))
+        #expect(reloaded.languageServers["rust-analyzer"]?.formatOnSave == true)
+    }
+
+    @Test func formatterPickerPersistsTheChoice() async throws {
+        let rig = Rig()
+        let settings = try await open(rig)
+        let choice = try #require(LanguageServersSection.formatterChoices(ServerRegistry().all).first)
+        let picker = try settings.element(identifier: "settings-lsp-formatter-\(choice.languageID)")
+        let linter = try #require(choice.servers.first { $0.role == .linter })
+        let row = try #require(descendants(of: picker, in: settings).first { $0.label == linter.name })
+        try settings.click(row)
+        #expect(rig.workspace.settings.formatters[choice.languageID] == linter.id)
+        let reloaded = AlloySettings.load(appSupport: rig.root.appendingPathComponent("support"))
+        #expect(reloaded.formatters[choice.languageID] == linter.id)
+    }
+}
+
 @MainActor
 @Suite struct SettingsSearchTests {
     @Test func searchGroupEditsPersist() async throws {

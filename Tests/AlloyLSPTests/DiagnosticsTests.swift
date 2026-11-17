@@ -30,8 +30,9 @@ struct DiagnosticsTests {
     @Test func diagnosticRangeOnEmojiLine() {
         // "a" + emoji (4 bytes, 2 UTF-16 units) + "bc": UTF-16 characters 3..<4 are "b", bytes 5..<6.
         let snapshot = CodeBuffer("a😀bc\n").snapshot()
-        let items = DiagnosticMapping.convert([raw(0, 3, 4, severity: 2, message: "boom", source: "rustc")], in: snapshot, encoding: .utf16)
-        #expect(items == [LSPDiagnostic(range: 5..<6, severity: .warning, message: "boom", source: "rustc")])
+        let input = raw(0, 3, 4, severity: 2, message: "boom", source: "rustc")
+        let items = DiagnosticMapping.convert([input], in: snapshot, encoding: .utf16)
+        #expect(items == [LSPDiagnostic(range: 5..<6, severity: .warning, message: "boom", source: "rustc", raw: input)])
         // The same bytes through the UTF-8 encoding are character 5.
         let utf8 = DiagnosticMapping.convert([raw(0, 5, 6)], in: snapshot, encoding: .utf8)
         #expect(utf8.first?.range == 5..<6)
@@ -39,6 +40,21 @@ struct DiagnosticsTests {
         let two = DiagnosticMapping.convert([raw(0, 4, 5, severity: nil), raw(0, 0, 1)], in: snapshot, encoding: .utf16)
         #expect(two.map(\.range) == [0..<1, 6..<7])
         #expect(two.last?.severity == .error)
+    }
+
+    @Test func rawKeepsTheServersObjectIncludingData() {
+        let snapshot = CodeBuffer("abcdef\n").snapshot()
+        func object(data: Double) -> JSONValue {
+            guard case .object(var o) = raw(0, 0, 1) else { return .null }
+            o["code"] = .string("F401")
+            o["data"] = .object(["fix": .number(data)])
+            return .object(o)
+        }
+        let a = DiagnosticMapping.convert([object(data: 1)], in: snapshot, encoding: .utf16)[0]
+        let b = DiagnosticMapping.convert([object(data: 2)], in: snapshot, encoding: .utf16)[0]
+        #expect(a.raw == object(data: 1))
+        #expect(a != b)
+        #expect(a.raw?["data"]?["fix"]?.intValue == 1)
     }
 
     @Test func diagnosticCodeStringAndNumber() {
@@ -153,7 +169,10 @@ struct DiagnosticsManagerTests {
         await manager.shutdownAll()
         #expect(got?.path == "f.x")
         #expect(got?.version == Int(snapshot.version))
-        #expect(got?.items == [LSPDiagnostic(range: 5..<6, severity: .warning, message: "w", source: "fake")])
+        let expected = LSPDiagnostic(range: 5..<6, severity: .warning, message: "w", source: "fake",
+                                     raw: got?.items.first?.raw)
+        #expect(got?.items == [expected])
+        #expect(got?.items.first?.raw?["message"]?.stringValue == "w")
     }
 
     @Test func pullDiagnosticsAreUsedWhenTheServerDoesNotPush() async throws {

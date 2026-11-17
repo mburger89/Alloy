@@ -66,6 +66,11 @@ extension Workspace {
         requestClose(path, in: defaultPane)
     }
 
+    /// ⌘S: saves the focused pane's active tab with formatting, in a tracked task (`settle()` waits for it).
+    public func requestSaveActive(in pane: PaneID? = nil) {
+        track { [weak self] in await self?.saveActive(in: pane) }
+    }
+
     /// Closes the tab for `path` in a tracked task (`settle()` waits for it); the strip's close button and ⌘W both use it.
     public func requestClose(_ path: String) {
         track { [weak self] in await self?.close(path) }

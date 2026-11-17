@@ -38,6 +38,27 @@ public enum BuiltinCommands {
         // so the code panel's own F12 handling and this item never both fire.
         add("go.definition", "Go to Definition", .go, chord([], .named(.f12)), .menu, menu: .go, recents: true,
             enabled: hasWorkspace) { current()?.goToDefinition?() }
+        // Code intelligence. Each runs the focused editor's hook and is enabled only when the hook says it can run
+        // (writable document, a server with the capability, a selection, not the old-text pane).
+        func addIntel(_ id: String, _ title: String, _ category: CommandCategory, _ shortcut: KeyChord?, menu: MenuPlacement,
+                      menuID: String, _ command: IntelCommand) {
+            add(id, title, category, shortcut, .menu, menu: menu, recents: true, menuID: menuID,
+                enabled: { current()?.intelHooks.isEnabled(command) ?? false }) { current()?.intelHooks.run[command]?() }
+        }
+        addIntel("go.symbol", "Go to Symbol…", .go, chord([.cmd, .shift], ch("o")), menu: .go, menuID: "menu-go-symbol", .goToSymbol)
+        // Shift-F12: the code panel's own key handler claims the key first, so this item and the handler never both fire.
+        addIntel("go.references", "Find References", .go, chord(.shift, .named(.f12)), menu: .go,
+                 menuID: "menu-find-references", .findReferences)
+        addIntel("edit.formatDocument", "Format Document", .edit, chord([.alt, .shift], ch("f")), menu: .edit,
+                 menuID: "menu-format", .formatDocument)
+        addIntel("edit.formatSelection", "Format Selection", .edit, nil, menu: .edit,
+                 menuID: "menu-format-selection", .formatSelection)
+        addIntel("edit.showHover", "Show Hover", .edit, chord(.cmd, ch("i")), menu: .edit, menuID: "menu-show-hover", .showHover)
+        // ⌘S: MetalUI has no File menu placement for it, and a hidden key button would add elements to every frame, so
+        // the code panel's key handler delivers the chord and this entry is the palette's.
+        add("file.save", "Save", .file, chord(.cmd, ch("s")), .none, recents: true,
+            enabled: { current()?.activeTab != nil }) { current()?.requestSaveActive() }
+
         add("search.nextResult", "Next Result", .go, chord([], .named(.f4)), .menu, menu: .go,
             menuID: "go-next-result", enabled: hasWorkspace) { current()?.search.step(1) }
         add("search.previousResult", "Previous Result", .go, chord(.shift, .named(.f4)), .menu, menu: .go,

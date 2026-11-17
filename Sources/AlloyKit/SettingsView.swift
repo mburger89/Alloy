@@ -216,6 +216,7 @@ struct LanguageServersSection: Component {
         let all = ServerRegistry(builtIn: builtIn, overrides: workspace.settings.languageServers).all
         let servers = all.filter { $0.role == .main }
         let linters = all.filter { $0.role == .linter }
+        let choices = Self.formatterChoices(all)
         VStack(alignment: .leading, spacing: Pixels(8)) {
             Text("Language servers").font(size: 12).foregroundColor(.mutedInk)
             ForEach(servers, id: \.id) { server in
@@ -229,6 +230,21 @@ struct LanguageServersSection: Component {
                 Text("Linters").font(size: 12).foregroundColor(.mutedInk).accessibilityIdentifier("settings-linters-heading")
                 ForEach(linters, id: \.id) { linter in
                     serverRow(linter, prefix: "settings-linter")
+                }
+            }
+            if !choices.isEmpty {
+                Text("Formatter").font(size: 11).foregroundColor(.mutedInk)
+                ForEach(choices, id: \.languageID) { choice in
+                    HStack(spacing: Pixels(8)) {
+                        Text(verbatim: choice.languageID).font(size: 12)
+                        Picker("Formatter", selection: formatter(choice.languageID)) {
+                            Text("Automatic").tag("")
+                            ForEach(choice.servers, id: \.id) { Text(verbatim: $0.name).tag($0.id) }
+                        }
+                        .pickerStyle(.segmented)
+                        .labelsHidden()
+                        .accessibilityIdentifier("settings-lsp-formatter-\(choice.languageID)")
+                    }
                 }
             }
             Text("Alloy never installs or downloads a server; it runs the ones you have.").font(size: 11).foregroundColor(.mutedInk)
@@ -245,12 +261,51 @@ struct LanguageServersSection: Component {
         HStack(spacing: Pixels(8)) {
             Toggle(isOn: enabled(server.id, default: server.enabled)) { Text(verbatim: server.name).font(size: 13) }
                 .accessibilityIdentifier("\(prefix)-\(server.id)")
+            Toggle(isOn: formatOnSave(server.id)) { Text("Format on save").font(size: 11) }
+                .accessibilityIdentifier("settings-lsp-format-on-save-\(server.id)")
             Text(verbatim: Self.extensions(server)).font(size: 11).foregroundColor(.mutedInk)
             Spacer()
             Text(verbatim: found[server.id].map { $0 ? "Found" : "Not found" } ?? "\u{2026}").font(size: 11)
                 .foregroundColor(found[server.id] == false ? .warningInk : .mutedInk)
                 .accessibilityIdentifier("\(prefix)-status-\(server.id)")
         }
+    }
+
+    /// Languages with a main server and at least one linter, each with the servers that may format it (main first).
+    static func formatterChoices(_ all: [ServerConfig]) -> [(languageID: String, servers: [ServerConfig])] {
+        var order: [String] = []
+        var byLanguage: [String: [ServerConfig]] = [:]
+        for server in all {
+            if byLanguage[server.languageID] == nil { order.append(server.languageID) }
+            byLanguage[server.languageID, default: []].append(server)
+        }
+        return order.compactMap { id in
+            let servers = byLanguage[id] ?? []
+            guard servers.contains(where: { $0.role == .main }), servers.contains(where: { $0.role == .linter }) else { return nil }
+            return (id, servers.filter { $0.role == .main } + servers.filter { $0.role == .linter })
+        }
+    }
+
+    private func formatOnSave(_ id: String) -> Binding<Bool> {
+        let workspace = workspace
+        return Binding(get: { workspace.settings.languageServers[id]?.formatOnSave ?? false },
+                       set: { on in
+                           var s = workspace.settings
+                           var o = s.languageServers[id] ?? ServerConfigOverride()
+                           o.formatOnSave = on
+                           s.languageServers[id] = o
+                           do { try workspace.updateSettings(s); failure = nil } catch { failure = "Could not save: \(error.localizedDescription)" }
+                       })
+    }
+
+    private func formatter(_ languageID: String) -> Binding<String> {
+        let workspace = workspace
+        return Binding(get: { workspace.settings.formatters[languageID] ?? "" },
+                       set: { id in
+                           var s = workspace.settings
+                           if id.isEmpty { s.formatters.removeValue(forKey: languageID) } else { s.formatters[languageID] = id }
+                           do { try workspace.updateSettings(s); failure = nil } catch { failure = "Could not save: \(error.localizedDescription)" }
+                       })
     }
 
     private func clippy(_ id: String, default value: Bool) -> Binding<Bool> {

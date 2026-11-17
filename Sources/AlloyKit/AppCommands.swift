@@ -12,6 +12,9 @@ public func alloyCommands(center: CommandCenter) -> some Commands {
     CommandGroup(replacing: .appSettings) {
         for command in registry.commands(in: .appSettings) { registryMenuItem(command, registry: registry) }
     }
+    CommandGroup(after: .pasteboard) {
+        for command in registry.commands(in: .edit) { registryMenuItem(command, registry: registry) }
+    }
     CommandMenu("Go") {
         for command in registry.commands(in: .go) { registryMenuItem(command, registry: registry) }
     }

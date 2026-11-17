@@ -412,4 +412,22 @@ private let t0 = Date(timeIntervalSince1970: 1_000)
         g.applyFullText(author: .session(a), newText: "one\nTWO\n", toolUseID: "own", date: Date())
         #expect(g.adoptOutside(as: .session(b), originalFile: "one\ntwo\n", newText: "one\nTWO\n", toolUseID: "t9") == nil)
     }
+
+    @Test func recordGroupRoundTripsAndOldLedgersDecode() throws {
+        var l = FileLedger(path: "f.txt", baseline: "a\n")
+        let g = UUID()
+        let rec = l.applyFullText(author: .user, newText: "b\n", toolUseID: nil, date: t0, group: g)
+        #expect(rec?.group == g)
+        let back = try JSONDecoder().decode(FileLedger.self, from: JSONEncoder().encode(l))
+        #expect(back.edits.first?.group == g)
+        // A record saved before `group` existed has no such key.
+        let data = try JSONEncoder().encode(l)
+        var json = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        var edits = try #require(json["edits"] as? [[String: Any]])
+        edits[0].removeValue(forKey: "group")
+        json["edits"] = edits
+        let old = try JSONDecoder().decode(FileLedger.self, from: JSONSerialization.data(withJSONObject: json))
+        #expect(old.edits.first?.group == nil)
+        #expect(l.applyFullText(author: .user, newText: "c\n", toolUseID: nil, date: t0)?.group == nil)
+    }
 }

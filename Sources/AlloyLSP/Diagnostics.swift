@@ -16,13 +16,17 @@ public struct LSPDiagnostic: Sendable, Equatable {
     public var source: String?
     /// The server's rule or error code (`F401`, `6133`); a numeric code is stringified.
     public var code: String?
+    /// The server's diagnostic object as received (with `data`), for features that hand it back to the server.
+    public var raw: JSONValue?
 
-    public init(range: Range<Int>, severity: Severity, message: String, source: String? = nil, code: String? = nil) {
+    public init(range: Range<Int>, severity: Severity, message: String, source: String? = nil, code: String? = nil,
+                raw: JSONValue? = nil) {
         self.range = range
         self.severity = severity
         self.message = message
         self.source = source
         self.code = code
+        self.raw = raw
     }
 }
 
@@ -54,7 +58,7 @@ public enum DiagnosticMapping {
             if bytes.isEmpty { bytes = widened(bytes.lowerBound, in: snapshot) }
             let severity = item["severity"]?.intValue.flatMap(Severity.init(rawValue:)) ?? .error
             result.append(LSPDiagnostic(range: bytes, severity: severity, message: item["message"]?.stringValue ?? "",
-                                        source: item["source"]?.stringValue, code: codeString(item["code"])))
+                                        source: item["source"]?.stringValue, code: codeString(item["code"]), raw: item))
         }
         return result.enumerated().sorted { ($0.element.range.lowerBound, $0.offset) < ($1.element.range.lowerBound, $1.offset) }
             .map(\.element)

@@ -43,7 +43,9 @@ import Testing
         }
         // Today's order: the Go menu, then the View menu.
         let go = try #require(window.testApp.menuBar.first { $0.title == "Go" })
-        #expect(go.items.map(\.title) == ["Go to Definition", "Next Result", "Previous Result"])
+        #expect(go.items.map(\.title) == ["Go to Definition", "Go to Symbol…", "Find References", "Next Result", "Previous Result"])
+        let edit = window.testApp.menuBar.first { $0.title == "Edit" }
+        #expect(edit?.items.map(\.title).suffix(3) == ["Format Document", "Format Selection", "Show Hover"])
         let view = try #require(window.testApp.menuBar.first { $0.title == "View" })
         #expect(view.items.map(\.title) == [
             "Chat Mode", "Code Mode", "Split Right", "Split Down", "Focus Left Group", "Focus Right Group",

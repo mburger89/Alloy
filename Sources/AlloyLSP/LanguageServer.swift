@@ -28,6 +28,15 @@ public struct ServerCapabilities: Sendable {
     public var positionEncoding: PositionEncoding
     public var sync: TextSyncKind
     public var definition: Bool
+    public var hover: Bool
+    public var references: Bool
+    public var documentSymbol: Bool
+    public var documentFormatting: Bool
+    public var documentRangeFormatting: Bool
+    /// Parsed for later features; nothing asks for these yet.
+    public var rename: Bool
+    public var renamePrepare: Bool
+    public var codeAction: Bool
     public var semanticTokens: SemanticTokensLegend?
     public var semanticTokensDelta: Bool
     public var pullDiagnostics: Bool
@@ -42,6 +51,14 @@ public struct ServerCapabilities: Sendable {
         let kind = syncValue?.intValue ?? syncValue?["change"]?.intValue
         sync = kind.flatMap(TextSyncKind.init(rawValue:)) ?? .none
         definition = Self.isProvided(caps["definitionProvider"])
+        hover = Self.isProvided(caps["hoverProvider"])
+        references = Self.isProvided(caps["referencesProvider"])
+        documentSymbol = Self.isProvided(caps["documentSymbolProvider"])
+        documentFormatting = Self.isProvided(caps["documentFormattingProvider"])
+        documentRangeFormatting = Self.isProvided(caps["documentRangeFormattingProvider"])
+        rename = Self.isProvided(caps["renameProvider"])
+        renamePrepare = caps["renameProvider"]?["prepareProvider"]?.boolValue ?? false
+        codeAction = Self.isProvided(caps["codeActionProvider"])
         // A provider that offers only ranges (`full` absent or false) is not asked: phase 1 requests whole documents.
         if let provider = caps["semanticTokensProvider"], provider.objectValue != nil, let legend = provider["legend"],
            Self.isProvided(provider["full"]) {
@@ -331,11 +348,19 @@ public actor LanguageServer {
         .object([
             "general": .object(["positionEncodings": .array([.string("utf-8"), .string("utf-16")])]),
             "workspace": .object(["workspaceFolders": .bool(true), "configuration": .bool(true),
+                                  "applyEdit": .bool(true),
+                                  "workspaceEdit": .object(["documentChanges": .bool(true), "resourceOperations": .array([]),
+                                                            "failureHandling": .string("abort")]),
                                   "semanticTokens": .object(["refreshSupport": .bool(true)])]),
             "textDocument": .object([
                 "synchronization": .object(["didSave": .bool(true)]),
                 "publishDiagnostics": .object(["relatedInformation": .bool(false), "versionSupport": .bool(true)]),
                 "definition": .object(["linkSupport": .bool(true)]),
+                "hover": .object(["contentFormat": .array([.string("markdown"), .string("plaintext")])]),
+                "references": .object([:]),
+                "documentSymbol": .object(["hierarchicalDocumentSymbolSupport": .bool(true)]),
+                "formatting": .object([:]),
+                "rangeFormatting": .object([:]),
                 "semanticTokens": .object([
                     "requests": .object(["full": .object(["delta": .bool(true)])]),
                     "tokenTypes": .array(semanticTokenTypes.map { .string($0) }),

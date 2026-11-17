@@ -306,4 +306,31 @@ struct LanguageServerTests {
     @Test func unknownEncodingFallsBackToUTF16() {
         #expect(ServerCapabilities(json: .object(["positionEncoding": .string("utf-99")])).positionEncoding == .utf16)
     }
+
+    @Test func parsesFeatureFlags() {
+        let caps = ServerCapabilities(json: .object([
+            "hoverProvider": .bool(true), "referencesProvider": .object([:]), "documentSymbolProvider": .bool(true),
+            "documentFormattingProvider": .bool(true), "documentRangeFormattingProvider": .bool(false),
+            "renameProvider": .object(["prepareProvider": .bool(true)]),
+        ]))
+        #expect(caps.hover && caps.references && caps.documentSymbol && caps.documentFormatting)
+        #expect(!caps.documentRangeFormatting)
+        #expect(caps.rename && caps.renamePrepare)
+        #expect(!caps.codeAction && !caps.definition)
+        let none = ServerCapabilities(json: .object([:]))
+        #expect(!none.hover && !none.rename && !none.renamePrepare)
+    }
+
+    @Test func clientCapabilitiesAdvertiseOnlyBuiltFeatures() {
+        let c = LanguageServer.clientCapabilities
+        #expect(c["workspace"]?["applyEdit"]?.boolValue == true)
+        #expect(c["workspace"]?["workspaceEdit"]?["documentChanges"]?.boolValue == true)
+        #expect(c["workspace"]?["workspaceEdit"]?["resourceOperations"]?.arrayValue?.isEmpty == true)
+        #expect(c["workspace"]?["workspaceEdit"]?["failureHandling"]?.stringValue == "abort")
+        #expect(c["textDocument"]?["hover"]?["contentFormat"]?.arrayValue?.first?.stringValue == "markdown")
+        #expect(c["textDocument"]?["documentSymbol"]?["hierarchicalDocumentSymbolSupport"]?.boolValue == true)
+        #expect(c["textDocument"]?["references"] != nil && c["textDocument"]?["formatting"] != nil)
+        #expect(c["textDocument"]?["rangeFormatting"] != nil)
+        for absent in ["completion", "codeAction", "rename", "signatureHelp"] { #expect(c["textDocument"]?[absent] == nil) }
+    }
 }

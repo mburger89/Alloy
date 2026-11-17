@@ -24,6 +24,11 @@ import Foundation
 //   exitOnInitializeFromLaunch  from launch k on, exit(1) on `initialize` without replying
 //   stallAfterInitialized  after `initialized`, stop reading stdin forever (fills the pipe)
 //   holdDefinition  true: a definition request is answered only once the client cancels it (with null); never otherwise
+//   replies        {"<method>": [ {result?, error?: {code, message}, delayMs?, hold?} ]} for any request method except
+//                  initialize/shutdown: consumed in order, the last repeats; wins over `definition`/`semanticTokens` for its
+//                  method. `hold: true` answers (with null) only once the client sends $/cancelRequest.
+//   afterRequest   {"<method>": [ {method, params, id?} ]} sent to the client after that method's reply (a request when
+//                  `id` is set, else a notification); the client's answers are logged like any received message.
 //   foldingRanges  result for textDocument/foldingRange (null when absent)
 //   holdFoldingRanges  true: a foldingRange request is answered only once the client cancels it (with null); never otherwise
 //   delayMs        sleep before each response
@@ -95,6 +100,8 @@ struct FakeLSP {
     var logFD: Int32 = -1
     var received = 0
     var semanticRequests = 0
+    var replyCounts: [String: Int] = [:]
+    var held: [String: [JSONValue]] = [:]
     var launchIndex = 1
 
     init() {
@@ -188,10 +195,40 @@ struct FakeLSP {
         }
     }
 
+    /// Answers `method` from the `replies` script when it has an entry; true when it did.
+    mutating func scriptedReply(method: String, id: JSONValue?) -> Bool {
+        guard method != "initialize", method != "shutdown", let list = script["replies"]?[method]?.arrayValue, !list.isEmpty else {
+            return false
+        }
+        guard let id else { return true }
+        let count = replyCounts[method] ?? 0
+        replyCounts[method] = count + 1
+        let entry = list[min(count, list.count - 1)]
+        if entry["hold"]?.boolValue == true {
+            held[method, default: []].append(id)
+            return true
+        }
+        if let ms = entry["delayMs"]?.intValue, ms > 0 { Thread.sleep(forTimeInterval: Double(ms) / 1000) }
+        if let error = entry["error"] {
+            send(.object(["jsonrpc": .string("2.0"), "id": id, "error": error]))
+        } else {
+            respond(id: id, result: entry["result"] ?? .null)
+        }
+        for request in script["afterRequest"]?[method]?.arrayValue ?? [] {
+            var out: [String: JSONValue] = ["jsonrpc": .string("2.0")]
+            out["id"] = request["id"]
+            out["method"] = request["method"]
+            out["params"] = request["params"]
+            send(.object(out))
+        }
+        return true
+    }
+
     mutating func handle(_ message: JSONValue) {
         guard let method = message["method"]?.stringValue else { return }  // a response from the client
         let id = message["id"]
         let params = message["params"]
+        if method != "$/cancelRequest", scriptedReply(method: method, id: id) { return }
         switch method {
         case "initialize":
             guard let id else { return }
@@ -241,6 +278,13 @@ struct FakeLSP {
             if script["holdFoldingRanges"]?.boolValue == true { return }
             if let id { respond(id: id, result: script["foldingRanges"] ?? .null) }
         case "$/cancelRequest":
+            // A scripted `hold` reply is released by its cancellation too.
+            if let cancelled = params?["id"] {
+                for (name, ids) in held where ids.contains(cancelled) {
+                    held[name] = ids.filter { $0 != cancelled }
+                    respond(id: cancelled, result: .null)
+                }
+            }
             // A held request is released by its cancellation.
             if script["holdSemanticTokens"]?.boolValue == true, let held = params?["id"] { respond(id: held, result: .null) }
             if script["holdDefinition"]?.boolValue == true, let held = params?["id"] { respond(id: held, result: .null) }

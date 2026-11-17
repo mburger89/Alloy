@@ -26,8 +26,10 @@ import Testing
 
     /// A window on `layout` with login.swift open (plus other.swift in the third group), settled; `codeViewID` is the
     /// code view that takes the typing.
-    func rigged(_ layout: Layout) async throws -> (rig: Rig, window: TestWindow, codeViewID: String) {
+    /// `install` runs on the rig before anything is opened (a test that needs a language server puts it there).
+    func rigged(_ layout: Layout, install: ((Rig) -> Void)? = nil) async throws -> (rig: Rig, window: TestWindow, codeViewID: String) {
         let (rig, _) = try await editedRig()
+        install?(rig)
         try "let other = 1\n".write(to: rig.root.appendingPathComponent("other.swift"), atomically: true, encoding: .utf8)
         let workspace = rig.workspace
         if layout == .chat {
@@ -92,7 +94,7 @@ import Testing
                                   "ChatView", "ChatColumn", "SidebarView", "AlloyScreen", "CodePanel", "FilePanelView", "TranscriptView"]
 
     /// Every probe's count change over `body`, run synchronously (see `probed` in ViewRerunTests).
-    private func allProbes(_ body: () -> Void) -> [String: Int] {
+    func allProbes(_ body: () -> Void) -> [String: Int] {
         let before = BodyProbe.counts
         body()
         return BodyProbe.counts.reduce(into: [:]) { out, kv in
@@ -127,7 +129,7 @@ import Testing
         withExtendedLifetime((rig, window)) {}
     }
 
-    private func chatBodies() async throws -> Int {
+    func chatBodies() async throws -> Int {
         let (rig, window, id) = try await rigged(.chat)
         let t = try await typing(window, rig, codeViewID: id, names: Self.watched)
         withExtendedLifetime((rig, window)) {}
