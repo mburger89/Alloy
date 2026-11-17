@@ -1,4 +1,5 @@
 @testable import AlloyCore
+@testable import AlloyHighlight
 @testable import AlloyKit
 import AlloyTestSupport
 import Foundation
@@ -194,6 +195,12 @@ import Testing
         // The compare model of the edited buffer lands asynchronously: wait until it has actually been applied (the compare
         // build counted and both panes exist), not for a fixed number of ticks, then a few warmup ticks.
         try await window.runUntil(timeout: .seconds(30)) { workspace.decorationBuilds > buildsBefore && view.compare != nil && view.left != nil }
+        // The left pane opens its engine document and highlights asynchronously (the first answer lands after the build, and
+        // under load after any fixed number of ticks): wait until the highlighters of both panes have applied and are idle.
+        try await window.runUntil(timeout: .seconds(30)) {
+            guard let left = view.left?.highlighter, let right = view.highlighter else { return false }
+            return !left.appliedVersions.isEmpty && left.isIdle && right.isIdle
+        }
         for _ in 0..<10 { window.tick(); await Task.yield() }
         return (rig, window, "sbs-right-\(g0.uuidString)", perf)
     }
