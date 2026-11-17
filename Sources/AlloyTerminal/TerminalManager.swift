@@ -80,6 +80,9 @@ import MetalUITerminal
 
     public func session(for pane: UUID) -> TerminalSession? { entries[pane]?.session }
 
+    /// The live session's snapshot source, nil before spawn, after spawn failure and after retirement.
+    public func snapshotSource(for pane: UUID) -> TerminalSnapshotSource? { entries[pane]?.session.snapshotSource }
+
     public func write(_ pane: UUID, _ bytes: [UInt8]) { entries[pane]?.session.write(bytes) }
 
     public func resize(_ pane: UUID, cols: Int, rows: Int) { entries[pane]?.session.resize(cols: cols, rows: rows) }

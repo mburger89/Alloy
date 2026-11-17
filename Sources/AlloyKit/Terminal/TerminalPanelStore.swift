@@ -2,6 +2,8 @@ import AlloyCore
 import AlloyTerminal
 import Foundation
 import MetalUI
+import MetalUITerminal
+import MetalUITerminalUI
 
 /// The terminal panel's shell state. The layout itself lives in `Workspace.terminalLayout`; this holds what is not persisted
 /// (focus) and the actions the panel and the menu share. `visible` reads a flag of its own on the workspace, so the island
@@ -45,6 +47,11 @@ final class TerminalPanelStore {
             self.manager = manager
             workspace.busyTerminalCount = { manager.busyPanes().count }
             workspace.onTerminalHidden = { [weak self] in self?.hasFocus = false }
+            workspace.terminalFocusActions = TerminalFocusActions(
+                isFocused: { [weak self] in self.map { $0.workspace.mode == .code && $0.hasFocus } ?? false },
+                closeTab: { [weak self] in self?.closeActiveTab() },
+                cycleTab: { [weak self] step in self?.cycleTab(step) },
+                newTab: { [weak self] in self?.newTab() })
             workspace.onTerminalLayoutChanged = { [weak self] layout in self?.spawn(layout) }
             workspace.addStopHook { await manager.shutdown() }
             onRestart = { [weak self] pane in
@@ -69,6 +76,20 @@ final class TerminalPanelStore {
     }
 
     func notice(of pane: UUID) -> String? { notices[pane] }
+
+    /// The live source of a pane's session; nil without one (lazy restore, spawn failure, exited and retired).
+    func snapshotSource(of pane: UUID) -> TerminalSnapshotSource? { manager?.snapshotSource(for: pane) }
+
+    /// The view's grid size, forwarded to the pty (coalesced by the session).
+    func resizePane(_ pane: UUID, cols: Int, rows: Int) { manager?.resize(pane, cols: max(cols, 2), rows: max(rows, 1)) }
+
+    /// The look of every pane: the shown theme's terminal tokens and the terminal settings. Read inside the panel body
+    /// only, so a hidden panel never evaluates it.
+    func appearance(themes: ThemeController?) -> TerminalAppearance {
+        let shown = themes?.shownTheme
+        return TerminalAppearance.make(colors: shown?.colors ?? [:], appearance: shown?.appearance ?? .dark,
+                                       settings: workspace.settings.terminal)
+    }
 
     private func setNotice(_ text: String, for pane: UUID) {
         guard notices[pane] != text else { return }
@@ -124,8 +145,33 @@ final class TerminalPanelStore {
         }
     }
 
+    /// Closes the active terminal tab; the last one hides the panel and returns focus to the editor.
+    func closeActiveTab() {
+        if let id = workspace.terminalLayout.activeTab { closeTab(id) }
+    }
+
+    /// Selects the neighbouring terminal tab, wrapping.
+    func cycleTab(_ step: Int) {
+        let layout = workspace.terminalLayout
+        guard !layout.tabs.isEmpty else { return }
+        let current = layout.activeTab.flatMap { id in layout.tabs.firstIndex { $0.id == id } } ?? (step > 0 ? -1 : 0)
+        let count = layout.tabs.count
+        mutate { $0.selectTab(at: ((current + step) % count + count) % count) }
+    }
+
     func selectTab(_ id: UUID) { mutate { $0.selectTab(id) } }
     func focusPane(_ id: UUID) { mutate { $0.focusPane(id) } }
+
+    /// A pane gained or lost keyboard focus (its wrapper's focus-within state). Gaining focus makes it the layout's focused
+    /// pane; losing it clears `hasFocus` only when the blurring pane is the focused one, so a switch A to B never ends false.
+    func paneDidChangeFocus(_ pane: UUID, focused: Bool) {
+        if focused {
+            if workspace.terminalLayout.active?.focusedPane != pane { focusPane(pane) }
+            if !hasFocus { hasFocus = true }
+        } else if workspace.terminalLayout.active?.focusedPane == pane, hasFocus {
+            hasFocus = false
+        }
+    }
     func closeTab(_ id: UUID) { mutate { $0.closeTab(id) }; prune(); if !visible { hide() } }
     func closePane(_ id: UUID) { mutate { $0.closePane(id) }; prune(); if !visible { hide() } }
     func splitActive(axis: SplitAxis) { mutate { $0.split(axis: axis) } }

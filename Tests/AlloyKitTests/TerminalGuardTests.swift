@@ -78,15 +78,17 @@ import Testing
         withExtendedLifetime(rig) {}
     }
 
-    /// Code 1 with the panel visible, measured: 100 element requests per frame, 9 more than `steadyCode1`. Breakdown, by
-    /// swapping parts: a plain VStack in place of the VSplitView gives 93, so the split and its divider cost 7 and are
-    /// unavoidable; the remaining 2 are the pane's own text and frame. Dropping the HStack/ForEach/frame/accessibility
-    /// wrappers around a single pane changed nothing (93), so they are free. The panel body never reruns while typing
-    /// (0 body evaluations). A hidden panel holds `steadyCode1` exactly.
-    static let steadyCode1WithTerminal = 100
+    /// Code 1 with the panel visible, measured: 55 element requests per frame, 9 more than `steadyCode1`: the split and
+    /// its divider (7) and the pane's own frame (2). The panel body never reruns
+    /// while typing.
+    static let visiblePanelBaseline = 55
+    /// A keystroke frame with a visible `TerminalView` costs no extra element requests since MetalUI surface replay (#362).
+    static let knownVisibleTerminalGap = 0
+    /// Measured 5 before surface replay (#362); 0 now.
+    static let knownTerminalViewExcess = 0
 
     @Test func typingInEditorWithPanelVisibleHoldsGuard() async throws {
-        try await guardCode(.code1, steady: Self.steadyCode1WithTerminal, hidden: false)
+        try await guardCode(.code1, steady: Self.visiblePanelBaseline + Self.knownVisibleTerminalGap + Self.knownTerminalViewExcess, hidden: false)
     }
 
     private func visibleWindow() async throws -> (Rig, TestWindow, TerminalPanelStore) {
@@ -200,36 +202,56 @@ import Testing
         withExtendedLifetime(rig) {}
     }
 
-    @Test func outputToAVisiblePlaceholderCostsNothing() async throws {
+    @Test func outputToAVisibleTerminalIsSurfaceOnly() async throws {
         let (rig, window, store, spawner) = try await shellWindow()
         let pane = try #require(rig.workspace.terminalLayout.active?.focusedPane)
         let session = try #require(store.manager?.session(for: pane))
         stream(spawner.spawned[0], bytes: 1024 * 1024)
         await settleOutput(window)
-        let placeholder = BodyProbe.count("TerminalPlaceholderPane"), panel0 = BodyProbe.count("TerminalPanel")
-        for _ in 0..<1000 { session.apply([.title("same")]) }
+        let paneBefore = BodyProbe.count("TerminalPaneView"), panel0 = BodyProbe.count("TerminalPanel")
+        for _ in 0..<1000 { await session.apply([.title("same")]) }
         await settleOutput(window)
-        #expect(BodyProbe.count("TerminalPlaceholderPane") - placeholder <= 1)
+        #expect(BodyProbe.count("TerminalPaneView") - paneBefore <= 1)
         #expect(BodyProbe.count("TerminalPanel") - panel0 <= 1)   // the first distinct title only
-        let settled = BodyProbe.count("TerminalPlaceholderPane"), panel = BodyProbe.count("TerminalPanel")
-        for _ in 0..<1000 { session.apply([.title("same")]) }
+        let settled = BodyProbe.count("TerminalPaneView"), panel = BodyProbe.count("TerminalPanel")
+        for _ in 0..<1000 { await session.apply([.title("same")]) }
+        window.resetFrameWork()
         stream(spawner.spawned[0], bytes: 256 * 1024)
         await settleOutput(window)
-        #expect(BodyProbe.count("TerminalPlaceholderPane") == settled)
+        #expect(BodyProbe.count("TerminalPaneView") == settled)
         #expect(BodyProbe.count("TerminalPanel") == panel)
+        // Output frames are surface-only: no element request however much arrived.
+        #expect(window.frameWork.allSatisfy { $0.elementRequests == 0 }, "\(window.frameWork.map(\.elementRequests))")
         window.resetFrameWork()
         for _ in 0..<20 { window.tick() }
         #expect(window.frameWork.allSatisfy { $0.elementRequests == 0 }, "\(window.frameWork.map(\.elementRequests))")
     }
 
+    @Test func oscTitleSpamThroughThePtyRerunsTabStripOnce() async throws {
+        let (rig, window, store, spawner) = try await shellWindow()
+        _ = store
+        let before = BodyProbe.count("TerminalTabStrip")
+        var bytes: [UInt8] = []
+        for i in 0..<1000 { bytes += Array("\u{1B}]0;\(i.isMultiple(of: 2) ? "a" : "b")\u{07}".utf8) }
+        spawner.spawned[0].feed(bytes)
+        await settleOutput(window)
+        #expect(BodyProbe.count("TerminalTabStrip") - before <= 1)
+        let settled = BodyProbe.count("TerminalTabStrip"), pane = BodyProbe.count("TerminalPaneView")
+        let again = Array(String(repeating: "\u{1B}]0;b\u{07}", count: 1000).utf8)
+        spawner.spawned[0].feed(again)
+        await settleOutput(window)
+        #expect(BodyProbe.count("TerminalTabStrip") == settled && BodyProbe.count("TerminalPaneView") == pane)
+        withExtendedLifetime(rig) {}
+    }
+
     @Test func exitRerunsTheStripOnce() async throws {
         let (rig, window, store, spawner) = try await shellWindow()
         let pane = try #require(rig.workspace.terminalLayout.active?.focusedPane)
-        let strip = BodyProbe.count("TerminalTabStrip"), placeholder = BodyProbe.count("TerminalPlaceholderPane")
+        let strip = BodyProbe.count("TerminalTabStrip"), paneBefore = BodyProbe.count("TerminalPaneView")
         spawner.spawned[0].finish(.exited(2))
         await settleOutput(window)
         #expect(store.paneState(pane) == .exited(2))
-        #expect(BodyProbe.count("TerminalPlaceholderPane") - placeholder == 1)
+        #expect(BodyProbe.count("TerminalPaneView") - paneBefore == 1)
         #expect(BodyProbe.count("TerminalTabStrip") - strip <= 1)
     }
 

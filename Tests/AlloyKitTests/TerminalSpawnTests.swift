@@ -108,7 +108,7 @@ import Testing
         let pane = try #require(rig.workspace.terminalLayout.active?.focusedPane)
         let session = try #require(store.manager?.session(for: pane))
         let before = store.revision
-        session.apply([.title("vim")])
+        await session.apply([.title("vim")])
         #expect(await settle { store.title(of: pane) == "vim" })
         #expect(store.revision == before + 1)
         store.restart(pane)   // running: nothing
@@ -126,10 +126,10 @@ import Testing
         let pane = try #require(rig.workspace.terminalLayout.active?.focusedPane)
         let session = try #require(store.manager?.session(for: pane))
         let dir = FileManager.default.temporaryDirectory.resolvingSymlinksInPath().path
-        session.apply([.workingDirectory(URL(fileURLWithPath: dir))])
+        await session.apply([.workingDirectory(URL(fileURLWithPath: dir))])
         #expect(await settle { rig.workspace.terminalLayout.active?.panes[pane]?.lastCwd == dir })
         let writes = rig.workspace.uiStateWriteCount
-        session.apply([.workingDirectory(URL(fileURLWithPath: dir))])
+        await session.apply([.workingDirectory(URL(fileURLWithPath: dir))])
         await quiet()
         #expect(rig.workspace.uiStateWriteCount == writes)
     }

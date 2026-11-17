@@ -54,6 +54,13 @@ workspace when they run (`center.workspace`), because the registry outlives work
 Selection, menu ids `cmd-<id>`). They act on the focused view's selection state through `Workspace.runMultiCursor`
 and are disabled when no code view is focused (project chooser, no tab, a non-code tab).
 
+### Terminal focus
+
+While a terminal pane has keyboard focus in Code mode, `tab.close` (cmd+w), `tab.next` and `tab.previous` (ctrl+tab,
+ctrl+shift+tab) act on the terminal's tabs instead of the editor's (closing the last one hides the panel and returns
+focus to the editor), and `tab.new` (cmd+t, "New Terminal Tab") opens a terminal tab; it is disabled otherwise. The
+panel installs `Workspace.terminalFocusActions`; the commands read it inside their closures only.
+
 ### Folding
 
 `editor.fold` (alt+cmd+left), `editor.unfold` (alt+cmd+right), `editor.foldAll` (alt+shift+cmd+left) and

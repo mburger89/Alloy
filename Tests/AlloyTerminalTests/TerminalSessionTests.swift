@@ -54,6 +54,35 @@ struct TerminalSessionTests {
         #expect(session.outputVersion >= 1)
     }
 
+    @Test func snapshotSourceIsStable() {
+        let (session, _) = make()
+        #expect(session.snapshotSource === session.snapshotSource)
+    }
+
+    @Test func resizeThroughTheSourceReachesThePtyOnce() async {
+        let (session, pty) = make()
+        session.start(.init())
+        session.snapshotSource.resize(TerminalSize(cols: 100, rows: 30))
+        session.resize(cols: 100, rows: 30)
+        #expect(await settle { pty.resizes.last == TerminalSize(cols: 100, rows: 30) })
+        try? await Task.sleep(nanoseconds: 50_000_000)
+        #expect(pty.resizes == [TerminalSize(cols: 100, rows: 30)])
+    }
+
+    @Test func titleAndDirectoryArriveCoalescedFromTheSource() async {
+        let (session, pty) = make()
+        let titles = Box<[String]>([])
+        let dirs = Box<[String]>([])
+        session.start(.init(onTitle: { t in titles.update { $0.append(t) } },
+                            onWorkingDirectory: { d in dirs.update { $0.append(d) } }))
+        pty.feed(Array("\u{1b}]7;file:///tmp\u{1b}\\".utf8))
+        pty.feed(Array(String(repeating: "\u{1b}]0;vim\u{07}", count: 1000).utf8))
+        #expect(await settle { titles.get().last == "vim" && dirs.get().last == "/tmp" })
+        try? await Task.sleep(nanoseconds: 50_000_000)
+        #expect(titles.get().count <= 3)
+        #expect(dirs.get().count <= 3)
+    }
+
     @Test func replyEventsAreWrittenBackToThePty() async {
         let (session, pty) = make()
         session.start(.init())
@@ -130,7 +159,7 @@ struct TerminalSessionTests {
         let (session, _) = make()
         let titles = Box<[String]>([])
         session.start(.init(onTitle: { t in titles.update { $0.append(t) } }))
-        session.apply((0..<1000).map { .title("t\($0)") })
+        await session.apply((0..<1000).map { .title("t\($0)") })
         #expect(await settle { titles.get().last == "t999" })
         #expect(titles.get().count <= 2)
     }
@@ -140,7 +169,7 @@ struct TerminalSessionTests {
         let tmp = FileManager.default.temporaryDirectory.path
         let dirs = Box<[String]>([])
         session.start(.init(onWorkingDirectory: { d in dirs.update { $0.append(d) } }))
-        session.apply([.workingDirectory(URL(fileURLWithPath: tmp))])
+        await session.apply([.workingDirectory(URL(fileURLWithPath: tmp))])
         #expect(await settle { !dirs.get().isEmpty })
         #expect(dirs.get() == [URL(fileURLWithPath: tmp).path])
     }

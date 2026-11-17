@@ -39,7 +39,7 @@ struct CodeIslandRow: Component, Equatable {
             if terminal.visible {
                 VSplitView {
                     editorArea()
-                    TerminalPanel(store: terminal, workspace: workspace, style: style).equatable()
+                    TerminalPanel(store: terminal, workspace: workspace, style: style, themes: themes).equatable()
                         .frame(minHeight: terminalMinHeight, idealHeight: terminalIdealHeight)
                 }
                 .splitViewAutosaveName("code-terminal", store: splitStore)

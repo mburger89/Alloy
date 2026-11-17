@@ -246,4 +246,198 @@ import Testing
         store.closePane(try #require(second.paneIDs.first))
         #expect(rig.workspace.currentUIState().paneSizes[name] == nil)
     }
+
+    // MARK: Command retargeting while a terminal is focused
+
+    private func runCommand(_ rig: Rig, _ id: String) {
+        testCenter(for: rig.workspace).registry.run(id: id)
+    }
+
+    private func openEditorTabs(_ rig: Rig) async throws {
+        for name in ["a.txt", "b.txt"] {
+            try "x\n".write(to: rig.root.appendingPathComponent(name), atomically: true, encoding: .utf8)
+            await rig.workspace.open(name)
+        }
+    }
+
+    private func terminalTabs(_ rig: Rig) -> Int { rig.workspace.terminalLayout.tabs.count }
+
+    @Test func commandWClosesTheTerminalTabWhileFocused() async throws {
+        let (rig, window, store) = try await codeWindowWithStore()
+        try await openEditorTabs(rig)
+        store.toggle(); store.newTab(); settle(window)
+        #expect(terminalTabs(rig) == 2)
+        let editorTabs = rig.workspace.tabs(in: rig.workspace.defaultPane)
+        store.hasFocus = true
+        runCommand(rig, "tab.close")
+        #expect(terminalTabs(rig) == 1)
+        #expect(rig.workspace.tabs(in: rig.workspace.defaultPane) == editorTabs)
+        store.hasFocus = false
+        store.newTab()
+        runCommand(rig, "tab.close")
+        await rig.workspace.settle()
+        #expect(terminalTabs(rig) == 2, "terminal tabs untouched with the editor focused")
+        #expect(rig.workspace.tabs(in: rig.workspace.defaultPane).count == editorTabs.count - 1)
+        withExtendedLifetime(window) {}
+    }
+
+    @Test func commandWOnTheLastTerminalTabHidesThePanelAndFocusesTheEditor() async throws {
+        let (rig, window, store) = try await codeWindowWithStore()
+        store.toggle(); settle(window)
+        let group = rig.workspace.codeLayout.focusedGroupID
+        store.hasFocus = true
+        runCommand(rig, "tab.close")
+        settle(window)
+        #expect(!store.visible && !store.hasFocus)
+        #expect(rig.workspace.codeLayout.focusedGroupID == group)
+    }
+
+    @Test func controlTabCyclesTerminalTabsWhileFocused() async throws {
+        let (rig, window, store) = try await codeWindowWithStore()
+        store.toggle(); store.newTab(); store.newTab(); settle(window)
+        let ids = rig.workspace.terminalLayout.tabs.map(\.id)
+        store.hasFocus = true
+        #expect(rig.workspace.terminalLayout.activeTab == ids[2])
+        runCommand(rig, "tab.next")
+        #expect(rig.workspace.terminalLayout.activeTab == ids[0], "wraps forward")
+        runCommand(rig, "tab.previous")
+        #expect(rig.workspace.terminalLayout.activeTab == ids[2], "wraps backward")
+        runCommand(rig, "tab.previous")
+        #expect(rig.workspace.terminalLayout.activeTab == ids[1])
+        withExtendedLifetime(window) {}
+    }
+
+    @Test func commandTOpensANewTerminalTabWhileFocused() async throws {
+        let (rig, window, store) = try await codeWindowWithStore()
+        store.toggle(); settle(window)
+        store.hasFocus = true
+        runCommand(rig, "tab.new")
+        #expect(terminalTabs(rig) == 2)
+        withExtendedLifetime(window) {}
+    }
+
+    @Test func commandTIsDisabledWhenNoTerminalFocused() async throws {
+        let (rig, window, store) = try await codeWindowWithStore()
+        store.toggle(); settle(window)
+        let registry = testCenter(for: rig.workspace).registry
+        #expect(registry.command(id: "tab.new")?.descriptor.keyID == "global-key-new-terminal-tab")
+        #expect(registry.command(id: "tab.new")?.descriptor.title == "New Terminal Tab")
+        runCommand(rig, "tab.new")
+        #expect(terminalTabs(rig) == 1)
+        withExtendedLifetime(window) {}
+    }
+
+    @Test func chatModeIgnoresTerminalFocus() async throws {
+        let (rig, window, store) = try await codeWindowWithStore()
+        store.toggle(); store.newTab(); settle(window)
+        store.hasFocus = true
+        rig.workspace.setMode(.chat)
+        #expect(!rig.workspace.terminalHasFocus)
+        runCommand(rig, "tab.close")
+        runCommand(rig, "tab.next")
+        runCommand(rig, "tab.new")
+        #expect(terminalTabs(rig) == 2)
+        withExtendedLifetime(window) {}
+    }
+
+    @Test func commandsReadFocusInsideTheActionOnly() async throws {
+        let (rig, window, store) = try await codeWindowWithStore()
+        store.toggle(); settle(window)
+        let names = ["AlloyScreen", "GlobalKeys", "TerminalPanel"]
+        let before = names.map { BodyProbe.count($0) }
+        store.hasFocus = true; settle(window)
+        store.hasFocus = false; settle(window)
+        #expect(names.map { BodyProbe.count($0) } == before)
+        withExtendedLifetime(rig) {}
+    }
+
+    // MARK: OSC titles, cwd and live theme and settings through the real view
+
+    private func shellWindow() async throws -> (Rig, TestWindow, TerminalPanelStore, ScriptedPtySpawner) {
+        let rig = Rig()
+        await rig.workspace.restoreUIState()
+        rig.workspace.setMode(.code)
+        let spawner = ScriptedPtySpawner()
+        let store = TerminalPanelStore(workspace: rig.workspace, spawner: spawner, environment: ["SHELL": "/bin/sh"])
+        rig.workspace.toggleTerminal()
+        let window = try alloyWindow(rig.workspace, terminal: store)
+        for _ in 0..<5 { window.tick() }
+        return (rig, window, store, spawner)
+    }
+
+    private func pump(_ window: TestWindow, _ n: Int = 12) async {
+        for _ in 0..<n { try? await Task.sleep(nanoseconds: 10_000_000); window.tick() }
+    }
+
+    private func osc(_ body: String, terminator: String = "\u{07}") -> [UInt8] { Array("\u{1B}]\(body)\(terminator)".utf8) }
+
+    @Test func oscTitleReachesTheTab() async throws {
+        let (rig, window, store, spawner) = try await shellWindow()
+        spawner.spawned[0].feed(osc("0;vim"))
+        await pump(window)
+        #expect(store.tabSummaries.first?.title == "vim")
+        withExtendedLifetime(rig) {}
+    }
+
+    @Test func oscTitleIsCapped() async throws {
+        let (rig, window, store, spawner) = try await shellWindow()
+        spawner.spawned[0].feed(osc("0;" + String(repeating: "y", count: 1000)))
+        await pump(window)
+        #expect(store.tabSummaries.first?.title.count == 256)
+        withExtendedLifetime(rig) {}
+    }
+
+    @Test func oscSevenUpdatesLastCwdAndRestartUsesIt() async throws {
+        let (rig, window, store, spawner) = try await shellWindow()
+        let pane = try #require(rig.workspace.terminalLayout.active?.focusedPane)
+        spawner.spawned[0].feed(osc("7;file:///tmp", terminator: "\u{1B}\\"))
+        await pump(window)
+        let cwd = rig.workspace.terminalLayout.tabs.compactMap { $0.panes[pane]?.lastCwd }.first
+        #expect(cwd == "/tmp")
+        spawner.spawned[0].finish(.exited(0))
+        await pump(window)
+        store.restart(pane)
+        await pump(window)
+        #expect(spawner.spawned.count == 2)
+        withExtendedLifetime(rig) {}
+    }
+
+    @Test func themeChangeRepaintsThePalette() async throws {
+        final class Holder { var controller: ThemeController? }
+        let rig = Rig()
+        await rig.workspace.restoreUIState()
+        rig.workspace.setMode(.code)
+        let store = TerminalPanelStore(workspace: rig.workspace, spawner: ScriptedPtySpawner(), environment: ["SHELL": "/bin/sh"])
+        rig.workspace.toggleTerminal()
+        let holder = Holder()
+        let window = try TestWindow(size: Size(width: Pixels(1200), height: Pixels(800))) {
+            rootView(workspace: rig.workspace, themes: holder.controller, center: testCenter(for: rig.workspace), terminal: store)
+        }
+        let controller = ThemeController(workspace: rig.workspace, host: window.testApp.app, watcher: ScriptedChangeSource())
+        holder.controller = controller
+        defer { controller.stop() }
+        try controller.choose(mode: .single, theme: "dracula")
+        for _ in 0..<5 { window.tick() }
+        let before = store.appearance(themes: controller)
+        let panel = BodyProbe.count("TerminalPanel")
+        try controller.choose(mode: .single, theme: "alloy-light")
+        for _ in 0..<5 { window.tick() }
+        let after = store.appearance(themes: controller)
+        #expect(before.palette != after.palette)
+        #expect(BodyProbe.count("TerminalPanel") - panel <= 1)
+    }
+
+    @Test func terminalSettingsChangeAppliesLive() async throws {
+        let (rig, window, store, _) = try await shellWindow()
+        let first = store.appearance(themes: nil)
+        var settings = rig.workspace.settings
+        settings.terminal.fontSize = 18
+        settings.terminal.cursorBlink = !first.cursorBlink
+        try rig.workspace.updateSettings(settings, persist: false)
+        let panel = BodyProbe.count("TerminalPanel")
+        for _ in 0..<5 { window.tick() }
+        let second = store.appearance(themes: nil)
+        #expect(second.fontSize == 18 && second.cursorBlink != first.cursorBlink)
+        #expect(BodyProbe.count("TerminalPanel") - panel <= 1)
+    }
 }

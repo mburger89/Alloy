@@ -323,6 +323,8 @@ public final class Workspace {
     @ObservationIgnored public weak var terminalHooksOwner: AnyObject?
     /// Run after the terminal panel hides, so its owner can drop focus state.
     @ObservationIgnored public var onTerminalHidden: (@MainActor () -> Void)?
+    /// The terminal-focus action table the tab commands consult (see `Workspace+TerminalFocus.swift`).
+    @ObservationIgnored public var terminalFocusActions: TerminalFocusActions?
     /// The ids of the commands run most recently, newest first. Read when the palette opens; never observed.
     @ObservationIgnored public internal(set) var recentCommands: [String] = []
     @ObservationIgnored var savedPaneSizes: [String: [Double]] = [:]

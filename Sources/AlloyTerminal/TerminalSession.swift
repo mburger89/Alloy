@@ -4,8 +4,8 @@ import Dispatch
 import Foundation
 import MetalUITerminal
 
-/// One pane's pty plus its emulator. The emulator is touched only on `readerQueue`, which every pane shares;
-/// the reader always reads, so a hidden pane never stalls its shell.
+/// One pane's pty plus its emulator, owned by a `TerminalSnapshotSource`. The emulator is touched only on
+/// `readerQueue`, which every pane shares; the reader always reads, so a hidden pane never stalls its shell.
 public final class TerminalSession: @unchecked Sendable {
     /// One shared serial queue for every pane.
     public static let readerQueue = DispatchQueue(label: "alloy.terminal.reader", qos: .userInitiated)
@@ -33,15 +33,13 @@ public final class TerminalSession: @unchecked Sendable {
     public let paneID: UUID
     let pty: any PtyHandle
     let now: @Sendable () -> Date
-    private let emulator: TerminalEmulator   // readerQueue only
+    /// Owns the emulator (readerQueue only); the pane's `TerminalView` binds to it. Stable for the session's life.
+    public let snapshotSource: TerminalSnapshotSource
     private let readBuffer = UnsafeMutableRawBufferPointer.allocate(byteCount: TerminalSession.readBudget, alignment: 16)   // readerQueue only
     private let state = NSLock()
     private var callbacks: Callbacks?
     private var version: UInt64 = 0
     private var outputHook: (@Sendable () -> Void)?
-    private var pendingTitle: String?
-    private var pendingDirectory: String?
-    private var deliveryScheduled = false
     private var exitDelivered = false
     private var started = false
     private var lastOutput: Date?
@@ -55,7 +53,9 @@ public final class TerminalSession: @unchecked Sendable {
         self.pty = pty
         self.now = now
         self.currentSize = size
-        self.emulator = TerminalEmulator(cols: size.cols, rows: size.rows, scrollback: scrollback)
+        self.snapshotSource = TerminalSnapshotSource(
+            emulator: TerminalEmulator(cols: size.cols, rows: size.rows, scrollback: scrollback),
+            queue: Self.readerQueue)
     }
 
     deinit {
@@ -83,6 +83,8 @@ public final class TerminalSession: @unchecked Sendable {
             return true
         }
         guard first else { return }
+        snapshotSource.onReply = { [pty] bytes in pty.write(bytes) }
+        snapshotSource.onEvents = { [weak self] events in self?.apply(events) }
         pty.onReadable(queue: Self.readerQueue) { [weak self] in self?.wakeup() }
         let pty = self.pty
         Task.detached { [weak self] in
@@ -101,28 +103,25 @@ public final class TerminalSession: @unchecked Sendable {
     /// Runs `body` on the reader queue, where the emulator lives.
     public func withEmulator<T: Sendable>(_ body: @escaping @Sendable (TerminalEmulator) -> T) async -> T {
         await withCheckedContinuation { continuation in
-            Self.readerQueue.async { continuation.resume(returning: body(self.emulator)) }
+            snapshotSource.perform { continuation.resume(returning: body($0)) }
         }
     }
 
-    /// Dispatches emulator events; internal, for tests.
-    func apply(_ events: [TerminalEvent]) {
-        var scheduleNeeded = false
+    /// Delivers the source's (already coalesced) events: the newest title and directory of a batch. Replies
+    /// belong to the source and never come through here. Internal, for tests.
+    @MainActor func apply(_ events: [TerminalEvent]) {
+        var title: String?
+        var directory: String?
         for event in events {
             switch event {
-            case .reply(let bytes):
-                pty.write(bytes)
-            case .title(let text):
-                state.withLock { pendingTitle = text }
-                scheduleNeeded = true
-            case .workingDirectory(let url):
-                state.withLock { pendingDirectory = url.path }
-                scheduleNeeded = true
-            case .bell, .hyperlink:
-                break
+            case .title(let text): title = text
+            case .workingDirectory(let url): directory = url.path
+            case .reply, .bell, .hyperlink: break
             }
         }
-        if scheduleNeeded { scheduleDelivery() }
+        guard title != nil || directory != nil, let target = state.withLock({ callbacks }) else { return }
+        if let title { target.onTitle(title) }
+        if let directory { target.onWorkingDirectory(directory) }
     }
 
     // MARK: Resize, busy, termination
@@ -199,7 +198,7 @@ public final class TerminalSession: @unchecked Sendable {
         while true {
             let n = pty.read(into: readBuffer)
             if n <= 0 { break }
-            emulator.feed(UnsafeRawBufferPointer(rebasing: readBuffer[..<n]))
+            snapshotSource.feed(UnsafeRawBufferPointer(rebasing: readBuffer[..<n]))
             fed = true
             consumed += n
             if consumed >= Self.wakeupBudget { more = true; break }
@@ -209,7 +208,6 @@ public final class TerminalSession: @unchecked Sendable {
     }
 
     private func didFeed() {
-        apply(emulator.drainEvents())
         let hook = state.withLock { () -> (@Sendable () -> Void)? in
             version &+= 1
             lastOutput = now()
@@ -224,7 +222,7 @@ public final class TerminalSession: @unchecked Sendable {
         while true {
             let n = pty.read(into: readBuffer)
             if n <= 0 { break }
-            emulator.feed(UnsafeRawBufferPointer(rebasing: readBuffer[..<n]))
+            snapshotSource.feed(UnsafeRawBufferPointer(rebasing: readBuffer[..<n]))
             fed = true
         }
         if fed { didFeed() }
@@ -240,29 +238,6 @@ public final class TerminalSession: @unchecked Sendable {
         }
         guard let target else { return }
         Task { @MainActor in target.onExit(code) }
-    }
-
-    // MARK: Coalesced delivery
-
-    private func scheduleDelivery() {
-        let schedule = state.withLock { () -> Bool in
-            if deliveryScheduled { return false }
-            deliveryScheduled = true
-            return true
-        }
-        guard schedule else { return }
-        Task { @MainActor [weak self] in self?.deliver() }
-    }
-
-    @MainActor private func deliver() {
-        let (title, directory, target) = state.withLock { () -> (String?, String?, Callbacks?) in
-            deliveryScheduled = false
-            defer { pendingTitle = nil; pendingDirectory = nil }
-            return (pendingTitle, pendingDirectory, callbacks)
-        }
-        guard let target else { return }
-        if let title { target.onTitle(title) }
-        if let directory { target.onWorkingDirectory(directory) }
     }
 }
 

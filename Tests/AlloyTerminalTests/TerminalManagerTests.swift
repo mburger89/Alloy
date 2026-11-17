@@ -65,6 +65,18 @@ private func tempDir() -> String {
         #expect(f.spawner.spawned.count == 2)
     }
 
+    @Test func managerExposesTheLiveSessionsSource() {
+        let f = Fixture()
+        let a = UUID()
+        #expect(f.manager.snapshotSource(for: a) == nil)
+        f.manager.spawnIfNeeded([(a, nil)])
+        let source = f.manager.snapshotSource(for: a)
+        #expect(source != nil)
+        #expect(source === f.manager.session(for: a)?.snapshotSource)
+        f.manager.retain(only: [])
+        #expect(f.manager.snapshotSource(for: a) == nil)
+    }
+
     @Test func requestUsesPlannerEnvAndCwd() {
         let f = Fixture()
         f.manager.spawnIfNeeded([(UUID(), f.root)])

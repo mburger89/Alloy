@@ -160,11 +160,25 @@ public enum BuiltinCommands {
         }
         // Esc closes quick-open first; a tab never closes under it.
         add("tab.close", "Close Tab", .tab, chord(.primary, ch("w")), .global,
-            keyID: "global-key-close-tab", enabled: { hasWorkspace() && !quickOpen.isShowing && !palette.isShowing }) { current()?.closeActiveTab() }
+            keyID: "global-key-close-tab", enabled: { hasWorkspace() && !quickOpen.isShowing && !palette.isShowing }) {
+            if let t = current()?.terminalFocusActions, t.isFocused() { t.closeTab(); return }
+            current()?.closeActiveTab()
+        }
         add("tab.next", "Next Tab", .tab, chord(.ctrl, .named(.tab)), .global,
-            keyID: "global-key-next-tab", enabled: hasWorkspace) { current()?.cycleTab(1) }
+            keyID: "global-key-next-tab", enabled: hasWorkspace) {
+            if let t = current()?.terminalFocusActions, t.isFocused() { t.cycleTab(1); return }
+            current()?.cycleTab(1)
+        }
         add("tab.previous", "Previous Tab", .tab, chord([.ctrl, .shift], .named(.tab)), .global,
-            keyID: "global-key-previous-tab", enabled: hasWorkspace) { current()?.cycleTab(-1) }
+            keyID: "global-key-previous-tab", enabled: hasWorkspace) {
+            if let t = current()?.terminalFocusActions, t.isFocused() { t.cycleTab(-1); return }
+            current()?.cycleTab(-1)
+        }
+        // ⌘T does nothing outside a focused terminal, so the key never shadows anything.
+        add("tab.new", "New Terminal Tab", .tab, chord(.primary, ch("t")), .global,
+            keyID: "global-key-new-terminal-tab", enabled: { current()?.terminalHasFocus ?? false }) {
+            current()?.terminalFocusActions?.newTab()
+        }
         for n in 1...9 {
             add("tab.select\(n)", "Go to Tab \(n)", .tab, chord(.primary, ch(Character(String(n)))), .global,
                 keyID: "global-key-tab-\(n)", enabled: hasWorkspace) { current()?.selectTab(number: n) }

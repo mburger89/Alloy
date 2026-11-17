@@ -89,6 +89,7 @@ let package = Package(
                 "AlloyTerminal",
                 .product(name: "MetalUI", package: "MetalUI"),
                 .product(name: "MetalUIMarkdown", package: "MetalUI"),
+                .product(name: "MetalUITerminalUI", package: "MetalUI"),
             ]
         ),
         .executableTarget(
@@ -136,6 +137,7 @@ let package = Package(
                 .product(name: "MetalUI", package: "MetalUI"),
                 .product(name: "MetalUITesting", package: "MetalUI"),
                 .product(name: "MetalUITestingSnapshot", package: "MetalUI"),
+                .product(name: "MetalUITerminalUI", package: "MetalUI"),
             ],
             resources: [.copy("Fixtures")]
         ),
