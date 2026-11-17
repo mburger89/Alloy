@@ -9,6 +9,7 @@ import MetalUI
 // ALLOY_DATA_DIR (set by the benchmark) replaces Application Support for settings, ledgers and sessions.
 let appSupport = AlloySettings.appSupportDirectory(default: FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0])
 var settings = AlloySettings.load(appSupport: appSupport)
+GitExecutable.configure(gitPath: settings.git.gitPath)
 let home = NSHomeDirectory()
 
 func isDirectory(_ path: String) -> Bool {
@@ -38,6 +39,7 @@ func makeWorkspace(root: URL) -> Workspace? {
     themeController.bind(workspace)
     // Language servers start lazily, on the first open of a file one handles; they stop with the sessions on quit.
     LSPCoordinator.installLive(on: workspace, loginPATH: { ClaudeLocator.loginShell().path })
+    GitCoordinator.installLive(on: workspace)
     workspace.startWatching()
     return workspace
 }

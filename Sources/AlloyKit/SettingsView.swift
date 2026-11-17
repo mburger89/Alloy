@@ -78,6 +78,8 @@ struct SettingsView: Component {
             }
             Divider()
             TerminalSettingsSection(workspace: workspace)
+            Divider()
+            GitSettingsSection(workspace: workspace)
             if saved {
                 Text("Saved").font(size: 12).foregroundColor(.mutedInk).accessibilityIdentifier("settings-saved")
             }

@@ -18,6 +18,7 @@ public struct CommandCategory: Hashable, Codable, Sendable {
     public static let session = CommandCategory(name: "Session")
     public static let edit = CommandCategory(name: "Edit")
     public static let file = CommandCategory(name: "File")
+    public static let git = CommandCategory(name: "Git")
 }
 
 /// How a command's chord is delivered: through its menu item, through a hidden global key (always, or only in Code
@@ -28,7 +29,7 @@ public enum CommandBinding: String, Hashable, Codable, Sendable {
 
 /// The menu a command appears in; nil means the palette only.
 public enum MenuPlacement: String, Hashable, Codable, Sendable {
-    case appSettings, edit, go, view, plugins
+    case appSettings, edit, go, git, view, plugins
 }
 
 /// What a command is, with no closures: Codable and Sendable so it can be listed, tested and (later) shown in settings.

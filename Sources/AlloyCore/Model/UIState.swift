@@ -29,18 +29,22 @@ public struct UIState: Codable, Equatable, Sendable {
     /// Ids of the commands run most recently in this project, newest first (at most `recentCommandLimit`).
     public var recentCommands: [String]
 
+    /// The Git tab's unsent commit message; nil when empty.
+    public var gitCommitDraft: String?
+
     public static let recentCommandLimit = 10
 
     public init(version: Int = UIState.currentVersion, mode: WorkspaceMode = .chat, paneSizes: [String: [Double]] = [:],
                 chatCollapsed: Bool = false, layout: CodeLayoutState? = nil, expandedFolders: [String] = [],
                 terminal: TerminalLayout? = nil, recentCommands: [String] = [],
-                sidebarTab: SidebarTab = .files, lastSearch: SearchQuery? = nil) {
+                sidebarTab: SidebarTab = .files, lastSearch: SearchQuery? = nil, gitCommitDraft: String? = nil) {
+        self.gitCommitDraft = gitCommitDraft
         self.version = version; self.mode = mode; self.paneSizes = paneSizes
         self.chatCollapsed = chatCollapsed; self.layout = layout; self.expandedFolders = expandedFolders
         self.terminal = terminal; self.recentCommands = recentCommands; self.sidebarTab = sidebarTab; self.lastSearch = lastSearch
     }
 
-    private enum CodingKeys: String, CodingKey { case version, mode, paneSizes, chatCollapsed, layout, expandedFolders, terminal, recentCommands, sidebarTab, lastSearch }
+    private enum CodingKeys: String, CodingKey { case version, mode, paneSizes, chatCollapsed, layout, expandedFolders, terminal, recentCommands, sidebarTab, lastSearch, gitCommitDraft }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -57,6 +61,7 @@ public struct UIState: Codable, Equatable, Sendable {
         sidebarTab = (try? c.decodeIfPresent(SidebarTab.self, forKey: .sidebarTab)) ?? .files
         lastSearch = (try? c.decodeIfPresent(SearchQuery.self, forKey: .lastSearch)) ?? nil
         recentCommands = (try? c.decodeIfPresent([String].self, forKey: .recentCommands)) ?? []
+        gitCommitDraft = (try? c.decodeIfPresent(String.self, forKey: .gitCommitDraft)) ?? nil
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -71,6 +76,7 @@ public struct UIState: Codable, Equatable, Sendable {
         try c.encode(Array(recentCommands.prefix(Self.recentCommandLimit)), forKey: .recentCommands)
         try c.encode(sidebarTab, forKey: .sidebarTab)
         try c.encodeIfPresent(lastSearch, forKey: .lastSearch)
+        try c.encodeIfPresent(gitCommitDraft, forKey: .gitCommitDraft)
     }
 }
 

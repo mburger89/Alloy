@@ -64,6 +64,27 @@ public enum BuiltinCommands {
         add("search.previousResult", "Previous Result", .go, chord(.shift, .named(.f4)), .menu, menu: .go,
             menuID: "go-previous-result", enabled: hasWorkspace) { current()?.search.step(-1) }
 
+        // Git. Every item is disabled with no coordinator, outside a repository and without a usable git; the editor items
+        // also need Code mode with a file open. The closures resolve the coordinator when they run.
+        let coordinator: @MainActor () -> GitCoordinator? = { current()?.gitServices as? GitCoordinator }
+        let repoReady: @MainActor () -> Bool = { coordinator()?.repoReady ?? false }
+        let editorReady: @MainActor () -> Bool = { coordinator()?.editorItemsReady ?? false }
+        func addGit(_ id: String, _ title: String, menuID: String, editor: Bool, run: @escaping @MainActor (GitCoordinator) -> Void) {
+            add(id, title, .git, nil, .none, menu: .git, menuID: menuID, enabled: editor ? editorReady : repoReady) {
+                if let coordinator = coordinator() { run(coordinator) }
+            }
+        }
+        addGit("git.compareHead", "Compare with HEAD", menuID: "git-compare-head", editor: true) { $0.compareActiveWithHead() }
+        addGit("git.stageFile", "Stage File", menuID: "git-stage-file", editor: true) { $0.stageActiveFile() }
+        addGit("git.unstageFile", "Unstage File", menuID: "git-unstage-file", editor: true) { $0.unstageActiveFile() }
+        addGit("git.commit", "Commit…", menuID: "git-commit-menu", editor: false) { $0.showCommit() }
+        addGit("git.switchBranch", "Switch Branch…", menuID: "git-branch-picker-menu", editor: false) { $0.showBranchPicker() }
+        addGit("git.blameLine", "Blame Line", menuID: "git-blame-line", editor: true) { $0.blameActiveLine() }
+        addGit("git.toggleFileBlame", "Toggle File Blame", menuID: "git-blame-file", editor: true) { $0.toggleActiveFileBlame() }
+        addGit("git.nextChange", "Next Change", menuID: "git-next-change", editor: true) { $0.stepActiveChange(1) }
+        addGit("git.previousChange", "Previous Change", menuID: "git-prev-change", editor: true) { $0.stepActiveChange(-1) }
+        addGit("git.refresh", "Refresh", menuID: "git-refresh-menu", editor: false) { $0.refresh() }
+
         add("view.chatMode", "Chat Mode", .view, chord([.ctrl, .cmd], ch("1")), .menu, menu: .view, recents: true,
             menuID: "view-mode-chat", enabled: hasWorkspace) { current()?.setMode(.chat) }
         add("view.codeMode", "Code Mode", .view, chord([.ctrl, .cmd], ch("2")), .menu, menu: .view, recents: true,

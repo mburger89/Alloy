@@ -7,9 +7,13 @@ public enum PaneID: Hashable, Codable, Sendable {
     case group(UUID)
 }
 
-/// How a pane shows a file: the plain text, or its session edits inline or side by side.
+/// How a pane shows a file: the plain text, its session edits inline or side by side, or the buffer side by side with
+/// git's HEAD or index copy (never persisted).
 public enum Presentation: String, Codable, Sendable {
-    case plain, inline, sideBySide
+    case plain, inline, sideBySide, compareHead, compareIndex
+
+    /// Whether this is one of the two git compare presentations.
+    public var isCompare: Bool { self == .compareHead || self == .compareIndex }
 
     init(_ mode: DiffMode) {
         switch mode {
@@ -34,7 +38,7 @@ public final class EditorGroup: Identifiable {
 }
 
 /// The tabs of Code mode's sidebar.
-public enum SidebarTab: String, Codable, Sendable { case files, search }
+public enum SidebarTab: String, Codable, Sendable { case files, search, git }
 
 /// Code mode's editor groups and which one has focus. Starts with one empty group.
 @MainActor @Observable

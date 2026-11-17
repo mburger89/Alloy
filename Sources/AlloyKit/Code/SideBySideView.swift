@@ -66,6 +66,7 @@ struct SideBySideView: Component {
     var content: some ElementGroup {
         let workspace = workspace, store = store, document = document, view = view, idSuffix = idSuffix
         let editable = document.state == .editable
+        let git = view.currentPresentation.isCompare
         HStack(spacing: 0) {
             if let left = view.left {
                 CodeView(buffer: left.buffer, decorations: left.decorations)
@@ -73,14 +74,21 @@ struct SideBySideView: Component {
                     .codeViewEditable(false)
                     .scrollState(view.leftScroll)
                     .onScroll { position in view.scroll.position = CodeScrollPosition(row: position.row, x: view.scroll.position.x) }
-                    .onGutterBarClick { hit in view.selectedEdit = hit.tag.flatMap { view.leftTags[$0] } }
+                    .onGutterBarClick { hit in
+                        if git { view.focusCompareHunk(tag: hit.tag) } else { view.selectedEdit = hit.tag.flatMap { view.leftTags[$0] } }
+                    }
                     .gutterBarContextMenu { hit in
-                        if let edit = hit.tag.flatMap({ view.leftTags[$0] }) {
+                        if !git, let edit = hit.tag.flatMap({ view.leftTags[$0] }) {
                             editMenu(edit: edit, workspace: workspace, store: store, document: document, pane: view.pane)
                         }
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .accessibilityIdentifier("sbs-left" + idSuffix)
+            } else if git, let message = view.compareUnavailable {
+                Text(verbatim: message).font(size: 12).foregroundColor(.mutedInk)
+                    .padding(inset(12, 12))
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .accessibilityIdentifier("git-compare-unavailable")
             } else {
                 Color.clear.frame(maxWidth: .infinity, maxHeight: .infinity)
             }
@@ -93,9 +101,11 @@ struct SideBySideView: Component {
                     .codeViewEditable(editable)
                     .scrollState(view.scroll)
                     .onScroll { position in view.leftScroll.position = CodeScrollPosition(row: position.row, x: view.leftScroll.position.x) }
-                    .onGutterBarClick { hit in view.selectedEdit = hit.tag.flatMap { view.tags[$0] } }
+                    .onGutterBarClick { hit in
+                        if git { view.focusCompareHunk(tag: hit.tag) } else { view.selectedEdit = hit.tag.flatMap { view.tags[$0] } }
+                    }
                     .gutterBarContextMenu { hit in
-                        if let edit = hit.tag.flatMap({ view.tags[$0] }) {
+                        if !git, let edit = hit.tag.flatMap({ view.tags[$0] }) {
                             editMenu(edit: edit, workspace: workspace, store: store, document: document, pane: view.pane)
                         }
                     }
@@ -114,9 +124,11 @@ struct SideBySideView: Component {
                     .codeViewEditable(editable)
                     .scrollState(view.scroll)
                     .onScroll { position in view.leftScroll.position = CodeScrollPosition(row: position.row, x: view.leftScroll.position.x) }
-                    .onGutterBarClick { hit in view.selectedEdit = hit.tag.flatMap { view.tags[$0] } }
+                    .onGutterBarClick { hit in
+                        if git { view.focusCompareHunk(tag: hit.tag) } else { view.selectedEdit = hit.tag.flatMap { view.tags[$0] } }
+                    }
                     .gutterBarContextMenu { hit in
-                        if let edit = hit.tag.flatMap({ view.tags[$0] }) {
+                        if !git, let edit = hit.tag.flatMap({ view.tags[$0] }) {
                             editMenu(edit: edit, workspace: workspace, store: store, document: document, pane: view.pane)
                         }
                     }

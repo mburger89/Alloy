@@ -66,14 +66,18 @@ struct FilePanelView: Component {
         // below it; the code itself scrolls under it, its first line one gutter below the bar.
         let known = barHeight.wrappedValue > 0 ? barHeight.wrappedValue : (store.metrics.filePanelBarHeight ?? style.filePanelBarHeightEstimate)
         let clear = showsBar ? known : 0
-        let belowBar = quickOpen.isShowing || notice != nil
+        let picker = (workspace.gitServices as? GitCoordinator)?.branchPicker
+        let pickerShowing = !quickOpen.isShowing && (picker?.isShowing ?? false)
+        let belowBar = quickOpen.isShowing || pickerShowing || notice != nil
         let quickOpenTop = Self.topInset(clear)
         let bodyClear = belowBar ? 0 : clear
         VStack(alignment: .leading, spacing: 0) {
             if quickOpen.isShowing {
                 VStack(spacing: 0) { QuickOpenField(workspace: workspace, model: quickOpen) }.padding(quickOpenTop)
+            } else if pickerShowing, let picker {
+                VStack(spacing: 0) { QuickOpenField(source: picker) }.padding(quickOpenTop)
             }
-            fileBody(path: path, notice: notice, document: document, view: view, style: style, clear: bodyClear, noticeClear: quickOpen.isShowing ? 0 : clear)
+            fileBody(path: path, notice: notice, document: document, view: view, style: style, clear: bodyClear, noticeClear: quickOpen.isShowing || pickerShowing ? 0 : clear)
         }
         // The tabs and the header share one glass bar floating over the code.
         .overlay(alignment: .top) {

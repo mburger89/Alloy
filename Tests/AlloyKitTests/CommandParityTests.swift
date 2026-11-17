@@ -44,6 +44,12 @@ import Testing
         // Today's order: the Go menu, then the View menu.
         let go = try #require(window.testApp.menuBar.first { $0.title == "Go" })
         #expect(go.items.map(\.title) == ["Go to Definition", "Go to Symbol…", "Find References", "Next Result", "Previous Result"])
+        let gitMenu = try #require(window.testApp.menuBar.first { $0.title == "Git" })
+        #expect(gitMenu.items.map(\.title) == [
+            "Compare with HEAD", "Stage File", "Unstage File", "Commit…", "Switch Branch…", "Blame Line",
+            "Toggle File Blame", "Next Change", "Previous Change", "Refresh",
+        ])
+        #expect(gitMenu.items.allSatisfy { $0.shortcut == nil })
         let edit = window.testApp.menuBar.first { $0.title == "Edit" }
         #expect(edit?.items.map(\.title).suffix(3) == ["Format Document", "Format Selection", "Show Hover"])
         let view = try #require(window.testApp.menuBar.first { $0.title == "View" })

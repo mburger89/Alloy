@@ -552,3 +552,54 @@ import Testing
         #expect(e.ws.recentCommands == ["q", "r"])
     }
 }
+
+@MainActor @Suite struct UIStateGitFieldTests {
+    @Test func gitFieldsRoundTripWithoutVersionBump() throws {
+        let state = UIState(mode: .code, sidebarTab: .git, gitCommitDraft: "wip")
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("uistate-\(UUID().uuidString).json")
+        defer { try? FileManager.default.removeItem(at: url) }
+        try UIStateFile.save(state, to: url)
+        let json = try String(contentsOf: url, encoding: .utf8)
+        #expect(json.contains("\"version\":1"))
+        guard case .state(let loaded) = UIStateFile.load(url) else { Issue.record("did not load"); return }
+        #expect(loaded.sidebarTab == .git && loaded.gitCommitDraft == "wip")
+        #expect(UIState.currentVersion == 1)
+    }
+
+    @Test func nilFieldsAreNotWritten() throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("uistate-\(UUID().uuidString).json")
+        defer { try? FileManager.default.removeItem(at: url) }
+        try UIStateFile.save(UIState(mode: .chat), to: url)
+        let json = try String(contentsOf: url, encoding: .utf8)
+        #expect(!json.contains("gitCommitDraft"))
+    }
+
+    @Test func olderFileWithoutGitFieldsLoads() throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("uistate-\(UUID().uuidString).json")
+        defer { try? FileManager.default.removeItem(at: url) }
+        try #"{"version":1,"mode":"code","paneSizes":{},"chatCollapsed":false,"expandedFolders":[]}"#.write(to: url, atomically: true, encoding: .utf8)
+        guard case .state(let loaded) = UIStateFile.load(url) else { Issue.record("did not load"); return }
+        #expect(loaded.mode == .code && loaded.sidebarTab == .files && loaded.gitCommitDraft == nil)
+    }
+
+    @Test func wrongTypedGitFieldsFallBackToNil() throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("uistate-\(UUID().uuidString).json")
+        defer { try? FileManager.default.removeItem(at: url) }
+        try #"{"version":1,"mode":"code","sidebarTab":5,"gitCommitDraft":[]}"#.write(to: url, atomically: true, encoding: .utf8)
+        guard case .state(let loaded) = UIStateFile.load(url) else { Issue.record("did not load"); return }
+        #expect(loaded.sidebarTab == .files && loaded.gitCommitDraft == nil)
+    }
+
+    @Test func workspacePersistsSidebarTabAndDraft() async {
+        let e = Env(); defer { e.cleanup() }
+        await e.ws.restoreUIState()
+        e.ws.codeLayout.sidebarTab = .git; e.ws.persistedCommitDraft = "draft msg"
+        await waitUntil("timer armed") { e.clock.pendingSleepers >= 1 }
+        e.clock.advance(by: 0.5)
+        await waitUntil("written") { e.ws.uiStateWriteCount >= 1 }
+        let again = Workspace(projectRoot: e.root, appSupport: e.ws.appSupport, settings: AlloySettings(),
+                              locate: { _ in URL(fileURLWithPath: "/fake/claude") }, autosaveClock: e.clock)
+        await again.restoreUIState()
+        #expect(again.codeLayout.sidebarTab == .git && again.persistedCommitDraft == "draft msg")
+    }
+}

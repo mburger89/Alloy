@@ -49,6 +49,27 @@ final class OpenDocumentView {
     /// Decoration tag to edit for the left pane's bars (side by side).
     @ObservationIgnored private(set) var leftTags: [UInt64: UUID] = [:]
     @ObservationIgnored private var searchGeneration = 0
+    /// The git coordinator's marks for this view (it owns them); nil without a repository or coordinator.
+    @ObservationIgnored weak var gitMarks: GitDocumentMarks?
+    /// The hunk whose popover is open.
+    var selectedGitHunk: GitHunkSelection?
+    /// On-demand blame: the file-blame switch, its runs and the open blame popover. Nothing here is read per frame
+    /// except `blame.fileOn` in the panel body.
+    @ObservationIgnored let blame = GitBlameState()
+    /// The git compare this view shows (`.compareHead` / `.compareIndex`), or nil while it loads or when there is none.
+    private(set) var compare: GitCompare?
+    /// Why a compare has nothing to show (an untracked file, no repository).
+    private(set) var compareUnavailable: String?
+    /// Decoration tag to the index of the compare hunk it belongs to.
+    @ObservationIgnored private(set) var compareTags: [UInt64: Int] = [:]
+    /// The hunk the compare bar acts on.
+    var compareFocus = 0
+    var compareMessage: String?
+    var compareConfirmRevert = false
+    var compareBusy = false
+    /// Bumped when the base moved (index or HEAD changed, an action ran): the next build reads the base again.
+    private(set) var compareEpoch = 0
+    @ObservationIgnored private var compareApplied = false
 
     /// The old-text pane of the side-by-side diff; nil in inline mode and until the first build.
     private(set) var left: LeftPane?
@@ -92,6 +113,7 @@ final class OpenDocumentView {
     func close() {
         closed = true
         messageTask?.cancel()
+        gitMarks?.coordinator?.detach(self)
         dismissHover()
         services.detach(self)
         left?.close()
@@ -127,6 +149,7 @@ final class OpenDocumentView {
     func rebuildIfNeeded(workspace: Workspace) {
         self.workspace = workspace
         let path = document.path
+        attachGit(workspace: workspace)
         let key = buildTrigger(workspace: workspace)
         if key.mode == .plain {
             guard key != builtKey else { return }
@@ -134,6 +157,7 @@ final class OpenDocumentView {
             builtKey = key
             return
         }
+        if key.mode.isCompare { rebuildCompare(workspace: workspace, key: key); return }
         guard let file = workspace.ledger.files[path] else { return }
         guard key != builtKey, key != building else { return }
         building = key
@@ -160,6 +184,7 @@ final class OpenDocumentView {
             guard !closed, workspace.ledger.files[path]?.version == key.ledger, document.savedVersion == key.saved,
                   sameText, workspace.presentation(of: path, in: pane) == key.mode else { return }
             tags = model.tags
+            dropCompare()
             appliedDiff = AppliedDiff(model: model, sessions: workspace.sessions, version: key.saved,
                                       byteCount: saved.utf8Count, fillers: sbs?.rightFillers, rowCount: saved.lineCount)
             appliedPresentation = key.mode
@@ -187,9 +212,103 @@ final class OpenDocumentView {
         }
     }
 
+    /// Builds a git compare: the base text from the coordinator (cached by blob id), the hunks off the main actor, and
+    /// both panes' decorations. The right pane's rows are those of the buffer when the build began.
+    private func rebuildCompare(workspace: Workspace, key: BuildKey) {
+        guard key != builtKey, key != building else { return }
+        building = key
+        let path = document.path
+        let against: GitCompare.Base = key.mode == .compareHead ? .head : .index
+        let snapshot = document.buffer.snapshot()
+        let coordinator = workspace.gitServices as? GitCoordinator
+        Task { [weak self, weak workspace] in
+            let baseText = await coordinator?.compareBase(path: path, against: against)
+            let built: GitCompare? = if let baseText {
+                await Task.detached { GitCompare.build(base: against, baseText: baseText, snapshot: snapshot) }.value
+            } else { nil }
+            guard let self, let workspace else { return }
+            if building == key { building = nil }
+            guard !closed, workspace.presentation(of: path, in: pane) == key.mode, buildTrigger(workspace: workspace) == key else { return }
+            applyCompare(built, against: against, snapshot: snapshot, path: path, workspace: workspace)
+            builtKey = key
+            workspace.noteDecorationBuild()
+        }
+    }
+
+    private func applyCompare(_ built: GitCompare?, against: GitCompare.Base, snapshot: CodeSnapshot, path: String, workspace: Workspace) {
+        appliedDiff = nil
+        tags = [:]; leftTags = [:]
+        if annotationsSet {
+            annotationsSet = false
+            decorations.setHighlights([], in: 0..<(1 << 40), layer: .annotations, asOf: document.buffer.version)
+        }
+        compareApplied = true
+        compare = built
+        compareUnavailable = built == nil ? (against == .head ? "No HEAD copy of this file to compare with" : "No index copy of this file to compare with") : nil
+        compareFocus = min(compareFocus, max(0, (built?.hunks.count ?? 1) - 1))
+        guard let built else {
+            left?.close(); left = nil
+            compareTags = [:]
+            decorations.setLineDecorations([], asOf: document.buffer.version)
+            decorations.setVirtualRows([], asOf: document.buffer.version)
+            return
+        }
+        let oldBytes = Array(built.baseText.utf8)
+        let pane: LeftPane
+        if let existing = left, existing.bytes == oldBytes {
+            pane = existing
+        } else {
+            left?.close()
+            pane = LeftPane(bytes: oldBytes, path: path, engine: engine)
+            left = pane
+        }
+        let decorated = GitCompareDecorations.build(built, leftRowCount: pane.buffer.snapshot().lineCount, rightRowCount: snapshot.lineCount)
+        compareTags = built.tags
+        DiffDecorations.applyGit(decorated, right: decorations, rightVersion: snapshot.version,
+                                 left: pane.decorations, leftVersion: pane.buffer.version)
+        workspace.noteSideBySideBuild()
+    }
+
+    /// Forgets a compare (another presentation took over); the next line-layer paint replaces its decorations.
+    private func dropCompare() {
+        guard compareApplied || compare != nil else { return }
+        compareApplied = false
+        compare = nil; compareUnavailable = nil; compareTags = [:]
+        compareConfirmRevert = false; compareMessage = nil
+    }
+
+    /// The base moved (the index or HEAD changed, or an action ran): the compare is built again.
+    func compareBaseChanged() {
+        if currentPresentation.isCompare { compareEpoch += 1 }
+    }
+
+    /// Compares against the other base (HEAD or the index).
+    func toggleCompareBase() {
+        guard let workspace else { return }
+        let next: Presentation = currentPresentation == .compareHead ? .compareIndex : .compareHead
+        workspace.setPresentation(next, of: document.path, in: pane)
+    }
+
+    /// The source the right pane is compared with, if any.
+    func compareSource(workspace: Workspace) -> CompareSource? {
+        if currentPresentation.isCompare { return compare.map { .git($0) } }
+        if let edit = selectedEdit, let record = workspace.editRecord(id: edit), record.state == .live { return .ledger(record) }
+        return nil
+    }
+
+    /// This view's presentation as the workspace has it.
+    var currentPresentation: Presentation { workspace?.presentation(of: document.path, in: pane) ?? .inline }
+
+    /// Registers with the git coordinator (once) and tells its marks the presentation: they show in a plain view only.
+    private func attachGit(workspace: Workspace) {
+        if gitMarks == nil, let coordinator = workspace.gitServices as? GitCoordinator { coordinator.attach(self) }
+        gitMarks?.presentationSeen(workspace.presentation(of: document.path, in: pane))
+    }
+
     /// A plain presentation: forgets the diff and the left pane, clears the diff's layers and paints the diagnostics alone.
     private func clearDiff() {
-        let hadDiff = appliedDiff != nil
+        let hadDiff = appliedDiff != nil || compareApplied
+        dropCompare()
         building = nil
         tags = [:]
         leftTags = [:]
@@ -443,6 +562,7 @@ final class OpenDocumentView {
     /// Sets the line decorations and virtual rows: the diff's, if built, and the diagnostics'.
     private func applyLineLayers(clearing: Bool = false) {
         services.drainEdits()   // the row log must hold every edit MetalUI has seen
+        if compareApplied { return }   // a git compare owns the line layers; it shows no diagnostics
         var layout = DiagnosticDecorations.currentLayout(lsp?.diagnostics.entry(for: document.path), in: document.buffer)
         // Without a built diff, the pane's own presentation decides (a file that never builds still hides message rows).
         let shown = appliedDiff == nil ? (workspace?.presentation(of: document.path, in: pane) ?? appliedPresentation) : appliedPresentation
@@ -481,6 +601,7 @@ final class OpenDocumentView {
         let mode = workspace.presentation(of: document.path, in: pane)
         // A plain view builds no diff: the ledger and the saved text do not matter to it.
         if mode == .plain { return BuildKey(ledger: 0, saved: 0, mode: .plain) }
+        if mode.isCompare { return BuildKey(ledger: compareEpoch, saved: document.savedVersion, mode: mode) }
         return BuildKey(ledger: workspace.ledger.files[document.path]?.version ?? -1, saved: document.savedVersion, mode: mode)
     }
 
@@ -840,48 +961,51 @@ struct CodePanel: Component {
                 VStack(spacing: 0) { FindBar(view: view, onClose: { codeFocused = true }) }
                     .padding(Edges(top: Pixels(Float(topClear)), right: Pixels(0), bottom: Pixels(0), left: Pixels(0)))
             }
-            if workspace.presentation(of: path, in: view.pane) == .sideBySide {
+            let presentation = workspace.presentation(of: path, in: view.pane)
+            if presentation == .sideBySide || presentation.isCompare {
                 SideBySideView(workspace: workspace, store: store, document: document, view: view, focused: $codeFocused,
                                idSuffix: Self.sideBySideSuffix(view.pane))
-            } else if view.hoverAttached(editable: editable) {
-                // The server offers hover: the view carries the text hover and its one text-anchored popover (slot B).
-                let slot = view.popoverSlot
-                CodeView(buffer: document.buffer, decorations: view.decorations)
-                    .selectionState(selection)
-                    .font(family: "Menlo", size: 12)
-                    .codeViewEditable(editable)
-                    .scrollState(view.scroll)
-                    .onGutterBarClick { hit in view.selectedEdit = hit.tag.flatMap { view.tags[$0] } }
-                    .gutterBarContextMenu { hit in
-                        if let edit = hit.tag.flatMap({ view.tags[$0] }) {
-                            editMenu(edit: edit, workspace: workspace, store: store, document: document, pane: view.pane)
-                        }
-                    }
-                    .focused($codeFocused)
-                    .onTextHover(delay: .milliseconds(500)) { phase in view.textHover(phase, workspace: workspace) }
-                    .popover(item: Binding(get: { slot.hover }, set: { slot.hover = $0 }),
-                             attachmentAnchor: .range(slot.hover?.range ?? 0..<0), arrowEdge: .bottom) { presentation in
-                        HoverView(presentation: presentation, cache: slot.markdownCache)
-                    }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .accessibilityIdentifier(codeViewIdentifier)
             } else {
-                CodeView(buffer: document.buffer, decorations: view.decorations)
+                let plainCodeView = CodeView(buffer: document.buffer, decorations: view.decorations)
                     .selectionState(selection)
                     .font(family: "Menlo", size: 12)
                     .codeViewEditable(editable)
                     .scrollState(view.scroll)
-                    .onGutterBarClick { hit in view.selectedEdit = hit.tag.flatMap { view.tags[$0] } }
+                    .onGutterBarClick { hit in
+                        if hit.owner == GitGutterMarks.owner { view.openGitHunk(hit) }
+                        else if hit.owner == GitBlameMarks.owner { view.openBlameRun(hit) }
+                        else { view.selectedEdit = hit.tag.flatMap { view.tags[$0] } }
+                    }
                     .gutterBarContextMenu { hit in
                         if let edit = hit.tag.flatMap({ view.tags[$0] }) {
                             editMenu(edit: edit, workspace: workspace, store: store, document: document, pane: view.pane)
                         }
                     }
                     .focused($codeFocused)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .accessibilityIdentifier(codeViewIdentifier)
+                // File blame reserves the marker lane for as long as it is on: one deliberate shift per toggle.
+                let laneCodeView = view.blame.fileOn ? plainCodeView.gutterMarkerLane(true) : plainCodeView
+                if view.hoverAttached(editable: editable) {
+                    // The server offers hover: the view carries the text hover and its one text-anchored popover (slot B).
+                    let slot = view.popoverSlot
+                    laneCodeView
+                        .onTextHover(delay: .milliseconds(500)) { phase in view.textHover(phase, workspace: workspace) }
+                        .gitPopovers(view: view)
+                        .popover(item: Binding(get: { slot.hover }, set: { slot.hover = $0 }),
+                                 attachmentAnchor: .range(slot.hover?.range ?? 0..<0), arrowEdge: .bottom) { presentation in
+                            HoverView(presentation: presentation, cache: slot.markdownCache)
+                        }
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .accessibilityIdentifier(codeViewIdentifier)
+                } else {
+                    laneCodeView
+                        .gitPopovers(view: view)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .accessibilityIdentifier(codeViewIdentifier)
+                }
             }
-            if let edit = view.selectedEdit, let record = workspace.editRecord(id: edit), record.state == .live {
+            if presentation.isCompare {
+                GitHunkBar(view: view, workspace: workspace)
+            } else if case .ledger(let record)? = view.compareSource(workspace: workspace) {
                 PanelEditBar(workspace: workspace, store: store, record: record)
             }
         }
@@ -889,11 +1013,33 @@ struct CodePanel: Component {
         .onChange(of: view.buildTrigger(workspace: workspace), initial: true) {
             view.rebuildIfNeeded(workspace: workspace)
         }
+        .onChange(of: view.blame.popover == nil) { old, new in
+            if !old && new { codeFocused = true }
+        }
+        .onChange(of: view.selectedGitHunk == nil) { old, new in
+            // The code view is rebuilt as the popover opens and closes; it takes the keys back.
+            if !old && new { codeFocused = true }
+        }
         .onChange(of: codeFocused) { old, new in
             workspace.codeFocusChanged(new, pane: view.pane)
             if new { onFocus?() }
             // Switching to Code mode drops the view's focus; a mode switch never saves.
             if old && !new && workspace.mode == .chat { Task { await workspace.focusLeft(path) } }
+        }
+    }
+}
+
+extension _CodeTextAnchoring {
+    /// The git hunk and blame popovers, always attached: a closed popover costs nothing per frame, and attaching only
+    /// while one is open would change the code view's structure on every open and close.
+    @MainActor func gitPopovers(view: OpenDocumentView) -> some _CodeTextAnchoring & ElementGroup {
+        self.popover(item: Binding(get: { view.selectedGitHunk }, set: { view.selectedGitHunk = $0 }),
+                     attachmentAnchor: .range(view.selectedGitHunk?.anchor ?? 0..<0, asOf: view.selectedGitHunk?.version)) { selection in
+            GitHunkPopover(view: view, selection: selection)
+        }
+        .popover(item: Binding(get: { view.blame.popover }, set: { view.blame.popover = $0 }),
+                 attachmentAnchor: .range(view.blame.popover?.anchor ?? 0..<0, asOf: view.blame.popover?.version)) { selection in
+            GitBlamePopover(selection: selection)
         }
     }
 }

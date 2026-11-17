@@ -295,34 +295,89 @@ final class QuickOpenModel {
     }
 }
 
-/// The path field of quick-open, at the top of the file panel; its rows hang below it in a suggestion overlay, so
-/// the field keeps the caret and the keys. ↑ ↓ move, Return opens, Esc closes.
-struct QuickOpenField: Component {
+/// What the suggestion field and its row list need from a model: quick-open's paths or the branch picker's names.
+/// The identifiers are parameters, so each source keeps its own.
+@MainActor
+protocol RowSource {
+    var query: String { get }
+    var rows: [String] { get }
+    var selected: Int { get }
+    var isShowing: Bool { get }
+    /// A symbols / references list the field shows in place of `rows`; nil for the plain rows.
+    var listModel: ListPaletteModel? { get }
+    /// A message shown under the field (git's refusal); nil for none.
+    var error: String? { get }
+    var placeholder: String { get }
+    var fieldID: String { get }
+    var rowPrefix: String { get }
+    var panelID: String { get }
+    var listID: String { get }
+    var errorID: String { get }
+    func setQuery(_ new: String)
+    func submit()
+    func move(_ step: Int)
+    func hide()
+    func pick(_ index: Int)
+}
+
+extension RowSource { var listModel: ListPaletteModel? { nil } }
+
+/// Quick-open's model with the workspace it opens files in, as a row source.
+struct QuickOpenSource: RowSource {
     let workspace: Workspace
     let model: QuickOpenModel
+    var query: String { model.query }
+    var rows: [String] { model.rows }
+    var selected: Int { model.selected }
+    var isShowing: Bool { model.isShowing }
+    var listModel: ListPaletteModel? { if case .list(let list) = model.mode { list } else { nil } }
+    var error: String? { nil }
+    var placeholder: String { listModel?.kind.placeholder ?? "Open file by name" }
+    var fieldID: String { "quick-open-field" }
+    var rowPrefix: String { "quick-open-row" }
+    var panelID: String { "quick-open" }
+    var listID: String { "quick-open-list" }
+    var errorID: String { "quick-open-error" }
+    func setQuery(_ new: String) { model.setQuery(new, workspace: workspace) }
+    func submit() { model.submit(workspace: workspace) }
+    func move(_ step: Int) { model.move(step) }
+    func hide() { model.hide() }
+    func pick(_ index: Int) { model.open(index, workspace: workspace) }
+}
+
+/// The path field of quick-open, at the top of the file panel; its rows hang below it in a suggestion overlay, so
+/// the field keeps the caret and the keys. ↑ ↓ move, Return opens, Esc closes. The branch picker uses the same field.
+struct QuickOpenField<Source: RowSource>: Component {
+    let source: Source
     @FocusState var focused: Bool
 
     var content: some ElementGroup {
-        let workspace = workspace, model = model
-        let query = Binding<String>(get: { model.query }, set: { model.setQuery($0, workspace: workspace) })
-        let listModel: ListPaletteModel? = if case .list(let list) = model.mode { list } else { nil }
-        let showRows = Binding<Bool>(get: { model.isShowing && (listModel != nil || !model.rows.isEmpty) }, set: { _ in })
-        HStack(spacing: Pixels(8)) {
-            TextField(listModel?.kind.placeholder ?? "Open file by name", text: query)
-                .onSubmit { model.submit(workspace: workspace) }
-                .focused($focused)
-                .onAppear { focused = true }
-                .onChange(of: focused) { old, new in if old && !new { model.hide() } }
-                .onKeyPress(phases: [.down, .repeat]) { press in
-                    guard press.modifiers.isEmpty else { return .ignored }
-                    switch press.key {
-                    case .downArrow: model.move(1); return .handled
-                    case .upArrow: model.move(-1); return .handled
-                    case .escape: model.hide(); return .handled
-                    default: return .ignored
+        let source = source
+        let query = Binding<String>(get: { source.query }, set: { source.setQuery($0) })
+        let listModel = source.listModel
+        let showRows = Binding<Bool>(get: { source.isShowing && (listModel != nil || !source.rows.isEmpty) }, set: { _ in })
+        VStack(alignment: .leading, spacing: Pixels(4)) {
+            HStack(spacing: Pixels(8)) {
+                TextField(source.placeholder, text: query)
+                    .onSubmit { source.submit() }
+                    .focused($focused)
+                    .onAppear { focused = true }
+                    .onChange(of: focused) { old, new in if old && !new { source.hide() } }
+                    .onKeyPress(phases: [.down, .repeat]) { press in
+                        guard press.modifiers.isEmpty else { return .ignored }
+                        switch press.key {
+                        case .downArrow: source.move(1); return .handled
+                        case .upArrow: source.move(-1); return .handled
+                        case .escape: source.hide(); return .handled
+                        default: return .ignored
+                        }
                     }
-                }
-                .accessibilityIdentifier("quick-open-field")
+                    .accessibilityIdentifier(source.fieldID)
+            }
+            if let error = source.error {
+                Text(verbatim: error).font(size: 11).foregroundColor(.mutedInk)
+                    .accessibilityIdentifier(source.errorID)
+            }
         }
         .padding(inset(12, 6))
         .background(.panelFill)
@@ -330,22 +385,28 @@ struct QuickOpenField: Component {
             if let listModel {
                 ListPaletteList(model: listModel) { listModel.pick($0) }
             } else {
-                QuickOpenList(rows: model.rows, selected: model.selected) { model.open($0, workspace: workspace) }
+                QuickOpenList(rows: source.rows, selected: source.selected, rowPrefix: source.rowPrefix, listID: source.listID) { source.pick($0) }
             }
         }
         .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("quick-open")
+        .accessibilityIdentifier(source.panelID)
     }
+}
+
+extension QuickOpenField where Source == QuickOpenSource {
+    init(workspace: Workspace, model: QuickOpenModel) { self.init(source: QuickOpenSource(workspace: workspace, model: model)) }
 }
 
 /// Up to 50 path rows, the selected one highlighted: `quick-open-row-<i>`. It draws its own background.
 struct QuickOpenList: Component {
     let rows: [String]
     let selected: Int
+    var rowPrefix = "quick-open-row"
+    var listID = "quick-open-list"
     let onPick: (Int) -> Void
 
     var content: some ElementGroup {
-        let rows = rows, selected = selected, onPick = onPick
+        let rows = rows, selected = selected, onPick = onPick, rowPrefix = rowPrefix, listID = listID
         ScrollView {
             VStack(alignment: .leading, spacing: Pixels(0)) {
                 ForEach(Array(rows.enumerated()), id: \.element) { i, path in
@@ -358,11 +419,11 @@ struct QuickOpenList: Component {
                     .background(i == selected ? Color.commandTint : Color.clear)
                     .onTapGesture { onPick(i) }
                     .accessibilityElement(children: .contain)
-                    .accessibilityIdentifier("quick-open-row-\(i)")
+                    .accessibilityIdentifier("\(rowPrefix)-\(i)")
                 }
             }
             .accessibilityElement(children: .contain)
-            .accessibilityIdentifier("quick-open-list")
+            .accessibilityIdentifier(listID)
         }
         .frame(width: Pixels(420))
         .frame(maxHeight: Pixels(320))

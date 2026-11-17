@@ -55,6 +55,19 @@ import Testing
         #expect(s.languageServers["gopls"]?.enabled == false)
         #expect(s.languageServers["ok"]?.languageIDs == ["x": "xx"])
     }
+
+    @Test func gitSettingsDecodeTolerantly() throws {
+        let support = tempSupport()
+        defer { try? FileManager.default.removeItem(at: support) }
+        let url = AlloySettings.url(appSupport: support)
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try #"{"theme":"nord"}"#.write(to: url, atomically: true, encoding: .utf8)
+        #expect(AlloySettings.load(appSupport: support).git == GitSettings())
+        #expect(GitSettings().liveMarks == false)
+        try #"{"git":{"liveMarks":"x","gitPath":"/g","gutterMarks":false}}"#.write(to: url, atomically: true, encoding: .utf8)
+        let g = AlloySettings.load(appSupport: support).git
+        #expect(g == GitSettings(gutterMarks: false, statusColours: true, liveMarks: false, gitPath: "/g"))
+    }
 }
 
 @Suite struct FormatSettingsTests {

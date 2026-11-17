@@ -68,14 +68,18 @@ struct EditorGroupView: Component {
         let known = barHeight.wrappedValue > 0 ? barHeight.wrappedValue : (store.metrics.filePanelBarHeight ?? style.filePanelBarHeightEstimate)
         let clear = known
         let showQuickOpen = quickOpen.isShowing && focused
-        let belowBar = showQuickOpen || notice != nil
+        let picker = (workspace.gitServices as? GitCoordinator)?.branchPicker
+        let showPicker = !quickOpen.isShowing && focused && (picker?.isShowing ?? false)
+        let belowBar = showQuickOpen || showPicker || notice != nil
         let focus: () -> Void = { [weak workspace] in workspace?.focusGroup(id: groupID) }
         VStack(alignment: .leading, spacing: 0) {
             if showQuickOpen {
                 VStack(spacing: 0) { QuickOpenField(workspace: workspace, model: quickOpen) }.padding(Self.topInset(clear))
+            } else if showPicker, let picker {
+                VStack(spacing: 0) { QuickOpenField(source: picker) }.padding(Self.topInset(clear))
             }
             fileBody(path: path, notice: notice, document: document, view: view, clear: belowBar ? 0 : clear,
-                     noticeClear: showQuickOpen ? 0 : clear, focus: focus)
+                     noticeClear: showQuickOpen || showPicker ? 0 : clear, focus: focus)
         }
         .overlay(alignment: .top) {
             GroupBar(workspace: workspace, groupID: groupID, path: path, document: document, view: view, focused: focused,

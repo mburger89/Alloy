@@ -2,7 +2,7 @@ import AlloyCore
 import MetalUI
 
 /// Alloy's additions to MetalUI's default menu bar, generated from the command registry: "Settings…" in the
-/// application menu (MetalUI's `.appSettings` group, which sits in its own section after About), a Go menu and a View
+/// application menu (MetalUI's `.appSettings` group, which sits in its own section after About), a Go menu, a Git menu and a View
 /// menu. Items, titles, accessibility ids and shortcuts come from the registered `CommandDescriptor`s and the keymap
 /// (so user overrides apply); see docs/command-registry.md. The content closures run when the bar is shown or a key
 /// reaches the command stage, so enabled state and shortcuts are live.
@@ -17,6 +17,10 @@ public func alloyCommands(center: CommandCenter) -> some Commands {
     }
     CommandMenu("Go") {
         for command in registry.commands(in: .go) { registryMenuItem(command, registry: registry) }
+    }
+    // Always present: the items are disabled with no repository, as the hand-built menu was.
+    CommandMenu("Git") {
+        for command in registry.commands(in: .git) { registryMenuItem(command, registry: registry) }
     }
     CommandMenu("View") {
         for command in registry.commands(in: .view) { registryMenuItem(command, registry: registry) }

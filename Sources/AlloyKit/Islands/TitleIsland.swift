@@ -24,7 +24,10 @@ struct TitleIsland: Component, Equatable {
             Spacer().frame(width: Pixels(Float(style.titleLightsSpacer(rightEdge: Double(titleBarInsets.left.value)))))
             Text(workspace.projectRoot.lastPathComponent).font(size: 13)
                 .accessibilityIdentifier("title-project")
-            if let branch = workspace.branchName {
+            if let branch = workspace.branchName, let coordinator = workspace.gitServices as? GitCoordinator {
+                Spacer().frame(width: Pixels(10))
+                BranchMenu(coordinator: coordinator, branch: branch).equatable()
+            } else if let branch = workspace.branchName {
                 Text("\u{2387} \(branch)").font(size: 11).foregroundColor(.mutedInk)
                     .padding(Edges(top: Pixels(0), right: Pixels(0), bottom: Pixels(0), left: Pixels(10)))
                     .accessibilityIdentifier("title-branch")

@@ -104,6 +104,17 @@ private func ratio(_ a: RGB, _ b: RGB) -> Double {
         for (name, c) in authors { add("sidebar.files.dot.\(name)", c, [.sidebarFill], 3) }
         add("sidebar.errors", text, [.warningTint], 4.5)
 
+        // Git: file tree names on the sidebar and island fills (selected row too), and the gutter bars on the island.
+        let gitInks: [(String, Color)] = [("modified", .gitModifiedInk), ("added", .gitAddedInk), ("renamed", .gitRenamedInk),
+                                          ("untracked", .gitUntrackedInk), ("conflict", .gitConflictInk), ("ignored", .gitIgnoredInk)]
+        for (name, c) in gitInks {
+            add("git.tree.\(name).sidebar", c, [.sidebarFill], 4.5)
+            add("git.tree.\(name).island", c, [.islandFill], 4.5)
+        }
+        for (name, c) in [("added", Color.gitBarAdded), ("modified", .gitBarModified), ("deleted", .gitBarDeleted)] {
+            add("git.bar.\(name)", c, [.islandFill], 3)
+        }
+
         // Chat blocks: every kind's tint with title, summary, header icon and link.
         for kind in BlockKind.allCases {
             let s = BlockStyle.style(kind)
@@ -359,7 +370,7 @@ private func ratio(_ a: RGB, _ b: RGB) -> Double {
         let ids = Set(Self.pairs().map(\.id))
         #expect(ids.count > 250)
         for must in ["sidebar.selected.secondary", "chat.shell.title", "syntax.keyword.panelRemoved", "composer.placeholder",
-                     "panel.code.gutter", "text.secondary.on.surface", "coordination.mark.error", "coordination.notice.warning.text", "tabs.hover", "themebar.text", "disabled.onSurface", "settings.secondary"] {
+                     "panel.code.gutter", "text.secondary.on.surface", "coordination.mark.error", "coordination.notice.warning.text", "tabs.hover", "themebar.text", "disabled.onSurface", "settings.secondary", "git.tree.modified.sidebar", "git.bar.deleted"] {
             #expect(ids.contains(must), "\(must) is audited")
         }
     }

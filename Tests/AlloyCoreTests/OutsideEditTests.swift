@@ -222,6 +222,27 @@ import Testing
         #expect(e.ws.ledger.files.isEmpty)
     }
 
+    @Test func worktreeChangedFiresForProjectFilesNotGitPaths() async throws {
+        let e = Env(); defer { e.cleanup() }
+        var worktree: [String] = [], git: [String] = []
+        e.ws.worktreeChanged = { worktree += $0 }
+        e.ws.gitChanged = { git += $0 }
+        try FileManager.default.createDirectory(at: e.url(".git"), withIntermediateDirectories: true)
+        e.write("a.txt", "x\n"); e.write(".git/index", "i\n")
+        await e.send(["a.txt", ".git/index"])
+        await waitUntil("hooks called") { !worktree.isEmpty && !git.isEmpty }
+        e.clock.advance(by: 0.5)
+        await e.ws.settle()
+        #expect(worktree == ["a.txt"])
+        #expect(git == [".git/index"])
+        worktree = []
+        await e.send([".git/HEAD"])
+        await waitUntil("git window open") { e.clock.pendingSleepers == 1 && e.ws.gitDebounce != nil }
+        e.clock.advance(by: 0.5)
+        await e.ws.settle()
+        #expect(worktree.isEmpty)
+    }
+
     // MARK: Open buffers
 
     @Test func cleanBufferFollowsOutsideEdit() async throws {

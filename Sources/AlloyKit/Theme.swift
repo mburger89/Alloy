@@ -73,6 +73,35 @@ struct ErrorInk: ThemeColorKey {
 struct WarningInk: ThemeColorKey {
     static let defaultValue = Color(light: Color(hex: 0x875A00), dark: Color(hex: 0xE3B341))
 }
+/// File tree names and gutter bars for git state. Ink keys read as text on the sidebar and island fills (4.5:1); the bar
+/// keys are glyph-sized marks (3:1). Audited in `ContrastAuditTests`.
+struct GitModifiedInk: ThemeColorKey {
+    static let defaultValue = Color(light: Color(hex: 0x875A00), dark: Color(hex: 0xE3B341))
+}
+struct GitAddedInk: ThemeColorKey {
+    static let defaultValue = Color(light: Color(hex: 0x166A2F), dark: Color(hex: 0x56D364))
+}
+struct GitRenamedInk: ThemeColorKey {
+    static let defaultValue = Color(light: Color(hex: 0x0757B8), dark: Color(hex: 0x58A6FF))
+}
+struct GitUntrackedInk: ThemeColorKey {
+    static let defaultValue = Color(light: Color(hex: 0x0A6870), dark: Color(hex: 0x4FC3CF))
+}
+struct GitConflictInk: ThemeColorKey {
+    static let defaultValue = Color(light: Color(hex: 0xB81D28), dark: Color(hex: 0xFF7B72))
+}
+struct GitIgnoredInk: ThemeColorKey {
+    static let defaultValue = Color(light: Color(hex: 0x666C78), dark: Color(hex: 0x9AA0AC))
+}
+struct GitBarAdded: ThemeColorKey {
+    static let defaultValue = Color(light: Color(hex: 0x1A7F37), dark: Color(hex: 0x56D364))
+}
+struct GitBarModified: ThemeColorKey {
+    static let defaultValue = Color(light: Color(hex: 0x0969DA), dark: Color(hex: 0x58A6FF))
+}
+struct GitBarDeleted: ThemeColorKey {
+    static let defaultValue = Color(light: Color(hex: 0xB81D28), dark: Color(hex: 0xFF7B72))
+}
 struct SidebarFillKey: ThemeColorKey {
     static let defaultValue = Color(light: Color(hex: 0xEFF0F3), dark: Color(hex: 0x1D2027))
 }
@@ -219,6 +248,15 @@ extension Color {
     static let planInk = Color(PlanInk.self)
     static let errorInk = Color(ErrorInk.self)
     static let warningInk = Color(WarningInk.self)
+    static let gitModifiedInk = Color(GitModifiedInk.self)
+    static let gitAddedInk = Color(GitAddedInk.self)
+    static let gitRenamedInk = Color(GitRenamedInk.self)
+    static let gitUntrackedInk = Color(GitUntrackedInk.self)
+    static let gitConflictInk = Color(GitConflictInk.self)
+    static let gitIgnoredInk = Color(GitIgnoredInk.self)
+    static let gitBarAdded = Color(GitBarAdded.self)
+    static let gitBarModified = Color(GitBarModified.self)
+    static let gitBarDeleted = Color(GitBarDeleted.self)
     static let sidebarFill = Color(SidebarFillKey.self)
     static let chatFill = Color(ChatFillKey.self)
     static let panelFill = Color(PanelFillKey.self)

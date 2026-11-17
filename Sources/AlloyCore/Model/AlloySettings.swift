@@ -3,6 +3,31 @@ import Foundation
 /// How the app picks its theme: one theme always, or a light and a dark theme that follow the system.
 public enum ThemeMode: String, Codable, Sendable { case single, matchSystem }
 
+/// Git integration settings.
+public struct GitSettings: Codable, Equatable, Sendable {
+    public var gutterMarks: Bool
+    public var statusColours: Bool
+    /// Recompute gutter marks after a typing pause (off: marks update on save and outside changes only).
+    public var liveMarks: Bool
+    /// A git executable to use instead of the one found on `PATH`; empty means search.
+    public var gitPath: String
+
+    public init(gutterMarks: Bool = true, statusColours: Bool = true, liveMarks: Bool = false, gitPath: String = "") {
+        self.gutterMarks = gutterMarks; self.statusColours = statusColours; self.liveMarks = liveMarks; self.gitPath = gitPath
+    }
+
+    private enum CodingKeys: String, CodingKey { case gutterMarks, statusColours, liveMarks, gitPath }
+
+    /// Every key is optional and a wrong-typed value falls back to its default without losing the others.
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        gutterMarks = (try? c.decodeIfPresent(Bool.self, forKey: .gutterMarks)) ?? true
+        statusColours = (try? c.decodeIfPresent(Bool.self, forKey: .statusColours)) ?? true
+        liveMarks = (try? c.decodeIfPresent(Bool.self, forKey: .liveMarks)) ?? false
+        gitPath = (try? c.decodeIfPresent(String.self, forKey: .gitPath)) ?? ""
+    }
+}
+
 /// User settings at `<appSupport>/Alloy/settings.json`.
 public struct AlloySettings: Codable, Equatable, Sendable {
     public var claudePath: String?
@@ -49,6 +74,9 @@ public struct AlloySettings: Codable, Equatable, Sendable {
     /// empty string to hide the image the theme file names. A theme with no entry shows its file's own image, if any.
     public var backgroundImages: [String: String]
 
+    /// Git integration (gutter marks, status colours, git path).
+    public var git: GitSettings
+
     /// The integrated terminal's preferences.
     public var terminal: TerminalSettings
 
@@ -77,8 +105,9 @@ public struct AlloySettings: Codable, Equatable, Sendable {
                 backgroundImages: [String: String] = [:], terminal: TerminalSettings = TerminalSettings(),
                 keybindings: [String: String] = [:],
                 searchMaxResults: Int = AlloySettings.defaultSearchMaxResults, searchExcludes: [String] = [],
-                formatters: [String: String] = [:]) {
+                formatters: [String: String] = [:], git: GitSettings = GitSettings()) {
         self.terminal = terminal
+        self.git = git
         self.searchMaxResults = min(max(searchMaxResults, Self.searchResultRange.lowerBound), Self.searchResultRange.upperBound)
         self.searchExcludes = searchExcludes
         self.keybindings = keybindings
@@ -101,7 +130,7 @@ public struct AlloySettings: Codable, Equatable, Sendable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case claudePath, lastProjectPath, shareKnowledge, shareAcrossProjects, askBeforeSharedNotes, followEdits, paletteShowsDisabled, themeMode, theme, lightTheme, darkTheme, languageServers, appearance, glass, backgroundImages, keybindings, searchMaxResults, searchExcludes, terminal, formatters
+        case claudePath, lastProjectPath, shareKnowledge, shareAcrossProjects, askBeforeSharedNotes, followEdits, paletteShowsDisabled, themeMode, theme, lightTheme, darkTheme, languageServers, appearance, glass, backgroundImages, keybindings, searchMaxResults, searchExcludes, terminal, formatters, git
     }
 
     /// Every key is optional, so a file written by an older Alloy still loads with its values intact.
@@ -129,6 +158,7 @@ public struct AlloySettings: Codable, Equatable, Sendable {
         searchMaxResults = min(max(maxResults, Self.searchResultRange.lowerBound), Self.searchResultRange.upperBound)
         searchExcludes = (try? c.decodeIfPresent([String].self, forKey: .searchExcludes)) ?? []
         keybindings = (try? c.decodeIfPresent([String: String].self, forKey: .keybindings)) ?? [:]
+        git = (try? c.decodeIfPresent(GitSettings.self, forKey: .git)) ?? GitSettings()
         // Entry by entry: one malformed override is dropped without losing the others.
         let lossy = (try? c.decodeIfPresent([String: LossyOverride].self, forKey: .languageServers)) ?? nil
         languageServers = (lossy ?? [:]).compactMapValues(\.value)

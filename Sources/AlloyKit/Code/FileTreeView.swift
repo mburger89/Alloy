@@ -71,24 +71,30 @@ struct FileTreeNodeRow: Component {
                     FileTreeNodeRow(workspace: workspace, entry: $0)
                 }
             } label: {
-                FileTreeLabel(workspace: workspace, entry: entry)
+                FileTreeLabel(workspace: workspace, entry: entry).equatable()
             }
         } else {
-            FileTreeLabel(workspace: workspace, entry: entry)
+            FileTreeLabel(workspace: workspace, entry: entry).equatable()
         }
     }
 }
 
-/// The icon, the name and the change mark of one entry.
-struct FileTreeLabel: Component {
+/// The icon, the name and the change mark of one entry. It is `Equatable` and used with `.equatable()`, so a git status
+/// change re-runs the one label that reads that row's cell, not the labels around it.
+struct FileTreeLabel: Component, Equatable {
     let workspace: Workspace
     let entry: FileTreeEntry
 
+    nonisolated static func == (a: Self, b: Self) -> Bool { a.workspace === b.workspace && a.entry == b.entry }
+
     var content: some ProposalElementGroup {
+        let _ = BodyProbe.hit("FileTreeLabel", tag: entry.path)
         let mark = workspace.fileTree.marks[entry.path]
+        // Only this row's cell is read, so a status change re-runs this label and no other.
+        let gitStatus = (workspace.gitServices as? GitCoordinator)?.tree.cell(for: entry.path).status
         HStack(spacing: fileTreeRowGap) {
             Image(systemName: entry.isFolder ? "folder" : "doc").font(.system(size: fileTreeIconSize)).foregroundColor(.mutedInk)
-            Text(verbatim: entry.name).font(size: fileTreeFontSize)
+            Text(verbatim: entry.name).font(size: fileTreeFontSize).foregroundColor(Self.gitColor(gitStatus))
             Spacer()
             if let mark {
                 Circle().fill(Self.color(mark, sessions: workspace.sessions)).frame(width: fileTreeMarkSize, height: fileTreeMarkSize)
@@ -97,6 +103,20 @@ struct FileTreeLabel: Component {
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("file-tree-row-\(entry.path)")
+        .accessibilityValue(gitStatus?.accessibilityName ?? "")
+    }
+
+    /// The name's colour for a git status; nil keeps the row's own text colour.
+    @MainActor static func gitColor(_ status: GitDisplayStatus?) -> Color? {
+        switch status {
+        case .modified: .gitModifiedInk
+        case .added: .gitAddedInk
+        case .renamed: .gitRenamedInk
+        case .untracked: .gitUntrackedInk
+        case .conflicted: .gitConflictInk
+        case .ignored: .gitIgnoredInk
+        case nil: nil
+        }
     }
 
     @MainActor static func color(_ mark: ChangeMark, sessions: [Session]) -> Color {

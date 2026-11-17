@@ -43,7 +43,7 @@ extension Workspace {
                        chatCollapsed: codeLayout.chatCollapsed, layout: layout, expandedFolders: expandedFolders.sorted(),
                        terminal: terminalLayout == TerminalLayout() ? nil : terminalLayout,
                        recentCommands: recentCommands,
-                       sidebarTab: codeLayout.sidebarTab, lastSearch: lastSearch)
+                       sidebarTab: codeLayout.sidebarTab, lastSearch: lastSearch, gitCommitDraft: persistedCommitDraft)
     }
 
     /// Moves `id` to the front of this project's recent commands (capped); does nothing, and writes nothing, when it is
@@ -72,6 +72,7 @@ extension Workspace {
         // Installed hidden or visible as saved; no shell starts here (panes spawn lazily, `spawned` is empty).
         terminalLayout = state.terminal ?? TerminalLayout()
         recentCommands = state.recentCommands
+        persistedCommitDraft = state.gitCommitDraft
     }
 
     /// Which of `files` and `folders` (project-relative) exist; read off the main actor.

@@ -265,6 +265,7 @@ extension Workspace {
             gitChanged?(git)
             if git.contains(where: Self.isBaselineEvent) { baselineEventSeen() }
         }
+        if !rels.isEmpty, !isShuttingDown { worktreeChanged?(rels.keys.sorted()) }
     }
 
     /// The project-relative form of an event path ("" for the root itself), or nil outside the project.
@@ -466,94 +467,9 @@ extension Workspace {
         return await Task.detached { TextDiff.same(head, text) ? nil : head }.value
     }
 
-    /// Whether a developer toolchain is selected. `xcode-select -p` never shows a dialog, unlike running the
-    /// `/usr/bin/git` shim without one, and it accepts an Xcode.app-only setup.
-    nonisolated private static let gitUsable: Bool = {
-        guard FileManager.default.isExecutableFile(atPath: "/usr/bin/git") else { return false }
-        if ProcessInfo.processInfo.environment["DEVELOPER_DIR"] != nil { return true }
-        let p = Process()
-        p.executableURL = URL(fileURLWithPath: "/usr/bin/xcode-select")
-        p.arguments = ["-p"]
-        p.standardOutput = FileHandle.nullDevice; p.standardError = FileHandle.nullDevice; p.standardInput = FileHandle.nullDevice
-        guard (try? p.run()) != nil else { return false }
-        p.waitUntilExit()
-        return p.terminationStatus == 0
-    }()
-
-    /// Runs git in `root` and returns its standard output when it exits 0. The wait does not occupy a thread of the
-    /// cooperative pool: output is read by a readability handler and the exit arrives through the termination
-    /// handler. A hung git gets SIGTERM after `terminateAfter` seconds and SIGKILL after `killAfter`, when the run
-    /// also gives up with nil whatever the process does; only the process started here is ever signalled.
+    /// Runs git in `root` (read-only) and returns its standard output when it exits 0, else nil. See `GitProcess.run`.
     nonisolated static func gitRun(_ args: [String], in root: URL, terminateAfter: Double = 10, killAfter: Double = 12) async -> Data? {
-        guard gitUsable else { return nil }
-        return await withCheckedContinuation { (continuation: CheckedContinuation<Data?, Never>) in
-            let process = Process()
-            process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
-            process.arguments = args
-            process.currentDirectoryURL = root
-            var env = ProcessInfo.processInfo.environment
-            env["GIT_OPTIONAL_LOCKS"] = "0"; env["GIT_TERMINAL_PROMPT"] = "0"; env["GIT_LITERAL_PATHSPECS"] = "1"
-            process.environment = env
-            let out = Pipe()
-            process.standardOutput = out
-            process.standardError = FileHandle.nullDevice
-            process.standardInput = FileHandle.nullDevice
-            let run = GitRun(continuation)
-            out.fileHandleForReading.readabilityHandler = { handle in
-                let chunk = handle.availableData
-                if chunk.isEmpty { handle.readabilityHandler = nil; run.outputEnded() } else { run.append(chunk) }
-            }
-            process.terminationHandler = { run.exited($0.terminationStatus) }
-            do { try process.run() } catch {
-                out.fileHandleForReading.readabilityHandler = nil
-                run.fail()
-                return
-            }
-            let box = ProcessBox(process)
-            DispatchQueue.global().asyncAfter(deadline: .now() + terminateAfter) { box.terminateIfRunning() }
-            DispatchQueue.global().asyncAfter(deadline: .now() + killAfter) { box.killIfRunning(); run.fail() }
-        }
+        let r = await GitProcess.run(args, in: root, readOnly: true, terminateAfter: terminateAfter, killAfter: killAfter)
+        return r.status == 0 ? r.stdout : nil
     }
-}
-
-/// The state of one git run: output so far, whether it ended, how the process exited; resumes once.
-private final class GitRun: @unchecked Sendable {
-    private let lock = NSLock()
-    private var data = Data()
-    private var ended = false
-    private var status: Int32?
-    private var done = false
-    private let continuation: CheckedContinuation<Data?, Never>
-
-    init(_ c: CheckedContinuation<Data?, Never>) { continuation = c }
-
-    func append(_ chunk: Data) { lock.withLock { data.append(chunk) } }
-    func outputEnded() { lock.withLock { ended = true }; finishIfReady() }
-    func exited(_ code: Int32) {
-        lock.withLock { status = code }
-        finishIfReady()
-        // A grandchild holding the pipe open must not hold the result back.
-        DispatchQueue.global().asyncAfter(deadline: .now() + 1) { [self] in lock.withLock { ended = true }; finishIfReady() }
-    }
-    func fail() { resume(nil) }
-
-    private func finishIfReady() {
-        let result: Data?? = lock.withLock {
-            guard ended, let status, !done else { return nil }
-            return .some(status == 0 ? data : nil)
-        }
-        if let result { resume(result) }
-    }
-
-    private func resume(_ value: Data?) {
-        let first = lock.withLock { () -> Bool in defer { done = true }; return !done }
-        if first { continuation.resume(returning: value) }
-    }
-}
-
-private final class ProcessBox: @unchecked Sendable {
-    private let process: Process
-    init(_ p: Process) { process = p }
-    func terminateIfRunning() { if process.isRunning { process.terminate() } }
-    func killIfRunning() { if process.isRunning { kill(process.processIdentifier, SIGKILL) } }
 }

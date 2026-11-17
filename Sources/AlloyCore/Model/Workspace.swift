@@ -338,6 +338,8 @@ public final class Workspace {
     @ObservationIgnored package var editorScans = 0
     /// Called with the changed paths under `.git/` (absolute), coalesced like other outside changes. Task 5 sets it.
     @ObservationIgnored public var gitChanged: (([String]) -> Void)?
+    /// Called with the project-relative, non-`.git` paths of an outside-change batch (before the open-document filter).
+    @ObservationIgnored public var worktreeChanged: (([String]) -> Void)?
     // Outside-edit watcher state (see OutsideEdits.swift).
     @ObservationIgnored let changeFactory: (URL) -> any FileChangeSource
     @ObservationIgnored var watchTask: Task<Void, Never>?
@@ -476,6 +478,14 @@ public final class Workspace {
     @ObservationIgnored public var intelHooks = IntelHooks()
     /// An opaque slot for the UI layer's language-server coordinator (AlloyCore cannot name that type).
     @ObservationIgnored public var languageServices: AnyObject?
+    /// Called after a settings update changed the git settings.
+    @ObservationIgnored public var onGitSettingsChanged: (@MainActor (GitSettings) -> Void)?
+    /// An opaque slot for the UI layer's git coordinator.
+    @ObservationIgnored public var gitServices: AnyObject?
+    /// The clock the workspace's timers use; the git service shares it so tests drive both by hand.
+    public var scheduleClock: any AutosaveClock { autosaveClock }
+    /// The unsent commit message of the Git tab.
+    @ObservationIgnored public var persistedCommitDraft: String? { didSet { if persistedCommitDraft != oldValue { scheduleUIStateWrite() } } }
     /// Set by `stopAll()` and never cleared: from then on nothing launches a process.
     public private(set) var isShuttingDown = false
     /// Launches between their start and end; `stopAll()` waits for them to drain.
@@ -676,8 +686,10 @@ public final class Workspace {
             || s.shareAcrossProjects != settings.shareAcrossProjects
         let visibilityChanged = s.shareKnowledge != settings.shareKnowledge || s.shareAcrossProjects != settings.shareAcrossProjects
         let serversChanged = s.languageServers != settings.languageServers
+        let gitChanged = s.git != settings.git
         let keybindingsChanged = s.keybindings != settings.keybindings
         settings = s
+        if gitChanged { onGitSettingsChanged?(s.git) }
         if keybindingsChanged { onKeybindingsChanged?(s.keybindings) }
         themeWorkshop?.settingsDidChange()
         if serversChanged { onLanguageServersChanged?(s.languageServers) }

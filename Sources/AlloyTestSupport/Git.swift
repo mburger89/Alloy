@@ -23,3 +23,23 @@ public func git(_ dir: URL, _ args: String...) throws -> String {
     guard p.terminationStatus == 0 else { throw GitFailure(arguments: args, status: p.terminationStatus) }
     return String(decoding: data, as: UTF8.self)
 }
+
+/// Writes `text` to `rel` under `root`, creating parent directories.
+public func writeFile(_ root: URL, _ rel: String, _ text: String) throws {
+    let url = root.appendingPathComponent(rel)
+    try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+    try text.write(to: url, atomically: true, encoding: .utf8)
+}
+
+/// A throwaway repository on branch `main` with `files`, optionally committed. The caller removes the directory.
+public func makeRepo(files: [String: String], commit: Bool = true) throws -> URL {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent("alloy-repo-" + UUID().uuidString)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    try git(root, "init", "-q", "-b", "main")
+    for (rel, text) in files { try writeFile(root, rel, text) }
+    if commit {
+        try git(root, "add", "-A")
+        try git(root, "commit", "-q", "-m", "initial")
+    }
+    return root
+}

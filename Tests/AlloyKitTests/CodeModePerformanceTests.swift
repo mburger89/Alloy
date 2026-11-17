@@ -22,15 +22,38 @@ import Testing
         var documentGrew: Bool
     }
 
+    /// Keeps the coordinators of the rigs alive for the test's length.
+    private final class CoordinatorBox { var all: [GitCoordinator] = [] }
+    private let coordinatorBox = CoordinatorBox()
+    private var gitCoordinators: [GitCoordinator] { coordinatorBox.all }
+
     func exists(_ window: TestWindow, _ id: String) -> Bool { (try? window.element(identifier: id)) != nil }
 
     /// A window on `layout` with login.swift open (plus other.swift in the third group), settled; `codeViewID` is the
     /// code view that takes the typing.
     /// `install` runs on the rig before anything is opened (a test that needs a language server puts it there).
-    func rigged(_ layout: Layout, install: ((Rig) -> Void)? = nil) async throws -> (rig: Rig, window: TestWindow, codeViewID: String) {
+    /// With `git`, the project is a committed repository with a git coordinator installed and its first status read
+    /// before any frame is measured (later git tasks extend this rig with tree colours, marks and the Git tab).
+    func rigged(_ layout: Layout, git useGit: Bool = false, gitTab: Bool = false, install: ((Rig) -> Void)? = nil) async throws -> (rig: Rig, window: TestWindow, codeViewID: String) {
         let (rig, _) = try await editedRig()
         install?(rig)
         try "let other = 1\n".write(to: rig.root.appendingPathComponent("other.swift"), atomically: true, encoding: .utf8)
+        if useGit {
+            try git(rig.root, "init", "-q", "-b", "main")
+            // login.swift is committed as it was before the session's edit, so its edited line shows as a gutter mark.
+            try panelOldText.write(to: rig.root.appendingPathComponent("login.swift"), atomically: true, encoding: .utf8)
+            try git(rig.root, "add", "login.swift", "other.swift")
+            try git(rig.root, "commit", "-qm", "initial")
+            try panelNewText.write(to: rig.root.appendingPathComponent("login.swift"), atomically: true, encoding: .utf8)
+            // One modified tracked file and one untracked, so tree rows carry colours.
+            try "let other = 2\n".write(to: rig.root.appendingPathComponent("other.swift"), atomically: true, encoding: .utf8)
+            try "notes\n".write(to: rig.root.appendingPathComponent("notes.txt"), atomically: true, encoding: .utf8)
+            let coordinator = GitCoordinator.install(on: rig.workspace)
+            await coordinator.service.refreshNow()
+            // The title island shows its branch as a menu.
+            rig.workspace.baselineEventSeen()
+            coordinatorBox.all.append(coordinator)
+        }
         let workspace = rig.workspace
         if layout == .chat {
             workspace.openFilePath = "login.swift"
@@ -51,11 +74,20 @@ import Testing
             _ = g1
         }
         workspace.focusGroup(id: g0)
+        if gitTab, let coordinator = gitCoordinators.last { coordinator.sidebar.tab = .git }
         let window = try alloyWindow(workspace)
         let id = "code-view-\(g0.uuidString)"
         try await window.runUntil { self.exists(window, id) }
+        if gitTab { try await window.runUntil { self.exists(window, "git-row-notes.txt") } }
         let groups = workspace.codeLayout.tree.groupIDs
         try await window.runUntil { groups.allSatisfy { g in self.exists(window, "code-group-\(g.uuidString)") } }
+        if useGit, let doc = workspace.document("login.swift"), let view = CodePanelStore.existingView(for: doc, in: .group(g0)) {
+            // The modified file's marks are in the gutter before anything is measured, and no popover is open.
+            for _ in 0..<3000 where !(view.gitMarks?.isShowing ?? false) { window.tick(); try? await Task.sleep(nanoseconds: 1_000_000) }
+            #expect(view.gitMarks?.isShowing == true, "the modified file shows its marks")
+            #expect(view.selectedGitHunk == nil)
+            for _ in 0..<10 { window.tick(); await Task.yield() }
+        }
         return (rig, window, id)
     }
 
@@ -89,8 +121,10 @@ import Testing
         return Typing(perFrame: work, requests: work.reduce(0, +), bodies: bodies, reruns: reruns, documentGrew: doc.buffer.version != version)
     }
 
+    private static let gitTabNames = ["GitTab", "GitReadyTab", "GitHeader", "GitBanners", "GitFileRow", "GitListRow", "GitCommitBox", "GitErrorLine"]
+
     static let watched = ["IslandRow", "CodeIslandRow", "EditorAreaView", "EditorGroupView", "GroupBar", "GroupTabStrip", "FilePanelHeader",
-                                  "FileTabStrip", "CodeChatColumn", "CodeSidebarView", "TitleIsland", "IslandBackdrop", "GlassBackdrop",
+                                  "FileTabStrip", "CodeChatColumn", "CodeSidebarView", "TitleIsland", "BranchMenu", "IslandBackdrop", "GlassBackdrop",
                                   "ChatView", "ChatColumn", "SidebarView", "AlloyScreen", "CodePanel", "FilePanelView", "TranscriptView"]
 
     /// Every probe's count change over `body`, run synchronously (see `probed` in ViewRerunTests).
@@ -110,9 +144,21 @@ import Testing
     static let steadyCode2 = 62
     static let steadyCode3 = 72
 
-    func guardTyping(_ layout: Layout, steady: Int) async throws {
-        let (rig, window, id) = try await rigged(layout)
-        let t = try await typing(window, rig, codeViewID: id, names: Self.watched)
+    func guardTyping(_ layout: Layout, steady: Int, git useGit: Bool = false, gitTab: Bool = false, blame: Bool = false) async throws {
+        let (rig, window, id) = try await rigged(layout, git: useGit, gitTab: gitTab)
+        if blame {
+            // File blame on before anything is measured: the lane is reserved once, at the toggle.
+            let g0 = rig.workspace.codeLayout.focusedGroupID
+            let doc = try #require(rig.workspace.document("login.swift"))
+            let view = try #require(CodePanelStore.existingView(for: doc, in: .group(g0)))
+            try #require(gitCoordinators.last).toggleFileBlame(in: view)
+            for _ in 0..<3000 where view.blame.runs.isEmpty { window.tick(); try? await Task.sleep(nanoseconds: 1_000_000) }
+            #expect(!view.blame.runs.isEmpty, "blame loaded")
+            for _ in 0..<10 { window.tick(); await Task.yield() }
+        }
+        let spawned = gitCoordinators.last?.spawnCount
+        if useGit { #expect(exists(window, "title-branch"), "the git rig shows the branch menu") }
+        let t = try await typing(window, rig, codeViewID: id, names: Self.watched + Self.gitTabNames)
         #expect(t.documentGrew)
         #expect(t.perFrame.allSatisfy { $0 <= steady + 2 }, "per-frame element requests \(t.perFrame)")
         #expect(t.requests <= steady * 20 * 102 / 100, "element requests \(t.requests)")
@@ -121,11 +167,17 @@ import Testing
                   "ChatView", "ChatColumn", "TranscriptView", "AlloyScreen"] {
             #expect(t.reruns[n] == 0, "\(layout) \(n) re-ran \(t.reruns[n] ?? -1) times")
         }
+        // The branch menu in the title island is left alone by typing.
+        if useGit { #expect(t.reruns["BranchMenu"] == 0, "\(layout) BranchMenu re-ran \(t.reruns["BranchMenu"] ?? -1) times") }
+        // The Git tab, when shown, is left alone by typing in the editor.
+        if gitTab { for n in Self.gitTabNames { #expect(t.reruns[n] == 0, "\(layout) \(n) re-ran \(t.reruns[n] ?? -1) times") } }
         // The bar shows the dirty dot: one re-run for clean to dirty, none per keystroke after that.
         for n in ["GroupBar", "GroupTabStrip", "FilePanelHeader"] { #expect(t.reruns[n]! <= 1, "\(layout) \(n) \(t.reruns[n]!)") }
         // No body is evaluated per keystroke beyond Chat's own (typing is the code view's element alone).
         let chat = try await chatBodies()
         #expect(t.bodies <= chat, "\(layout) bodies \(t.bodies) > chat \(chat)")
+        // Typing starts no git process: marks and status wait for a save or an outside change.
+        if useGit { #expect(gitCoordinators.last?.spawnCount == spawned, "typing spawned git") }
         withExtendedLifetime((rig, window)) {}
     }
 
@@ -139,6 +191,107 @@ import Testing
     @Test func typingInCodeModeHoldsTheSteadyFrameGuard() async throws { try await guardTyping(.code1, steady: Self.steadyCode1) }
     @Test func typingWithTwoGroupsHoldsItsGuard() async throws { try await guardTyping(.code2, steady: Self.steadyCode2) }
     @Test func typingWithThreeGroupsHoldsItsGuard() async throws { try await guardTyping(.code3, steady: Self.steadyCode3) }
+
+    // The same guards with a git coordinator installed: the numbers do not move.
+    @Test func typingWithGitOnHoldsTheGuardCode1() async throws { try await guardTyping(.code1, steady: Self.steadyCode1, git: true) }
+    @Test func typingWithGitOnHoldsTheGuardCode2() async throws { try await guardTyping(.code2, steady: Self.steadyCode2, git: true) }
+    @Test func typingWithGitOnHoldsTheGuardCode3() async throws { try await guardTyping(.code3, steady: Self.steadyCode3, git: true) }
+
+    // The same guards with file blame on: typing holds the numbers and spawns nothing.
+    @Test func typingWithFileBlameHoldsTheGuardCode1() async throws { try await guardTyping(.code1, steady: Self.steadyCode1, git: true, blame: true) }
+    @Test func typingWithFileBlameHoldsTheGuardCode2() async throws { try await guardTyping(.code2, steady: Self.steadyCode2, git: true, blame: true) }
+    @Test func typingWithFileBlameHoldsTheGuardCode3() async throws { try await guardTyping(.code3, steady: Self.steadyCode3, git: true, blame: true) }
+
+    // The final guard: everything on at once (marks, status colours, the Git tab shown, file blame, the branch menu).
+    @Test func typingWithEverythingOnHoldsTheGuardCode1() async throws { try await guardTyping(.code1, steady: Self.steadyCode1, git: true, gitTab: true, blame: true) }
+    @Test func typingWithEverythingOnHoldsTheGuardCode2() async throws { try await guardTyping(.code2, steady: Self.steadyCode2, git: true, gitTab: true, blame: true) }
+    @Test func typingWithEverythingOnHoldsTheGuardCode3() async throws { try await guardTyping(.code3, steady: Self.steadyCode3, git: true, gitTab: true, blame: true) }
+
+    /// Chat mode with a coordinator installed costs what it did without one (the Chat guard).
+    @Test func typingInChatWithACoordinatorHoldsTheChatGuard() async throws { try await guardTyping(.chat, steady: ViewRerunTests.steadyFrameRequests, git: true) }
+
+    /// The hidden mode builds nothing for git: a coordinator in Chat mode runs no git body and no process on idle frames.
+    @Test func theHiddenModeBuildsNothingForGit() async throws {
+        let (rig, window, _) = try await rigged(.code1, git: true, gitTab: true)
+        let coordinator = try #require(gitCoordinators.last)
+        rig.workspace.setMode(.chat)
+        for _ in 0..<10 { window.tick(); await Task.yield() }
+        let spawned = coordinator.spawnCount
+        var chat: [String: Int] = [:]
+        for _ in 0..<20 { for (k, v) in allProbes({ window.tick() }) { chat[k, default: 0] += v }; await Task.yield() }
+        for n in Self.gitTabNames + ["GitReadyTab", "CodeSidebarView", "FileTreeView"] { #expect(chat[n] == nil, "Chat mode ran \(n) \(chat[n] ?? 0) times") }
+        #expect(coordinator.spawnCount == spawned)
+        withExtendedLifetime(rig) {}
+    }
+
+    // The same guards with the Git tab showing in the sidebar.
+    @Test func typingWithGitTabHoldsTheGuardCode1() async throws { try await guardTyping(.code1, steady: Self.steadyCode1, git: true, gitTab: true) }
+    @Test func typingWithGitTabHoldsTheGuardCode2() async throws { try await guardTyping(.code2, steady: Self.steadyCode2, git: true, gitTab: true) }
+    @Test func typingWithGitTabHoldsTheGuardCode3() async throws { try await guardTyping(.code3, steady: Self.steadyCode3, git: true, gitTab: true) }
+
+    /// Idle frames with the Git tab showing: no body runs, no process starts.
+    @Test func idleTicksWithGitTabSpawnNothingAndCostZero() async throws {
+        let (rig, window, id) = try await rigged(.code1, git: true, gitTab: true)
+        let coordinator = try #require(gitCoordinators.last)
+        for focused in [false, true] {
+            if focused { try window.click(window.element(identifier: id)) }
+            for _ in 0..<15 { window.tick(); await Task.yield() }
+            let spawned = coordinator.spawnCount
+            var reruns: [String: Int] = [:]
+            for _ in 0..<20 {
+                rig.clock.advance(by: 1)
+                for (k, v) in allProbes({ window.tick() }) { reruns[k, default: 0] += v }
+                await Task.yield()
+            }
+            #expect(reruns.isEmpty, "idle ticks with the Git tab re-ran \(reruns)")
+            #expect(coordinator.spawnCount == spawned)
+        }
+        withExtendedLifetime((rig, window)) {}
+    }
+
+    /// A file in `.compareHead` is a new presentation (two code views): typing in its right pane is measured against
+    /// its own guard, and the `.plain` guards above hold 46/62/72.
+    private static let steadyCompare = 77   // measured 75 per frame in `.compareHead` (two code views and the hunk bar)
+
+    @Test func typingInCompareHeadStaysWithinItsGuard() async throws {
+        let (rig, window, _) = try await rigged(.code1, git: true)
+        let workspace = rig.workspace
+        let g0 = workspace.codeLayout.focusedGroupID
+        let doc = try #require(workspace.document("login.swift"))
+        let view = try #require(CodePanelStore.existingView(for: doc, in: .group(g0)))
+        workspace.setPresentation(.compareHead, of: "login.swift", in: .group(g0))
+        for _ in 0..<3000 where view.compare == nil { window.tick(); try? await Task.sleep(nanoseconds: 1_000_000) }
+        #expect(view.compare != nil)
+        let right = "sbs-right-\(g0.uuidString)"
+        for _ in 0..<200 { window.tick(); await Task.yield() }
+        let spawned = gitCoordinators.last?.spawnCount
+        let t = try await typing(window, rig, codeViewID: right, names: Self.watched)
+        print("TYPING compareHead perFrame=\(t.perFrame.first ?? 0) requests=\(t.requests) bodies=\(t.bodies)")
+        #expect(t.documentGrew)
+        #expect(t.perFrame.allSatisfy { $0 <= Self.steadyCompare }, "per-frame element requests \(t.perFrame)")
+        #expect(gitCoordinators.last?.spawnCount == spawned, "typing spawned git")
+        withExtendedLifetime((rig, window)) {}
+    }
+
+    /// Idle frames with git on: no body runs, no process starts, and the clock moving costs nothing.
+    @Test func idleTicksWithGitSpawnNothingAndCostZero() async throws {
+        let (rig, window, id) = try await rigged(.code1, git: true)
+        let coordinator = try #require(gitCoordinators.last)
+        for focused in [false, true] {
+            if focused { try window.click(window.element(identifier: id)) }
+            for _ in 0..<15 { window.tick(); await Task.yield() }
+            let spawned = coordinator.spawnCount
+            var reruns: [String: Int] = [:]
+            for _ in 0..<20 {
+                rig.clock.advance(by: 1)
+                for (k, v) in allProbes({ window.tick() }) { reruns[k, default: 0] += v }
+                await Task.yield()
+            }
+            #expect(reruns.isEmpty, "idle ticks with git re-ran \(reruns)")
+            #expect(coordinator.spawnCount == spawned)
+        }
+        withExtendedLifetime((rig, window)) {}
+    }
 
     /// Two groups on one file cost one more group's elements, nothing more: the delta over one group is what a single
     /// further group adds (three groups minus two), within a few elements.

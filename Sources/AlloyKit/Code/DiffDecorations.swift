@@ -151,7 +151,7 @@ struct RowDeltaLog {
             for i in pieces.indices {
                 pieces[i] = pieces[i].flatMap { piece -> [Range<Int>] in
                     var out: [Range<Int>] = []
-                    let below = piece.lowerBound..<min(piece.upperBound, at)
+                    let below = piece.lowerBound..<max(piece.lowerBound, min(piece.upperBound, at))
                     if !below.isEmpty { out.append(below) }
                     let lo = max(piece.lowerBound, at + removed)
                     if piece.upperBound > lo { out.append((lo + delta)..<(piece.upperBound + delta)) }
