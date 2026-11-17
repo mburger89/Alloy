@@ -60,6 +60,17 @@ public enum BuiltinCommands {
                  menuID: "menu-signature-help", .triggerSignature)
         addIntel("edit.quickFix", "Quick Fix", .edit, chord(.cmd, ch(".")), menu: .edit,
                  menuID: "menu-quick-fix", .quickFix)
+        // Multi-cursor: MetalUI's selection helpers do the work on the focused view's state. Disabled when no code view
+        // is focused. The chords are claimed by the menu items, so the code view never sees them.
+        func addMulti(_ id: String, _ title: String, _ shortcut: KeyChord, _ command: MultiCursorCommand) {
+            add("editor.\(id)", title, .selection, shortcut, .menu, menu: .edit, menuID: "cmd-editor.\(id)",
+                enabled: { current()?.canRunMultiCursor() ?? false }) { current()?.runMultiCursor(command) }
+        }
+        addMulti("addNextOccurrence", "Add Next Occurrence", chord(.cmd, ch("d")), .addNextOccurrence)
+        addMulti("selectAllOccurrences", "Select All Occurrences", chord([.cmd, .shift], ch("l")), .selectAllOccurrences)
+        addMulti("skipNextOccurrence", "Skip to Next Occurrence", chord([.alt, .cmd], ch("d")), .skipToNextOccurrence)
+        addMulti("addCaretAbove", "Add Caret Above", chord([.ctrl, .shift], .named(.up)), .addCaretAbove)
+        addMulti("addCaretBelow", "Add Caret Below", chord([.ctrl, .shift], .named(.down)), .addCaretBelow)
         // ⌘S: MetalUI has no File menu placement for it, and a hidden key button would add elements to every frame, so
         // the code panel's key handler delivers the chord and this entry is the palette's.
         add("file.save", "Save", .file, chord(.cmd, ch("s")), .none, recents: true,

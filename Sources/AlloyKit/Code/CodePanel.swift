@@ -855,8 +855,9 @@ final class CodePanelStore {
                     && workspace.presentation(of: view.document.path, in: view.pane) != .sideBySide
             case .formatDocument: return editable && view.services.lspOpen && view.features.formatting && formatService != nil
             case .formatSelection:
+                let selections = view.selection(in: workspace).selections
                 return editable && view.services.lspOpen && view.features.rangeFormatting && formatService != nil
-                    && !view.selection(in: workspace).primarySelection.range.isEmpty
+                    && selections.count == 1 && !selections[0].isEmpty
             }
         }
     }

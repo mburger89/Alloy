@@ -34,9 +34,14 @@ import Testing
     /// `install` runs on the rig before anything is opened (a test that needs a language server puts it there).
     /// With `git`, the project is a committed repository with a git coordinator installed and its first status read
     /// before any frame is measured (later git tasks extend this rig with tree colours, marks and the Git tab).
-    func rigged(_ layout: Layout, git useGit: Bool = false, gitTab: Bool = false, install: ((Rig) -> Void)? = nil) async throws -> (rig: Rig, window: TestWindow, codeViewID: String) {
+    func rigged(_ layout: Layout, git useGit: Bool = false, gitTab: Bool = false, lines: Int = 0, install: ((Rig) -> Void)? = nil) async throws -> (rig: Rig, window: TestWindow, codeViewID: String) {
         let (rig, _) = try await editedRig()
         install?(rig)
+        // A longer login.swift (before it is opened) when a test needs room for many carets, one per line.
+        if lines > 0 {
+            let body = panelNewText + (0..<lines).map { "let v\($0) = \($0)\n" }.joined()
+            try body.write(to: rig.root.appendingPathComponent("login.swift"), atomically: true, encoding: .utf8)
+        }
         try "let other = 1\n".write(to: rig.root.appendingPathComponent("other.swift"), atomically: true, encoding: .utf8)
         if useGit {
             try git(rig.root, "init", "-q", "-b", "main")
@@ -93,10 +98,19 @@ import Testing
 
     /// The warm-up of `typingLeavesSidebarScreenAndChatAlone`, then 20 counted keystroke frames. `probe` names get their
     /// re-run counts; `bodies` is every body evaluation of every probe.
-    func typing(_ window: TestWindow, _ rig: Rig, codeViewID: String, names: [String]) async throws -> Typing {
+    func typing(_ window: TestWindow, _ rig: Rig, codeViewID: String, names: [String], carets: Int = 1) async throws -> Typing {
         for _ in 0..<10 { window.tick(); await Task.yield() }
         try window.click(window.element(identifier: codeViewID))
         for _ in 0..<5 { window.tick(); await Task.yield() }
+        if carets > 1 {
+            // Several carets through the command path, one per line from the top.
+            let pane = rig.workspace.defaultPane
+            let state = try #require(rig.workspace.selectionState(for: "login.swift", in: pane))
+            state.setSelections([CodeSelection(caret: 0)], primary: 0)
+            for _ in 1..<carets { rig.workspace.runMultiCursor(.addCaretBelow) }
+            #expect(state.selections.count == carets, "carets placed")
+            for _ in 0..<5 { window.tick(); await Task.yield() }
+        }
         let doc = try #require(rig.workspace.document("login.swift"))
         let version = doc.buffer.version
         window.resetFrameWork()
@@ -144,8 +158,8 @@ import Testing
     static let steadyCode2 = 62
     static let steadyCode3 = 72
 
-    func guardTyping(_ layout: Layout, steady: Int, git useGit: Bool = false, gitTab: Bool = false, blame: Bool = false) async throws {
-        let (rig, window, id) = try await rigged(layout, git: useGit, gitTab: gitTab)
+    func guardTyping(_ layout: Layout, steady: Int, git useGit: Bool = false, gitTab: Bool = false, blame: Bool = false, carets: Int = 1) async throws {
+        let (rig, window, id) = try await rigged(layout, git: useGit, gitTab: gitTab, lines: carets > 1 ? carets : 0)
         if blame {
             // File blame on before anything is measured: the lane is reserved once, at the toggle.
             let g0 = rig.workspace.codeLayout.focusedGroupID
@@ -158,7 +172,7 @@ import Testing
         }
         let spawned = gitCoordinators.last?.spawnCount
         if useGit { #expect(exists(window, "title-branch"), "the git rig shows the branch menu") }
-        let t = try await typing(window, rig, codeViewID: id, names: Self.watched + Self.gitTabNames)
+        let t = try await typing(window, rig, codeViewID: id, names: Self.watched + Self.gitTabNames, carets: carets)
         #expect(t.documentGrew)
         #expect(t.perFrame.allSatisfy { $0 <= steady + 2 }, "per-frame element requests \(t.perFrame)")
         #expect(t.requests <= steady * 20 * 102 / 100, "element requests \(t.requests)")

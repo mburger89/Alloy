@@ -51,7 +51,21 @@ import Testing
         ])
         #expect(gitMenu.items.allSatisfy { $0.shortcut == nil })
         let edit = window.testApp.menuBar.first { $0.title == "Edit" }
-        #expect(edit?.items.map(\.title).suffix(6) == ["Format Document", "Format Selection", "Show Hover", "Trigger Completion", "Signature Help", "Quick Fix"])
+        #expect(edit?.items.map(\.title).suffix(11) == [
+            "Format Document", "Format Selection", "Show Hover", "Trigger Completion", "Signature Help", "Quick Fix",
+            "Add Next Occurrence", "Select All Occurrences", "Skip to Next Occurrence", "Add Caret Above", "Add Caret Below",
+        ])
+        #expect(edit?.items.suffix(5).compactMap(\.accessibilityIdentifier) == [
+            "cmd-editor.addNextOccurrence", "cmd-editor.selectAllOccurrences", "cmd-editor.skipNextOccurrence",
+            "cmd-editor.addCaretAbove", "cmd-editor.addCaretBelow",
+        ])
+        #expect(edit?.items.suffix(5).map(\.shortcut) == [
+            PlatformKeyEquivalent(key: "d", modifiers: [.command]),
+            PlatformKeyEquivalent(key: "l", modifiers: [.command, .shift]),
+            PlatformKeyEquivalent(key: "d", modifiers: [.option, .command]),
+            PlatformKeyEquivalent(key: "\u{f700}", modifiers: [.control, .shift]),
+            PlatformKeyEquivalent(key: "\u{f701}", modifiers: [.control, .shift]),
+        ])
         let view = try #require(window.testApp.menuBar.first { $0.title == "View" })
         #expect(view.items.map(\.title) == [
             "Chat Mode", "Code Mode", "Split Right", "Split Down", "Focus Left Group", "Focus Right Group",

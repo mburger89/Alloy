@@ -14,10 +14,10 @@ import Testing
     private typealias Perf = CodeModePerformanceTests
     private static let knownPopoverGap = 0
 
-    private func guardTyping(_ layout: Perf.Layout, steady: Int) async throws {
+    private func guardTyping(_ layout: Perf.Layout, steady: Int, carets: Int = 1) async throws {
         let perf = Perf()
         let (intel, window, id) = try await IntelRig.guardRig(layout: layout)
-        let t = try await perf.typing(window, intel.rig, codeViewID: id, names: Perf.watched)
+        let t = try await perf.typing(window, intel.rig, codeViewID: id, names: Perf.watched, carets: carets)
         #expect(t.documentGrew)
         print("HOVERGUARD typing \(layout.rawValue) perFrame=\(t.perFrame) requests=\(t.requests) bodies=\(t.bodies)")
         // KNOWN MetalUI GAP (reported): the hidden text-anchored popover(item:attachmentAnchor:) adds 1-2 element requests
@@ -40,6 +40,11 @@ import Testing
     @Test func typingWithAHoverCapableServerHoldsTheSteadyFrameGuardCode1() async throws { try await guardTyping(.code1, steady: Perf.steadyCode1) }
     @Test func typingWithAHoverCapableServerHoldsTheSteadyFrameGuardCode2() async throws { try await guardTyping(.code2, steady: Perf.steadyCode2) }
     @Test func typingWithAHoverCapableServerHoldsTheSteadyFrameGuardCode3() async throws { try await guardTyping(.code3, steady: Perf.steadyCode3) }
+
+    @Test func typingWithThreeCaretsAndAHoverCapableServerHoldsTheGuardChat() async throws {
+        try await guardTyping(.chat, steady: ViewRerunTests.steadyFrameRequests, carets: 3)
+    }
+    @Test func typingWithThreeCaretsAndAHoverCapableServerHoldsTheGuardCode1() async throws { try await guardTyping(.code1, steady: Perf.steadyCode1, carets: 3) }
 
     /// Idle with the hover closed: no body runs, and no more elements than the same file without a server.
     @Test func idleWithHoverClosedCostsNothing() async throws {

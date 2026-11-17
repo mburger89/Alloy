@@ -121,6 +121,8 @@ public final class Workspace {
     /// Rises when a pane's selection state is dropped (and so may be replaced); the panels read it so they rebuild their code view.
     public internal(set) var selectionRevision = 0
     @ObservationIgnored var paneSelections: [PaneID: [String: CodeSelectionState]] = [:]
+    /// The "Stopped at 10,000 cursors" notice each pane is showing, until its selection changes (see MultiCursor.swift).
+    @ObservationIgnored var capNotices: [PaneID: (token: UUID, notice: Notice)] = [:]
     /// Panes by when they last took focus, newest first.
     @ObservationIgnored var paneFocusLog: [PaneID] = []
     /// The tab the code panel shows.

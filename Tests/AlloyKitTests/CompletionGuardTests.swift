@@ -17,10 +17,10 @@ import Testing
     private static let siblings = ["CodeIslandRow", "EditorAreaView", "CodeChatColumn", "CodeSidebarView", "TitleIsland", "IslandBackdrop",
                                    "GlassBackdrop", "ChatView", "ChatColumn", "TranscriptView", "AlloyScreen"]
 
-    private func closedTyping(_ layout: Perf.Layout, steady: Int, script: String, extra: Int) async throws {
+    private func closedTyping(_ layout: Perf.Layout, steady: Int, script: String, extra: Int, carets: Int = 1) async throws {
         let perf = Perf()
         let (intel, window, id) = try await IntelRig.guardRig(layout: layout, script: script)
-        let t = try await perf.typing(window, intel.rig, codeViewID: id, names: Perf.watched)
+        let t = try await perf.typing(window, intel.rig, codeViewID: id, names: Perf.watched, carets: carets)
         #expect(t.documentGrew)
         print("COMPLETIONGUARD typing \(layout.rawValue) perFrame=\(t.perFrame) requests=\(t.requests) bodies=\(t.bodies)")
         #expect(t.perFrame.allSatisfy { $0 <= steady + extra }, "per-frame element requests \(t.perFrame)")
@@ -50,6 +50,14 @@ import Testing
     }
     @Test func closedOverlayWithHoverCode1() async throws {
         try await closedTyping(.code1, steady: Perf.steadyCode1, script: Self.completionAndHover, extra: Self.knownPopoverGap)
+    }
+
+    // Three carets: typing opens no popup, so the closed-overlay budgets hold.
+    @Test func closedOverlayWithThreeCaretsChat() async throws {
+        try await closedTyping(.chat, steady: ViewRerunTests.steadyFrameRequests, script: Self.completionAndHover, extra: Self.knownPopoverGap, carets: 3)
+    }
+    @Test func closedOverlayWithThreeCaretsCode1() async throws {
+        try await closedTyping(.code1, steady: Perf.steadyCode1, script: Self.completionAndHover, extra: Self.knownPopoverGap, carets: 3)
     }
 
     // Signature help capable, strip closed: the same budgets as a closed completion overlay.

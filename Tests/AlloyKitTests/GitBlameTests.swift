@@ -43,6 +43,16 @@ import Testing
         #expect(blames == 0, "no blame process ran (\(m.coordinator.spawnCount - before) others did)")
     }
 
+    @Test func blameLineUsesThePrimaryCaretWithSeveralCarets() async throws {
+        let m = try await twoAuthors()
+        let snap = m.doc.buffer.snapshot()
+        let first = snap.lineRange(0).lowerBound, bobs = snap.lineRange(4).lowerBound
+        m.view.selection().setSelections([CodeSelection(caret: first), CodeSelection(caret: bobs)], primary: 1)
+        m.coordinator.blameLine(in: m.view)
+        await m.settle("popover") { m.view.blame.popover != nil }
+        #expect(m.view.blame.popover?.run?.author == "Bob Ray")
+    }
+
     @Test func blameLineShowsPopoverWithDetails() async throws {
         let m = try await twoAuthors()
         // Caret on row 4 (Bob's).

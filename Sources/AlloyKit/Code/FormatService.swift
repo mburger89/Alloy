@@ -44,8 +44,10 @@ package final class FormatService {
             let snapshot = view.document.buffer.snapshot()
             var range: Range<Int>?
             if selectionOnly {
-                let primary = view.selection(in: workspace).primarySelection.range
-                guard !primary.isEmpty else { return }
+                // One selection only: formatting the primary of several would silently skip the rest.
+                let selections = view.selection(in: workspace).selections
+                guard selections.count == 1, !selections[0].isEmpty else { return }
+                let primary = selections[0].range
                 range = min(primary.lowerBound, snapshot.utf8Count)..<min(primary.upperBound, snapshot.utf8Count)
             }
             guard let choice = await coordinator.formatChoice(path: path, formatters: workspace.settings.formatters,

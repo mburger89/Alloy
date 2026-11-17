@@ -40,6 +40,24 @@ struct WorkspaceEditApplierTests {
         #expect(String(decoding: doc.buffer.snapshot().utf8(in: 0..<doc.buffer.snapshot().utf8Count), as: UTF8.self) == "hello world\n")
     }
 
+    @Test func aWorkspaceEditKeepsEveryCaretAndMovesThemWithTheEdit() async throws {
+        let rig = Rig()
+        try write(rig, "a.txt", "foo bar foo bar\n")
+        await rig.workspace.open("a.txt")
+        let doc = try #require(rig.workspace.document("a.txt"))
+        let state = try #require(rig.workspace.selectionState(for: "a.txt", in: rig.workspace.defaultPane))
+        state.setSelections([CodeSelection(caret: 5), CodeSelection(caret: 6), CodeSelection(caret: 12), CodeSelection(caret: 14)], primary: 2)
+        let applier = WorkspaceEditApplier(workspace: rig.workspace, coordinator: nil)
+        // Rename-style edit: "foo" becomes "quux" at both places (one byte longer each).
+        let out = await applier.apply([edits("a.txt", [(0..<3, "quux"), (8..<11, "quux")])],
+                                      baseVersions: ["a.txt": doc.buffer.version], label: "Rename")
+        #expect(out.message == nil)
+        #expect(read(rig, "a.txt") == "quux bar quux bar\n")
+        #expect(state.selections.count == 4)
+        #expect(state.selections.map(\.head) == [6, 7, 14, 16])
+        #expect(state.primaryIndex == 2)
+    }
+
     @Test func aClosedFileIsRewrittenKeepingItsModeWithoutOpeningATab() async throws {
         let rig = Rig()
         try write(rig, "c.txt", "one two\n")

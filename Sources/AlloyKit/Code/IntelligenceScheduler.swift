@@ -137,7 +137,7 @@ final class IntelligenceScheduler {
             mask[b] = b >= 0x80 || c == UInt8(ascii: "_") || (c >= 48 && c <= 57) || (c >= 65 && c <= 90) || (c >= 97 && c <= 122)
         }
         identifierBytes = mask
-        if features.codeAction { armSelectionObservation() }
+        if features.codeAction || features.completion || features.signatureHelp { armSelectionObservation() }
     }
 
     // MARK: Edits
@@ -662,6 +662,10 @@ extension IntelligenceScheduler {
                 guard let self, !self.stopped else { return }
                 self.armSelectionObservation()
                 if self.isActionsOpen { self.closeActions() }
+                // Completion and signature help open only with a single caret: a second one (a command or an option-click)
+                // closes what is open.
+                let selections = self.host.selectionState.selections
+                if self.hasState || self.sigActive, !(selections.count == 1 && selections[0].isEmpty) { self.close() }
                 self.scheduleProbe()
             }
         }

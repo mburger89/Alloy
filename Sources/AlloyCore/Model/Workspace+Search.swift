@@ -3,7 +3,8 @@ import MetalUICodeBuffer
 
 extension Workspace {
     /// Shows Code mode's Search tab and asks its query field for focus. `replace: true` also reveals the replace row.
-    /// A single-line selection in the focused editor becomes the query (and runs); anything else leaves it as it was.
+    /// A single-line primary selection in the focused editor becomes the query (and runs), whatever other selections
+    /// exist; anything else leaves it as it was.
     public func showSearch(replace: Bool) {
         let seed = selectedSingleLine()
         setMode(.code)
@@ -12,12 +13,13 @@ extension Workspace {
         if let seed { search.seed(seed) } else { search.requestFocus() }
     }
 
-    /// The text of the focused editor's selection when it is one non-empty selection within a single line.
+    /// The text of the focused editor's primary selection when it is non-empty and within a single line.
     private func selectedSingleLine() -> String? {
         let pane = defaultPane
         guard let path = activeTab(in: pane), let doc = documents[path],
-              let state = selectionState(for: path, in: pane), state.selections.count == 1,
-              let selection = state.selections.first, !selection.isEmpty else { return nil }
+              let state = selectionState(for: path, in: pane) else { return nil }
+        let selection = state.primarySelection
+        guard !selection.isEmpty else { return nil }
         let text = doc.buffer.snapshot().text(in: selection.range)
         return text.contains(where: \.isNewline) ? nil : text
     }

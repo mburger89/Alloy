@@ -22,11 +22,11 @@ import Testing
             extra: #","replies":{"textDocument/hover":[{"result":{"contents":{"kind":"markdown","value":"**docs**"}}}],"textDocument/formatting":[{"result":[{"range":{"start":{"line":0,"character":0},"end":{"line":0,"character":0}},"newText":"x"}]}],"textDocument/documentSymbol":[{"result":[\#(symbol)]}],"textDocument/references":[{"result":[\#(refs.joined(separator: ","))]}]}"#)
     }
 
-    private func guardTyping(_ layout: Perf.Layout, steady: Int) async throws {
+    private func guardTyping(_ layout: Perf.Layout, steady: Int, carets: Int = 1) async throws {
         let perf = Perf()
         let (intel, window, id) = try await IntelRig.guardRig(layout: layout, script: Self.script())
         try await window.runUntil { intel.coordinator.features(for: "login.swift").documentSymbol }
-        let t = try await perf.typing(window, intel.rig, codeViewID: id, names: Perf.watched)
+        let t = try await perf.typing(window, intel.rig, codeViewID: id, names: Perf.watched, carets: carets)
         #expect(t.documentGrew)
         #expect(t.perFrame.allSatisfy { $0 <= steady + Self.knownPopoverGap }, "per-frame element requests \(t.perFrame)")
         #expect(t.requests <= (steady + Self.knownPopoverGap) * 20, "element requests \(t.requests)")
@@ -40,6 +40,10 @@ import Testing
     @Test func typingWithTheFullCapabilitySetHoldsTheSteadyFrameGuardChat() async throws {
         try await guardTyping(.chat, steady: ViewRerunTests.steadyFrameRequests)
     }
+    @Test func typingWithThreeCaretsAndTheFullCapabilitySetHoldsTheGuardChat() async throws {
+        try await guardTyping(.chat, steady: ViewRerunTests.steadyFrameRequests, carets: 3)
+    }
+    @Test func typingWithThreeCaretsAndTheFullCapabilitySetHoldsTheGuardCode1() async throws { try await guardTyping(.code1, steady: Perf.steadyCode1, carets: 3) }
     @Test func typingWithTheFullCapabilitySetHoldsTheSteadyFrameGuardCode1() async throws { try await guardTyping(.code1, steady: Perf.steadyCode1) }
     @Test func typingWithTheFullCapabilitySetHoldsTheSteadyFrameGuardCode2() async throws { try await guardTyping(.code2, steady: Perf.steadyCode2) }
     @Test func typingWithTheFullCapabilitySetHoldsTheSteadyFrameGuardCode3() async throws { try await guardTyping(.code3, steady: Perf.steadyCode3) }

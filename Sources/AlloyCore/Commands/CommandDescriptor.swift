@@ -19,6 +19,7 @@ public struct CommandCategory: Hashable, Codable, Sendable {
     public static let edit = CommandCategory(name: "Edit")
     public static let file = CommandCategory(name: "File")
     public static let git = CommandCategory(name: "Git")
+    public static let selection = CommandCategory(name: "Selection")
 }
 
 /// How a command's chord is delivered: through its menu item, through a hidden global key (always, or only in Code

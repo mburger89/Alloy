@@ -46,6 +46,13 @@ palette row is chosen, never from a view body. `registry.run(id:)` is the only w
 for a missing or disabled command, so a stale key, menu item or palette row can never run one. Closures resolve the
 workspace when they run (`center.workspace`), because the registry outlives workspace switches.
 
+## Editor commands
+
+`editor.addNextOccurrence` (cmd+d), `editor.selectAllOccurrences` (cmd+shift+l), `editor.skipNextOccurrence`
+(alt+cmd+d), `editor.addCaretAbove` and `editor.addCaretBelow` (ctrl+shift+up/down) sit in the Edit menu (category
+Selection, menu ids `cmd-<id>`). They act on the focused view's selection state through `Workspace.runMultiCursor`
+and are disabled when no code view is focused (project chooser, no tab, a non-code tab).
+
 ## Recents
 
 `run(id:)` calls `workspace.noteCommandRun(id:)` for commands with `recordsRecent`. Recents are per project, newest
