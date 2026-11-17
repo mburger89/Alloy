@@ -331,6 +331,6 @@ struct LanguageServerTests {
         #expect(c["textDocument"]?["documentSymbol"]?["hierarchicalDocumentSymbolSupport"]?.boolValue == true)
         #expect(c["textDocument"]?["references"] != nil && c["textDocument"]?["formatting"] != nil)
         #expect(c["textDocument"]?["rangeFormatting"] != nil)
-        for absent in ["completion", "codeAction", "rename", "signatureHelp"] { #expect(c["textDocument"]?[absent] == nil) }
+        #expect(c["textDocument"]?["rename"] == nil)
     }
 }

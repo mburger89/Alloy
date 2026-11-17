@@ -5,6 +5,7 @@ import MetalUICodeBuffer
 /// A language feature asked of a server with a position or document request.
 public enum Feature: String, Sendable, CaseIterable {
     case definition, hover, references, documentSymbol, formatting, rangeFormatting
+    case completion, completionResolve, signatureHelp, codeAction, codeActionResolve, executeCommand
 
     var method: String {
         switch self {
@@ -14,6 +15,12 @@ public enum Feature: String, Sendable, CaseIterable {
         case .documentSymbol: "textDocument/documentSymbol"
         case .formatting: "textDocument/formatting"
         case .rangeFormatting: "textDocument/rangeFormatting"
+        case .completion: "textDocument/completion"
+        case .completionResolve: "completionItem/resolve"
+        case .signatureHelp: "textDocument/signatureHelp"
+        case .codeAction: "textDocument/codeAction"
+        case .codeActionResolve: "codeAction/resolve"
+        case .executeCommand: "workspace/executeCommand"
         }
     }
 
@@ -25,6 +32,12 @@ public enum Feature: String, Sendable, CaseIterable {
         case .documentSymbol: caps.documentSymbol
         case .formatting: caps.documentFormatting
         case .rangeFormatting: caps.documentRangeFormatting
+        case .completion: caps.completion
+        case .completionResolve: caps.completionResolve
+        case .signatureHelp: caps.signatureHelp
+        case .codeAction: caps.codeAction
+        case .codeActionResolve: caps.codeActionResolve
+        case .executeCommand: !caps.executeCommands.isEmpty
         }
     }
 }
@@ -50,9 +63,29 @@ public struct FeatureSet: Sendable, Equatable {
     public var documentSymbol = false
     public var formatting = false
     public var rangeFormatting = false
+    public var completion = false
+    public var signatureHelp = false
+    public var codeAction = false
+    /// What the main server says about completion and signature help (the editor decides from these when to ask).
+    public var completionTriggers: [String] = []
+    public var completionCommitCharacters: [String] = []
+    public var completionResolve = false
+    public var signatureTriggers: [String] = []
+    public var signatureRetriggers: [String] = []
 
     public init(hover: Bool = false, references: Bool = false, documentSymbol: Bool = false,
-                formatting: Bool = false, rangeFormatting: Bool = false) {
+                formatting: Bool = false, rangeFormatting: Bool = false,
+                completion: Bool = false, signatureHelp: Bool = false, codeAction: Bool = false,
+                completionTriggers: [String] = [], completionCommitCharacters: [String] = [], completionResolve: Bool = false,
+                signatureTriggers: [String] = [], signatureRetriggers: [String] = []) {
+        self.completionTriggers = completionTriggers
+        self.completionCommitCharacters = completionCommitCharacters
+        self.completionResolve = completionResolve
+        self.signatureTriggers = signatureTriggers
+        self.signatureRetriggers = signatureRetriggers
+        self.completion = completion
+        self.signatureHelp = signatureHelp
+        self.codeAction = codeAction
         self.hover = hover
         self.references = references
         self.documentSymbol = documentSymbol
@@ -62,7 +95,11 @@ public struct FeatureSet: Sendable, Equatable {
 
     public init(_ caps: ServerCapabilities) {
         self.init(hover: caps.hover, references: caps.references, documentSymbol: caps.documentSymbol,
-                  formatting: caps.documentFormatting, rangeFormatting: caps.documentRangeFormatting)
+                  formatting: caps.documentFormatting, rangeFormatting: caps.documentRangeFormatting,
+                  completion: caps.completion, signatureHelp: caps.signatureHelp, codeAction: caps.codeAction,
+                  completionTriggers: caps.completionTriggerCharacters, completionCommitCharacters: caps.completionCommitCharacters,
+                  completionResolve: caps.completionResolve, signatureTriggers: caps.signatureTriggerCharacters,
+                  signatureRetriggers: caps.signatureRetriggerCharacters)
     }
 
     mutating func formUnion(_ other: FeatureSet) {
@@ -71,6 +108,15 @@ public struct FeatureSet: Sendable, Equatable {
         documentSymbol = documentSymbol || other.documentSymbol
         formatting = formatting || other.formatting
         rangeFormatting = rangeFormatting || other.rangeFormatting
+        completion = completion || other.completion
+        signatureHelp = signatureHelp || other.signatureHelp
+        codeAction = codeAction || other.codeAction
+        completionResolve = completionResolve || other.completionResolve
+        func merge(_ a: inout [String], _ b: [String]) { for x in b where !a.contains(x) { a.append(x) } }
+        merge(&completionTriggers, other.completionTriggers)
+        merge(&completionCommitCharacters, other.completionCommitCharacters)
+        merge(&signatureTriggers, other.signatureTriggers)
+        merge(&signatureRetriggers, other.signatureRetriggers)
     }
 }
 

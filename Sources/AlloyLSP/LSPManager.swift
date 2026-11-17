@@ -16,6 +16,54 @@ public enum LSPResult: Sendable {
     case linters(path: String, ids: [String])
     /// The features the servers of `path` offer (union of main and linters); sent when it changes.
     case features(path: String, FeatureSet)
+    /// The server asked the client to apply a `WorkspaceEdit` (`workspace/applyEdit`), usually while running a command.
+    /// The receiver applies it and calls `reply.answer`; an unanswered request is answered `applied: false` after 10 s,
+    /// on shutdown or when the server goes away.
+    case applyEdit(path: String, serverID: String, label: String?, edit: JSONValue, reply: ApplyEditReply)
+}
+
+/// The answer to a server's `workspace/applyEdit`. Resumes the server's request once; a second call is ignored and a
+/// reply dropped without an answer answers `applied: false`.
+public final class ApplyEditReply: @unchecked Sendable {
+    final class Gate: @unchecked Sendable {
+        private let lock = NSLock()
+        private var result: JSONValue?
+        private var waiter: CheckedContinuation<JSONValue, Never>?
+
+        @discardableResult
+        func resolve(applied: Bool, failureReason: String?) -> Bool {
+            var value: [String: JSONValue] = ["applied": .bool(applied)]
+            if let failureReason { value["failureReason"] = .string(failureReason) }
+            lock.lock()
+            guard result == nil else { lock.unlock(); return false }
+            let answer = JSONValue.object(value)
+            result = answer
+            let w = waiter
+            waiter = nil
+            lock.unlock()
+            w?.resume(returning: answer)
+            return true
+        }
+
+        func wait() async -> JSONValue {
+            await withCheckedContinuation { (c: CheckedContinuation<JSONValue, Never>) in
+                lock.lock()
+                if let result { lock.unlock(); c.resume(returning: result); return }
+                waiter = c
+                lock.unlock()
+            }
+        }
+    }
+
+    let gate: Gate
+
+    init(gate: Gate = Gate()) { self.gate = gate }
+
+    public func answer(applied: Bool, failureReason: String? = nil) {
+        gate.resolve(applied: applied, failureReason: failureReason)
+    }
+
+    deinit { gate.resolve(applied: false, failureReason: "the edit was not handled") }
 }
 
 /// Starts a server process: the config, the resolved executable path and the workspace root.
@@ -59,6 +107,15 @@ public actor LSPManager {
         var state: ServerState?
         /// The capabilities of the ready server; nil while it is not ready.
         var capabilities: ServerCapabilities?
+        /// The document the last `workspace/executeCommand` ran for; a `workspace/applyEdit` that follows names it.
+        var lastCommandPath: String?
+        /// `workspace/applyEdit` requests waiting for the UI's answer.
+        var pendingEdits: [UUID: ApplyEditReply.Gate] = [:]
+        func failPendingEdits(_ reason: String) {
+            let gates = pendingEdits.values
+            pendingEdits = [:]
+            for gate in gates { gate.resolve(applied: false, failureReason: reason) }
+        }
         var isDead: Bool {
             switch state {
             case .failed, .notInstalled: return true
@@ -676,6 +733,7 @@ public actor LSPManager {
 
     private func stop(_ list: [Entry]) async {
         for entry in list {
+            entry.failPendingEdits("the language server was stopped")
             entry.observer?.cancel()
             entry.inbox?.finish()
             entry.diagnosticsTask?.cancel()
@@ -761,6 +819,10 @@ public actor LSPManager {
                 if method == "textDocument/publishDiagnostics", let params { inbox.yield(params) }
                 if method == "workspace/semanticTokens/refresh" { Task { await self?.refreshSemantic(forServer: serverID) } }
             }
+            await server.setOnApplyEdit { [weak self, weak entry] params in
+                guard let self, let entry else { return .object(["applied": .bool(false), "failureReason": .string("client is closing")]) }
+                return await self.handleApplyEdit(params, from: entry)
+            }
             await server.setOnRestart { [weak self, weak entry] in
                 await sync.reopenAll()
                 if let self, let entry {
@@ -772,6 +834,33 @@ public actor LSPManager {
             await server.start()
         }
         return entry
+    }
+
+    /// How long a server's `workspace/applyEdit` waits for the UI before it is answered `applied: false`.
+    static let applyEditTimeout: Duration = .seconds(10)
+
+    private func handleApplyEdit(_ params: JSONValue?, from entry: Entry) async -> JSONValue {
+        func refuse(_ reason: String) -> JSONValue { .object(["applied": .bool(false), "failureReason": .string(reason)]) }
+        guard !isShutDown, entries[entry.config.id] === entry, let edit = params?["edit"] else { return refuse("nothing to apply") }
+        let path = entry.lastCommandPath.flatMap { tracked[$0] != nil ? $0 : nil }
+            ?? tracked.keys.sorted().first { tracked[$0]?.members.contains(entry.config.id) == true } ?? entry.representative
+        let key = UUID()
+        // The reply object goes to the receiver only; this side keeps the gate, so a reply dropped unanswered resolves it.
+        let gate = { () -> ApplyEditReply.Gate in
+            let reply = ApplyEditReply()
+            continuation.yield(.applyEdit(path: path, serverID: entry.config.id, label: params?["label"]?.stringValue, edit: edit, reply: reply))
+            return reply.gate
+        }()
+        entry.pendingEdits[key] = gate
+        let limit = Self.applyEditTimeout
+        let timer = Task {
+            try? await Task.sleep(for: limit)
+            gate.resolve(applied: false, failureReason: "timed out")
+        }
+        let answer = await gate.wait()
+        timer.cancel()
+        entry.pendingEdits[key] = nil
+        return answer
     }
 
     // MARK: - Diagnostics
@@ -788,6 +877,7 @@ public actor LSPManager {
             entry.capabilities = caps
         } else {
             entry.capabilities = nil
+            entry.failPendingEdits("the language server is no longer running")
         }
         for path in tracked.keys.sorted() where tracked[path]?.members.contains(entry.config.id) == true {
             reportFeatures(path: path)
@@ -866,6 +956,30 @@ public actor LSPManager {
         continuation.yield(.diagnostics(path: path, version: target, items: union))
     }
 
+    /// The raw diagnostic objects `serverID` last published for `path` whose range, moved to the text of `path` now,
+    /// overlaps or touches `range`. A set for older text moves forward through the edits since.
+    func rawDiagnostics(path: String, serverID: String, overlapping range: Range<Int>) -> [JSONValue] {
+        guard let doc = tracked[path], let set = diagnostics[path]?[serverID] else { return [] }
+        let target = Int(doc.snapshot.version)
+        var out: [JSONValue] = []
+        for item in set.items {
+            var at = item.range
+            if set.version != target {
+                let from = UInt64(max(0, set.version)), to = UInt64(target)
+                guard let lower = doc.log.map(item.range.lowerBound, from: from, to: to, after: true),
+                      let upper = doc.log.map(item.range.upperBound, from: from, to: to, after: false) else { continue }
+                at = lower..<max(lower, upper)
+            }
+            let overlaps = at.lowerBound < range.upperBound && range.lowerBound < at.upperBound
+                || (range.isEmpty && at.lowerBound <= range.lowerBound && range.lowerBound <= at.upperBound)
+            if overlaps, let raw = item.raw { out.append(raw) }
+        }
+        return out
+    }
+
+    /// Records the document a command runs for, so a `workspace/applyEdit` it triggers names it.
+    func noteCommand(path: String, serverID: String) { entries[serverID]?.lastCommandPath = path }
+
     /// Pull diagnostics: only for a server that advertises `diagnosticProvider` and has not pushed, 300 ms after the
     /// last change of the document.
     private func schedulePull(path: String, entry: Entry) {
@@ -902,7 +1016,7 @@ public actor LSPManager {
 
     /// What a request about `path` needs: a running server, its sync and the document's URI, and the text the manager
     /// last passed on. Nil when no server holds the document.
-    struct RequestTarget {
+    struct RequestTarget: Sendable {
         var id: String
         var role: ServerRole
         var server: LanguageServer
@@ -914,12 +1028,14 @@ public actor LSPManager {
         var capabilities: ServerCapabilities?
         /// The language id of the server's configuration.
         var languageID: String = ""
+        /// The server's display name.
+        var name: String = ""
     }
 
     private func makeTarget(_ entry: Entry, path: String, doc: Tracked) -> RequestTarget {
         RequestTarget(id: entry.config.id, role: entry.config.role, server: entry.server, sync: entry.sync, uri: uri(path),
                       snapshot: doc.snapshot, root: root, capabilities: entry.capabilities,
-                      languageID: entry.config.languageID)
+                      languageID: entry.config.languageID, name: entry.config.name)
     }
 
     /// The main server's target for `path`.

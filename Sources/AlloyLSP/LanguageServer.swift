@@ -37,6 +37,17 @@ public struct ServerCapabilities: Sendable {
     public var rename: Bool
     public var renamePrepare: Bool
     public var codeAction: Bool
+    public var codeActionResolve: Bool
+    public var codeActionKinds: [String]
+    public var executeCommands: [String]
+    public var completion: Bool
+    public var completionTriggerCharacters: [String]
+    public var completionResolve: Bool
+    /// The server-wide `allCommitCharacters`.
+    public var completionCommitCharacters: [String]
+    public var signatureHelp: Bool
+    public var signatureTriggerCharacters: [String]
+    public var signatureRetriggerCharacters: [String]
     public var semanticTokens: SemanticTokensLegend?
     public var semanticTokensDelta: Bool
     public var pullDiagnostics: Bool
@@ -59,6 +70,16 @@ public struct ServerCapabilities: Sendable {
         rename = Self.isProvided(caps["renameProvider"])
         renamePrepare = caps["renameProvider"]?["prepareProvider"]?.boolValue ?? false
         codeAction = Self.isProvided(caps["codeActionProvider"])
+        codeActionResolve = caps["codeActionProvider"]?["resolveProvider"]?.boolValue ?? false
+        codeActionKinds = Self.strings(caps["codeActionProvider"]?["codeActionKinds"])
+        executeCommands = Self.strings(caps["executeCommandProvider"]?["commands"])
+        completion = Self.isProvided(caps["completionProvider"])
+        completionTriggerCharacters = Self.strings(caps["completionProvider"]?["triggerCharacters"])
+        completionResolve = caps["completionProvider"]?["resolveProvider"]?.boolValue ?? false
+        completionCommitCharacters = Self.strings(caps["completionProvider"]?["allCommitCharacters"])
+        signatureHelp = Self.isProvided(caps["signatureHelpProvider"])
+        signatureTriggerCharacters = Self.strings(caps["signatureHelpProvider"]?["triggerCharacters"])
+        signatureRetriggerCharacters = Self.strings(caps["signatureHelpProvider"]?["retriggerCharacters"])
         // A provider that offers only ranges (`full` absent or false) is not asked: phase 1 requests whole documents.
         if let provider = caps["semanticTokensProvider"], provider.objectValue != nil, let legend = provider["legend"],
            Self.isProvided(provider["full"]) {
@@ -73,6 +94,10 @@ public struct ServerCapabilities: Sendable {
         }
         pullDiagnostics = Self.isProvided(caps["diagnosticProvider"])
         foldingRange = Self.isProvided(caps["foldingRangeProvider"])
+    }
+
+    private static func strings(_ value: JSONValue?) -> [String] {
+        value?.arrayValue?.compactMap(\.stringValue) ?? []
     }
 
     private static func isProvided(_ value: JSONValue?) -> Bool {
@@ -113,12 +138,24 @@ public actor LanguageServer {
         }
     }
 
+    private final class ApplyEditBox: @unchecked Sendable {
+        private let lock = NSLock()
+        private var handler: (@Sendable (JSONValue?) async -> JSONValue)?
+        func set(_ h: (@Sendable (JSONValue?) async -> JSONValue)?) { lock.lock(); handler = h; lock.unlock() }
+        func current() -> (@Sendable (JSONValue?) async -> JSONValue)? {
+            lock.lock(); defer { lock.unlock() }
+            return handler
+        }
+        func call(_ params: JSONValue?) async -> JSONValue? { await current()?(params) }
+    }
+
     private let config: ServerConfig
     private let root: URL
     private let launcher: @Sendable () throws -> Channel
     private let now: @Sendable () -> ContinuousClock.Instant
     private let initializeTimeout: Duration
     private let notificationBox = NotificationBox()
+    private let applyEditBox = ApplyEditBox()
 
     public private(set) var state: ServerState = .stopped
     public private(set) var capabilities: ServerCapabilities?
@@ -130,6 +167,9 @@ public actor LanguageServer {
     public var onRestart: (@Sendable () async -> Void)?
 
     public func setOnRestart(_ handler: (@Sendable () async -> Void)?) { onRestart = handler }
+    /// Answers the server's `workspace/applyEdit` request: the handler returns the `ApplyWorkspaceEditResult`. Without a
+    /// handler the server is told `{applied:false}`.
+    public func setOnApplyEdit(_ handler: (@Sendable (JSONValue?) async -> JSONValue)?) { applyEditBox.set(handler) }
     public func setOnNotification(_ handler: (@Sendable (String, JSONValue?) -> Void)?) { onNotification = handler }
 
     private var channel: Channel?
@@ -246,11 +286,15 @@ public actor LanguageServer {
         self.rpc = rpc
         await rpc.start()
         let box = notificationBox
+        let applyBox = applyEditBox
         await rpc.onNotification { method, params in box.call(method, params) }
         let root = self.root
         let answers = config.configurationAnswers
         await rpc.onRequest { method, params in
             if method == Self.semanticRefreshMethod { box.call(method, params) }
+            if method == "workspace/applyEdit" {
+                return .success(await applyBox.call(params) ?? .object(["applied": .bool(false), "failureReason": .string("not handled")]))
+            }
             return Self.answer(method: method, params: params, root: root, configuration: answers) }
         let exits = channel.exited
         Task { [weak self] in
@@ -351,6 +395,7 @@ public actor LanguageServer {
                                   "applyEdit": .bool(true),
                                   "workspaceEdit": .object(["documentChanges": .bool(true), "resourceOperations": .array([]),
                                                             "failureHandling": .string("abort")]),
+                                  "executeCommand": .object([:]),
                                   "semanticTokens": .object(["refreshSupport": .bool(true)])]),
             "textDocument": .object([
                 "synchronization": .object(["didSave": .bool(true)]),
@@ -361,6 +406,31 @@ public actor LanguageServer {
                 "documentSymbol": .object(["hierarchicalDocumentSymbolSupport": .bool(true)]),
                 "formatting": .object([:]),
                 "rangeFormatting": .object([:]),
+                "completion": .object([
+                    "completionItem": .object([
+                        "snippetSupport": .bool(true),
+                        "insertReplaceSupport": .bool(true),
+                        "documentationFormat": .array([.string("markdown"), .string("plaintext")]),
+                        "resolveSupport": .object(["properties": .array([
+                            .string("documentation"), .string("detail"), .string("additionalTextEdits")])]),
+                    ]),
+                    "contextSupport": .bool(true),
+                ]),
+                "signatureHelp": .object([
+                    "signatureInformation": .object([
+                        "documentationFormat": .array([.string("markdown"), .string("plaintext")]),
+                        "parameterInformation": .object(["labelOffsetSupport": .bool(true)]),
+                    ]),
+                    "contextSupport": .bool(true),
+                ]),
+                "codeAction": .object([
+                    "codeActionLiteralSupport": .object(["codeActionKind": .object(["valueSet": .array([
+                        .string("quickfix"), .string("refactor"), .string("source")])])]),
+                    "isPreferredSupport": .bool(true),
+                    "dataSupport": .bool(true),
+                    "disabledSupport": .bool(true),
+                    "resolveSupport": .object(["properties": .array([.string("edit")])]),
+                ]),
                 "semanticTokens": .object([
                     "requests": .object(["full": .object(["delta": .bool(true)])]),
                     "tokenTypes": .array(semanticTokenTypes.map { .string($0) }),

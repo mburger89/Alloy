@@ -25,7 +25,7 @@ final class OpenDocumentView {
     @ObservationIgnored private let engine: HighlightEngine
     @ObservationIgnored private(set) var closed = false
     /// The language-server bridge (for the diagnostics and the definition request).
-    @ObservationIgnored private let lsp: LSPCoordinator?
+    @ObservationIgnored let lsp: LSPCoordinator?
     /// What the last diff build applied, kept so a diagnostics change can set the diff and the diagnostics together.
     private struct AppliedDiff {
         var model: DiffDecorationModel
@@ -41,7 +41,7 @@ final class OpenDocumentView {
     @ObservationIgnored private var appliedDiff: AppliedDiff?
     /// The presentation the applied diff was built for (line layers follow it).
     @ObservationIgnored private var appliedPresentation: Presentation = .inline
-    @ObservationIgnored private weak var workspace: Workspace?
+    @ObservationIgnored private(set) weak var workspace: Workspace?
     @ObservationIgnored private var builtKey: BuildKey?
     @ObservationIgnored private var building: BuildKey?
     /// Decoration tag to edit, for the click and menu closures.
@@ -77,6 +77,19 @@ final class OpenDocumentView {
     private(set) var features = FeatureSet()
     /// The hover popover's slot: the view's one text-anchored presentation.
     @ObservationIgnored let popoverSlot = PopoverSlotModel()
+    /// Completion as you type; exists only while the document is open at a server offering completion, signature help or
+    /// code actions, so a view without one does nothing per keystroke.
+    private(set) var scheduler: IntelligenceScheduler?
+    /// What the view's one suggestion overlay shows (read only by the overlay itself).
+    @ObservationIgnored let overlayModel = IntelligenceOverlayModel()
+    @ObservationIgnored private var schedulerFeatures = FeatureSet()
+    /// The store's code action service, for the lightbulb probe and the action list.
+    @ObservationIgnored weak var actionService: CodeActionService?
+    /// The line the lightbulb is on (set only when it changes).
+    @ObservationIgnored private(set) var lightbulbLine: Int?
+    /// The tag of the lightbulb's gutter marker, told apart from every diff tag.
+    nonisolated static let lightbulbTag: UInt64 = .max
+    private static let lightbulbOwner = CodeDecorationOwner("lightbulb", priority: 1)
     @ObservationIgnored private var hoverTask: Task<Void, Never>?
     @ObservationIgnored private var hoverGeneration = 0
     var selectedEdit: UUID?
@@ -102,6 +115,7 @@ final class OpenDocumentView {
         self.decorations.theme = .alloy
         features = lsp?.features(for: document.path) ?? FeatureSet()
         services.attach(self)
+        rebuildScheduler()
     }
 
     /// This pane's caret and selections for the file: the workspace's state for (pane, path), else the buffer's default.
@@ -115,6 +129,8 @@ final class OpenDocumentView {
         messageTask?.cancel()
         gitMarks?.coordinator?.detach(self)
         dismissHover()
+        scheduler?.stop()
+        scheduler = nil
         services.detach(self)
         left?.close()
         left = nil
@@ -334,6 +350,37 @@ final class OpenDocumentView {
         guard now != features else { return }
         features = now
         if !now.hover { dismissHover() }
+        rebuildScheduler()
+    }
+
+    /// Makes the scheduler when the document is open at a server offering one of its features, drops it otherwise. Writes
+    /// the observed property only when it appears or goes.
+    func rebuildScheduler() {
+        let wanted = lsp != nil && !closed && document.state == .editable && services.lspOpen
+            && (features.completion || features.signatureHelp || features.codeAction)
+        if wanted {
+            guard scheduler == nil || schedulerFeatures != features else { return }
+            scheduler?.stop()
+            schedulerFeatures = features
+            scheduler = IntelligenceScheduler(host: ViewIntelHost(view: self), model: overlayModel)
+        } else if scheduler != nil {
+            scheduler?.stop()
+            scheduler = nil
+        }
+        services.noteSchedulers()
+    }
+
+    /// Puts the lightbulb on `line` (0-based), or removes it. Writes the decoration only for a change or a new line.
+    func setLightbulb(line: Int?) {
+        if line == nil, lightbulbLine == nil { return }
+        lightbulbLine = line
+        let marks = line.map { [CodeLineDecoration(lines: $0..<($0 + 1), gutterMarker: CodeGutterMarker("\u{1F4A1}"), tag: Self.lightbulbTag)] } ?? []
+        decorations.setLineDecorations(marks, asOf: document.buffer.version, owner: Self.lightbulbOwner)
+    }
+
+    /// Edits the document's drain passed on; only a view with a scheduler looks at them.
+    func intelEdited(_ edits: [CodeEdit], snapshot: CodeSnapshot) {
+        scheduler?.edited(edits, snapshot: snapshot)
     }
 
     /// Asks for the hover at `offset` (the primary caret when nil) and opens the popover when something comes back. Each
@@ -435,6 +482,9 @@ final class OpenDocumentView {
                                   seconds: Self.externalSeconds)
         }
     }
+
+    /// Shows `text` in the header for `seconds` (the result of a quick fix or an edit a server asked for).
+    func intelMessage(_ text: String, seconds: Double) { flash(text, seconds: seconds) }
 
     func flash(_ text: String, seconds: Double) {
         definitionMessage = text
@@ -702,6 +752,14 @@ final class CodePanelStore {
         registry.removeAll { $0.store == nil }
         return registry.lazy.compactMap { $0.store?.view(for: document, in: pane) }.first
     }
+    /// The code action service of whichever store made the Chat view of `document`.
+    package static func existingCodeActionService(for document: EditorDocument) -> CodeActionService? {
+        registry.removeAll { $0.store == nil }
+        return registry.lazy.compactMap { entry -> CodeActionService? in
+            guard let store = entry.store, store.view(for: document, in: .chat) != nil else { return nil }
+            return store.codeActionService
+        }.first
+    }
     /// The format service of whichever store made the Chat view of `document`, so a test can shorten its timeouts.
     package static func existingFormatService(for document: EditorDocument) -> FormatService? {
         registry.removeAll { $0.store == nil }
@@ -723,6 +781,7 @@ final class CodePanelStore {
         guard let coordinator = workspace.languageServices as? LSPCoordinator, coordinator !== lsp else { return }
         lsp = coordinator
         installFormat(workspace: workspace, coordinator: coordinator)
+        installCodeActions(workspace: workspace, coordinator: coordinator)
         coordinator.savedHandler = { [weak self] path in self?.servicesByPath[path]?.lspSaved() }
         coordinator.diagnosticsHandler = { [weak self] path in
             guard let self else { return }
@@ -763,6 +822,18 @@ final class CodePanelStore {
             guard let self, let workspace, let service = self.formatService, let view = self.focusedView(workspace: workspace) else { return }
             self.formatTask = Task { @MainActor in await service.formatSelection(view: view) }
         }
+        workspace.intelHooks.run[.triggerCompletion] = { [weak self, weak workspace] in
+            guard let self, let workspace else { return }
+            self.focusedView(workspace: workspace)?.scheduler?.invoke()
+        }
+        workspace.intelHooks.run[.triggerSignature] = { [weak self, weak workspace] in
+            guard let self, let workspace else { return }
+            self.focusedView(workspace: workspace)?.scheduler?.invokeSignature()
+        }
+        workspace.intelHooks.run[.quickFix] = { [weak self, weak workspace] in
+            guard let self, let workspace else { return }
+            self.focusedView(workspace: workspace)?.scheduler?.showActions()
+        }
         workspace.intelHooks.isEnabled = { [weak self, weak workspace] command in
             guard let self, let workspace, let view = self.focusedView(workspace: workspace) else { return false }
             let editable = view.document.state == .editable
@@ -770,6 +841,18 @@ final class CodePanelStore {
             case .showHover: return view.hoverAttached(editable: editable)
             case .goToSymbol: return view.symbolsAttached(editable: editable)
             case .findReferences: return view.referencesAttached(editable: editable)
+            case .triggerCompletion:
+                let selections = view.selection(in: workspace).selections
+                return view.scheduler != nil && view.features.completion && selections.count == 1 && selections[0].isEmpty
+                    && workspace.presentation(of: view.document.path, in: view.pane) != .sideBySide
+            case .triggerSignature:
+                let selections = view.selection(in: workspace).selections
+                return view.scheduler != nil && view.features.signatureHelp && selections.count == 1 && selections[0].isEmpty
+                    && workspace.presentation(of: view.document.path, in: view.pane) != .sideBySide
+            case .quickFix:
+                let selections = view.selection(in: workspace).selections
+                return view.scheduler != nil && view.features.codeAction && selections.count == 1
+                    && workspace.presentation(of: view.document.path, in: view.pane) != .sideBySide
             case .formatDocument: return editable && view.services.lspOpen && view.features.formatting && formatService != nil
             case .formatSelection:
                 return editable && view.services.lspOpen && view.features.rangeFormatting && formatService != nil
@@ -794,6 +877,27 @@ final class CodePanelStore {
         }
         formatService = service
         workspace.formatBeforeSave = { [weak service] doc in await service?.formatForSave(doc) }
+    }
+
+    /// Quick fixes and server-initiated edits; made once a coordinator is attached.
+    private(set) var codeActionService: CodeActionService?
+
+    private func installCodeActions(workspace: Workspace, coordinator: LSPCoordinator) {
+        let service = CodeActionService(workspace: workspace, coordinator: coordinator,
+                                        applier: WorkspaceEditApplier(workspace: workspace, coordinator: coordinator))
+        service.viewFor = { [weak self, weak workspace] path in
+            guard let self, let workspace else { return nil }
+            let focused = workspace.defaultPane
+            if workspace.activeTab(in: focused) == path, let document = workspace.document(path),
+               let view = self.view(for: document, in: focused) { return view }
+            return self.views.first { $0.key.path == path && !$0.value.closed }?.value
+        }
+        codeActionService = service
+        for view in views.values { view.actionService = service }
+        coordinator.applyEditHandler = { [weak service] path, serverID, label, edit, reply in
+            guard let service else { reply.answer(applied: false, failureReason: "the editor is closing"); return }
+            service.handleServerEdit(path: path, serverID: serverID, label: label, edit: edit, reply: reply)
+        }
     }
 
     /// The view of the focused pane's active tab.
@@ -867,7 +971,9 @@ final class CodePanelStore {
             services = DocumentServices(document: document, engine: engine, lsp: lsp)
             servicesByPath[path] = services
         }
-        views[key] = OpenDocumentView(document: document, pane: pane, services: services, engine: engine, lsp: lsp)
+        let view = OpenDocumentView(document: document, pane: pane, services: services, engine: engine, lsp: lsp)
+        view.actionService = codeActionService
+        views[key] = view
     }
 
     /// The view of `document` in `pane`, once ``ensureView(for:in:)`` has made it.
@@ -965,43 +1071,42 @@ struct CodePanel: Component {
             if presentation == .sideBySide || presentation.isCompare {
                 SideBySideView(workspace: workspace, store: store, document: document, view: view, focused: $codeFocused,
                                idSuffix: Self.sideBySideSuffix(view.pane))
-            } else {
-                let plainCodeView = CodeView(buffer: document.buffer, decorations: view.decorations)
-                    .selectionState(selection)
-                    .font(family: "Menlo", size: 12)
-                    .codeViewEditable(editable)
-                    .scrollState(view.scroll)
-                    .onGutterBarClick { hit in
-                        if hit.owner == GitGutterMarks.owner { view.openGitHunk(hit) }
-                        else if hit.owner == GitBlameMarks.owner { view.openBlameRun(hit) }
-                        else { view.selectedEdit = hit.tag.flatMap { view.tags[$0] } }
-                    }
-                    .gutterBarContextMenu { hit in
-                        if let edit = hit.tag.flatMap({ view.tags[$0] }) {
-                            editMenu(edit: edit, workspace: workspace, store: store, document: document, pane: view.pane)
-                        }
-                    }
-                    .focused($codeFocused)
-                // File blame reserves the marker lane for as long as it is on: one deliberate shift per toggle.
-                let laneCodeView = view.blame.fileOn ? plainCodeView.gutterMarkerLane(true) : plainCodeView
+            } else if let scheduler = view.scheduler {
+                // Completion (and later signature help and code actions) share the one suggestion overlay, chained after the
+                // hover popover (slot B) when the server offers hover.
+                let model = view.overlayModel
                 if view.hoverAttached(editable: editable) {
-                    // The server offers hover: the view carries the text hover and its one text-anchored popover (slot B).
                     let slot = view.popoverSlot
-                    laneCodeView
+                    codeView(editable: editable)
                         .onTextHover(delay: .milliseconds(500)) { phase in view.textHover(phase, workspace: workspace) }
                         .gitPopovers(view: view)
                         .popover(item: Binding(get: { slot.hover }, set: { slot.hover = $0 }),
                                  attachmentAnchor: .range(slot.hover?.range ?? 0..<0), arrowEdge: .bottom) { presentation in
                             HoverView(presentation: presentation, cache: slot.markdownCache)
                         }
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .accessibilityIdentifier(codeViewIdentifier)
+                        .intelligenceOverlay(scheduler: scheduler, model: model, identifier: codeViewIdentifier)
                 } else {
-                    laneCodeView
+                    codeView(editable: editable)
                         .gitPopovers(view: view)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .accessibilityIdentifier(codeViewIdentifier)
+                        .intelligenceOverlay(scheduler: scheduler, model: model, identifier: codeViewIdentifier)
                 }
+            } else if view.hoverAttached(editable: editable) {
+                // The server offers hover: the view carries the text hover and its one text-anchored popover (slot B).
+                let slot = view.popoverSlot
+                codeView(editable: editable)
+                    .onTextHover(delay: .milliseconds(500)) { phase in view.textHover(phase, workspace: workspace) }
+                    .gitPopovers(view: view)
+                    .popover(item: Binding(get: { slot.hover }, set: { slot.hover = $0 }),
+                             attachmentAnchor: .range(slot.hover?.range ?? 0..<0), arrowEdge: .bottom) { presentation in
+                        HoverView(presentation: presentation, cache: slot.markdownCache)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .accessibilityIdentifier(codeViewIdentifier)
+            } else {
+                codeView(editable: editable)
+                    .gitPopovers(view: view)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .accessibilityIdentifier(codeViewIdentifier)
             }
             if presentation.isCompare {
                 GitHunkBar(view: view, workspace: workspace)
@@ -1022,6 +1127,8 @@ struct CodePanel: Component {
         }
         .onChange(of: codeFocused) { old, new in
             workspace.codeFocusChanged(new, pane: view.pane)
+            if !new { view.scheduler?.close() }
+            if new { view.scheduler?.focusChanged(true) }
             if new { onFocus?() }
             // Switching to Code mode drops the view's focus; a mode switch never saves.
             if old && !new && workspace.mode == .chat { Task { await workspace.focusLeft(path) } }
@@ -1045,6 +1152,34 @@ extension _CodeTextAnchoring {
 }
 
 extension CodePanel {
+    /// The code view every branch of the panel starts from.
+    @MainActor
+    func codeView(editable: Bool) -> CodeView {
+        let workspace = workspace, store = store, document = document, view = view
+        var base = CodeView(buffer: document.buffer, decorations: view.decorations)
+            .selectionState(selection)
+            .font(family: "Menlo", size: 12)
+            .codeViewEditable(editable)
+            .scrollState(view.scroll)
+        // A code action server reserves the marker lane from the first frame, so the lightbulb never moves the text.
+        // File blame reserves the lane for as long as it is on: one deliberate shift per toggle.
+        if (view.scheduler != nil && view.features.codeAction) || view.blame.fileOn { base = base.gutterMarkerLane(true) }
+        return base
+            .onGutterBarClick { hit in
+                if hit.source == .gutterMarker, hit.tag == OpenDocumentView.lightbulbTag {
+                    view.scheduler?.showActions()
+                } else if hit.owner == GitGutterMarks.owner { view.openGitHunk(hit) }
+                else if hit.owner == GitBlameMarks.owner { view.openBlameRun(hit) }
+                else { view.selectedEdit = hit.tag.flatMap { view.tags[$0] } }
+            }
+            .gutterBarContextMenu { hit in
+                if let edit = hit.tag.flatMap({ view.tags[$0] }) {
+                    editMenu(edit: edit, workspace: workspace, store: store, document: document, pane: view.pane)
+                }
+            }
+            .focused($codeFocused)
+    }
+
     /// Side-by-side ids carry the group's id inside a group; Chat keeps `sbs-left` / `sbs-right`.
     static func sideBySideSuffix(_ pane: PaneID) -> String {
         if case .group(let id) = pane { return "-\(id)" }
@@ -1105,4 +1240,20 @@ func editMenu(edit: UUID, workspace: Workspace, store: SessionUIStore, document:
         workspace.setPresentation(inline ? .sideBySide : .inline, of: path, in: pane)
     }
     .accessibilityIdentifier("\(inline ? "side-by-side" : "inline")-\(edit.uuidString)")
+}
+
+extension _CodeTextAnchoring where Self: ElementGroup {
+    /// The suggestion overlay, its keys, its teardown and the frame every branch of the panel ends with.
+    @MainActor
+    func intelligenceOverlay(scheduler: IntelligenceScheduler, model: IntelligenceOverlayModel, identifier: String) -> some ElementGroup {
+        let open = Binding(get: { model.isPresented }, set: { _ in })
+        return suggestionOverlay(isPresented: open, attachmentAnchor: .caret) {
+            IntelligenceOverlayView(model: model, onPick: { scheduler.accept(row: $0) })
+        }
+        // Keys and teardown go after the frame: ahead of it they fold into one more element request per frame.
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .accessibilityIdentifier(identifier)
+        .onKeyPress(phases: [.down, .repeat]) { press in scheduler.handleKey(press) }
+        .onDisappear { scheduler.close() }
+    }
 }

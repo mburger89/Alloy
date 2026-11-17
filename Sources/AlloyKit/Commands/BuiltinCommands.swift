@@ -54,6 +54,12 @@ public enum BuiltinCommands {
         addIntel("edit.formatSelection", "Format Selection", .edit, nil, menu: .edit,
                  menuID: "menu-format-selection", .formatSelection)
         addIntel("edit.showHover", "Show Hover", .edit, chord(.cmd, ch("i")), menu: .edit, menuID: "menu-show-hover", .showHover)
+        addIntel("edit.triggerCompletion", "Trigger Completion", .edit, chord(.ctrl, .named(.space)), menu: .edit,
+                 menuID: "menu-trigger-completion", .triggerCompletion)
+        addIntel("edit.signatureHelp", "Signature Help", .edit, chord([.ctrl, .shift], .named(.space)), menu: .edit,
+                 menuID: "menu-signature-help", .triggerSignature)
+        addIntel("edit.quickFix", "Quick Fix", .edit, chord(.cmd, ch(".")), menu: .edit,
+                 menuID: "menu-quick-fix", .quickFix)
         // ⌘S: MetalUI has no File menu placement for it, and a hidden key button would add elements to every frame, so
         // the code panel's key handler delivers the chord and this entry is the palette's.
         add("file.save", "Save", .file, chord(.cmd, ch("s")), .none, recents: true,

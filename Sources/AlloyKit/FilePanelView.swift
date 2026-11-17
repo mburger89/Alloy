@@ -103,7 +103,7 @@ struct FilePanelView: Component {
 
 extension ElementGroup {
     /// The code panel's keys for `pane`'s active tab: Cmd-F (Ctrl-F off macOS) opens find, Cmd-S saves, F8 / Shift-F8 step through
-    /// the problems, F12 goes to the definition, Shift-F12 lists the references, Cmd-I shows the hover. A text field elsewhere, such as the composer, keeps its keys.
+    /// the problems, F12 goes to the definition, Shift-F12 lists the references, Cmd-I shows the hover, Cmd-. lists the quick fixes. A text field elsewhere, such as the composer, keeps its keys.
     func codeKeyHandlers(workspace: Workspace, panel: CodePanelStore, pane: PaneID) -> some ElementGroup {
         self
             .onKeyPress(keys: ["f"], phases: .down) { press in
@@ -124,6 +124,13 @@ extension ElementGroup {
                 guard press.modifiers == .primary, let path = workspace.activeTab(in: pane), let document = workspace.document(path),
                       let view = panel.view(for: document, in: pane), view.hoverAttached(editable: document.state == .editable) else { return .ignored }
                 view.showHover(at: nil, workspace: workspace)
+                return .handled
+            }
+            // Cmd-.: the quick fixes at the caret (a key handler, as for Cmd-I).
+            .onKeyPress(keys: ["."], phases: .down) { press in
+                guard press.modifiers == .primary, let path = workspace.activeTab(in: pane), let document = workspace.document(path),
+                      let view = panel.view(for: document, in: pane), let scheduler = view.scheduler, view.features.codeAction else { return .ignored }
+                scheduler.showActions()
                 return .handled
             }
             // Shift-Cmd-O: the symbols of the pane's file, even when no server offers them. A key handler, not a hidden

@@ -119,7 +119,7 @@ struct IntelRig {
         let (rig, window, id) = try await CodeModePerformanceTests().rigged(layout, install: { box.intel = IntelRig(rig: $0, script: scriptFor($0)) })
         let intel = try #require(box.intel)
         try await window.runUntil { intel.coordinator.status.byPath["login.swift"]?.state == .ready }
-        try await window.runUntil { intel.coordinator.features(for: "login.swift").hover }
+        try await window.runUntil { intel.coordinator.features(for: "login.swift") != FeatureSet() }
         for _ in 0..<10 { window.tick(); await Task.yield() }
         _ = rig
         return (intel, window, id)
@@ -128,5 +128,50 @@ struct IntelRig {
     /// A script answering every hover with text.
     nonisolated static func hoverScript() -> String {
         script(extra: #","replies":{"textDocument/hover":[{"result":{"contents":{"kind":"markdown","value":"**docs**"}}}]}"#)
+    }
+}
+
+extension IntelRig {
+    /// A script whose server offers completion (triggering on `.`, resolving) and, with `hover`, hover. `completion` and
+    /// `resolve` are the entries of the two `replies` lists (JSON objects such as `{"result":[...]}`).
+    nonisolated static func completionScript(hover: Bool = false, completion: String = #"{"result":[]}"#, resolve: String? = nil,
+                                             extra: String = "") -> String {
+        var caps = #""completionProvider":{"triggerCharacters":["."],"resolveProvider":\#(resolve != nil)}"#
+        if hover { caps += #","hoverProvider":true"# }
+        var replies = #""textDocument/completion":[\#(completion)]"#
+        if let resolve { replies += #","completionItem/resolve":[\#(resolve)]"# }
+        if hover { replies += #","textDocument/hover":[{"result":{"contents":{"kind":"markdown","value":"**docs**"}}}]"# }
+        return script(caps: caps, extra: #","replies":{\#(replies)}\#(extra)"#)
+    }
+
+    /// How many `method` requests the server received.
+    func count(_ method: String) -> Int { methods().filter { $0 == method }.count }
+
+    /// Ticks the window for about `seconds` of real time.
+    func idle(_ window: TestWindow, _ seconds: Double = 0.25) async {
+        let end = Date().addingTimeInterval(seconds)
+        while Date() < end { window.tick(); try? await Task.sleep(for: .milliseconds(20)) }
+    }
+}
+
+extension IntelRig {
+    /// A script whose server offers signature help (`(` triggers, `,` retriggers) and, with `completion`, completion. `answers`
+    /// are the entries of the `textDocument/signatureHelp` replies.
+    nonisolated static func signatureScript(answers: String, completion: String? = nil) -> String {
+        var caps = #""signatureHelpProvider":{"triggerCharacters":["("],"retriggerCharacters":[","]}"#
+        var replies = #""textDocument/signatureHelp":[\#(answers)]"#
+        if let completion {
+            caps += #","completionProvider":{"triggerCharacters":["."]}"#
+            replies += #","textDocument/completion":[\#(completion)]"#
+        }
+        return script(caps: caps, extra: #","replies":{\#(replies)}"#)
+    }
+
+    /// One `SignatureHelp` reply entry: `signatures` are `(label, [parameter labels])` with string parameter labels.
+    nonisolated static func signatureAnswer(_ signatures: [(String, [String])], active: Int = 0, activeSignature: Int = 0, delayMs: Int = 0) -> String {
+        let list = signatures.map { label, params in
+            #"{"label":"\#(label)","parameters":[\#(params.map { #"{"label":"\#($0)"}"# }.joined(separator: ","))]}"#
+        }.joined(separator: ",")
+        return #"{"result":{"signatures":[\#(list)],"activeSignature":\#(activeSignature),"activeParameter":\#(active)},"delayMs":\#(delayMs)}"#
     }
 }

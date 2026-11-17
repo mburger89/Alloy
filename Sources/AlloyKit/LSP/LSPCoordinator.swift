@@ -54,6 +54,9 @@ public final class LSPCoordinator {
     /// Tells the panel's views that the features the servers of a document offer changed.
     var featuresHandler: ((String) -> Void)?
     private var featureSets: [String: FeatureSet] = [:]
+    /// Applies a server's `workspace/applyEdit` (document path, server id, label, edit) and answers `reply`. Without one
+    /// the request is answered `applied: false`.
+    var applyEditHandler: (@MainActor (String, String, String?, JSONValue, ApplyEditReply) -> Void)?
 
     public init(root: URL, builtIn: [ServerConfig] = ServerRegistry.builtIn,
                 overrides: [String: ServerConfigOverride] = [:], locator: ServerLocator, launcher: ServerLauncher) {
@@ -205,6 +208,62 @@ public final class LSPCoordinator {
         return await manager.hover(path: path, utf8Offset: utf8Offset, snapshot: snapshot)
     }
 
+    /// The completions at `utf8Offset` of `snapshot`, once the server has every edit reported so far. Cancel the calling task
+    /// to abandon the request (the server is told).
+    func completion(path: String, utf8Offset: Int, snapshot: CodeSnapshot, trigger: CompletionTrigger) async -> LSPOutcome<CompletionList> {
+        guard openPaths.contains(path), commands != nil, let manager else { return .unavailable }
+        await withCheckedContinuation { (done: CheckedContinuation<Void, Never>) in send(.barrier(done)) }
+        guard !Task.isCancelled else { return .unavailable }
+        return await manager.completion(path: path, utf8Offset: utf8Offset, snapshot: snapshot, trigger: trigger)
+    }
+
+    /// The signature help at `utf8Offset` of `snapshot`, once the server has every edit reported so far.
+    func signatureHelp(path: String, utf8Offset: Int, snapshot: CodeSnapshot, trigger: SignatureTrigger) async -> LSPOutcome<SignatureInfo?> {
+        guard openPaths.contains(path), commands != nil, let manager else { return .unavailable }
+        await withCheckedContinuation { (done: CheckedContinuation<Void, Never>) in send(.barrier(done)) }
+        guard !Task.isCancelled else { return .unavailable }
+        return await manager.signatureHelp(path: path, utf8Offset: utf8Offset, snapshot: snapshot, trigger: trigger)
+    }
+
+    /// The code actions at `range` of `snapshot` from the main server and the linters, once the servers have every edit
+    /// reported so far.
+    func codeActions(path: String, range: Range<Int>, snapshot: CodeSnapshot, automatic: Bool) async -> LSPOutcome<[CodeActionItem]> {
+        guard openPaths.contains(path), commands != nil, let manager else { return .unavailable }
+        await withCheckedContinuation { (done: CheckedContinuation<Void, Never>) in send(.barrier(done)) }
+        guard !Task.isCancelled else { return .unavailable }
+        return await manager.codeActions(path: path, range: range, snapshot: snapshot, automatic: automatic)
+    }
+
+    /// `item` with the `edit` the server fills in late.
+    func resolveCodeAction(path: String, item: CodeActionItem, snapshot: CodeSnapshot) async -> LSPOutcome<CodeActionItem> {
+        guard openPaths.contains(path), commands != nil, let manager else { return .unavailable }
+        await withCheckedContinuation { (done: CheckedContinuation<Void, Never>) in send(.barrier(done)) }
+        guard !Task.isCancelled else { return .unavailable }
+        return await manager.resolveCodeAction(path: path, item: item, snapshot: snapshot)
+    }
+
+    /// Runs a server command; an edit it asks for arrives through ``applyEditHandler``.
+    func executeCommand(path: String, serverID: String, command: CodeActionCommand, snapshot: CodeSnapshot) async -> LSPOutcome<Void> {
+        guard openPaths.contains(path), commands != nil, let manager else { return .unavailable }
+        await withCheckedContinuation { (done: CheckedContinuation<Void, Never>) in send(.barrier(done)) }
+        guard !Task.isCancelled else { return .unavailable }
+        return await manager.executeCommand(path: path, serverID: serverID, command: command, snapshot: snapshot)
+    }
+
+    /// The position encoding of server `serverID` for `path`; UTF-16 when unknown.
+    func positionEncoding(path: String, serverID: String) async -> PositionEncoding {
+        guard openPaths.contains(path), commands != nil, let manager else { return .utf16 }
+        return await manager.positionEncoding(path: path, serverID: serverID) ?? .utf16
+    }
+
+    /// `item` with its documentation, detail and additional edits filled in by the server.
+    func resolveCompletion(path: String, item: CompletionItem, snapshot: CodeSnapshot) async -> LSPOutcome<CompletionItem> {
+        guard openPaths.contains(path), commands != nil, let manager else { return .unavailable }
+        await withCheckedContinuation { (done: CheckedContinuation<Void, Never>) in send(.barrier(done)) }
+        guard !Task.isCancelled else { return .unavailable }
+        return await manager.resolveCompletion(path: path, item: item, snapshot: snapshot)
+    }
+
     /// The outline of `snapshot`, once the server has every edit reported so far. Cancel the calling task to abandon it.
     func documentSymbols(path: String, snapshot: CodeSnapshot) async -> LSPOutcome<[DocSymbol]> {
         guard openPaths.contains(path), commands != nil, let manager else { return .unavailable }
@@ -302,6 +361,12 @@ public final class LSPCoordinator {
             guard openPaths.contains(path), featureSets[path] ?? FeatureSet() != set else { return }
             featureSets[path] = set
             featuresHandler?(path)
+        case .applyEdit(let path, let serverID, let label, let edit, let reply):
+            guard let applyEditHandler else {
+                reply.answer(applied: false, failureReason: "the editor is not ready to apply server edits")
+                return
+            }
+            applyEditHandler(path, serverID, label, edit, reply)
         case .linters(let path, let ids):
             guard openPaths.contains(path) else { return }
             effectiveLinters[path] = Set(ids)

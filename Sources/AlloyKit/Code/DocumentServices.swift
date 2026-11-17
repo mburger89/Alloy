@@ -22,6 +22,8 @@ final class DocumentServices {
     /// The language-server bridge, and whether this document is currently reported open to it.
     private let lsp: LSPCoordinator?
     private(set) var lspOpen = false
+    /// Whether any attached view has a completion scheduler (so a drain looks at the views only then).
+    private var hasSchedulers = false
     /// Whether a server handles this file (decided at open and on settings changes, so typing does no lookup).
     private var lspWanted = false
     private(set) var closed = false
@@ -59,12 +61,17 @@ final class DocumentServices {
         drainEdits()
         views.removeAll { $0.view == nil }
         views.append(WeakView(view: view))
+        noteSchedulers()
         semantic?.attach(view.decorations)
         if engineIsOpen { view.engineReady() }
     }
 
+    /// A view's scheduler appeared or went.
+    func noteSchedulers() { hasSchedulers = views.contains { $0.view?.scheduler != nil } }
+
     func detach(_ view: OpenDocumentView) {
         views.removeAll { $0.view == nil || $0.view === view }
+        noteSchedulers()
         semantic?.detach(view.decorations)
     }
 
@@ -147,6 +154,7 @@ final class DocumentServices {
             feed?.yield(.edits(edits, after))
             forwardToLSP(.edits(edits, after: after), snapshot: after)
             semantic?.documentChanged()
+            if hasSchedulers { for entry in views { entry.view?.intelEdited(edits, snapshot: after) } }
         case .resync(let snapshot):
             rowLog.reset(at: snapshot.version)
             feed?.yield(.open(snapshot))
@@ -226,5 +234,6 @@ final class DocumentServices {
             lspWanted = false
             stopSemantic()
         }
+        for view in attachedViews { view.rebuildScheduler() }
     }
 }

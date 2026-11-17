@@ -51,7 +51,7 @@ import Testing
         ])
         #expect(gitMenu.items.allSatisfy { $0.shortcut == nil })
         let edit = window.testApp.menuBar.first { $0.title == "Edit" }
-        #expect(edit?.items.map(\.title).suffix(3) == ["Format Document", "Format Selection", "Show Hover"])
+        #expect(edit?.items.map(\.title).suffix(6) == ["Format Document", "Format Selection", "Show Hover", "Trigger Completion", "Signature Help", "Quick Fix"])
         let view = try #require(window.testApp.menuBar.first { $0.title == "View" })
         #expect(view.items.map(\.title) == [
             "Chat Mode", "Code Mode", "Split Right", "Split Down", "Focus Left Group", "Focus Right Group",
