@@ -34,9 +34,14 @@ extension Workspace {
         let layout = CodeLayoutState(tree: codeLayout.tree, groups: groups, focused: codeLayout.focusedGroupID)
         // Sizes of splits no longer in the tree are dropped.
         let live = Set(codeLayout.tree.splitIDs.map { "code-split-\($0.uuidString)" })
-        let sizes = savedPaneSizes.filter { !$0.key.hasPrefix("code-split-") || live.contains($0.key) }
+        let liveTerminal = Set(terminalLayout.tabs.flatMap { $0.tree.splitIDs }.map { "terminal-split-\($0.uuidString)" })
+        let sizes = savedPaneSizes.filter {
+            (!$0.key.hasPrefix("code-split-") || live.contains($0.key))
+                && (!$0.key.hasPrefix("terminal-split-") || liveTerminal.contains($0.key))
+        }
         return UIState(version: UIState.currentVersion, mode: mode, paneSizes: sizes,
                        chatCollapsed: codeLayout.chatCollapsed, layout: layout, expandedFolders: expandedFolders.sorted(),
+                       terminal: terminalLayout == TerminalLayout() ? nil : terminalLayout,
                        recentCommands: recentCommands,
                        sidebarTab: codeLayout.sidebarTab, lastSearch: lastSearch)
     }
@@ -64,6 +69,8 @@ extension Workspace {
     /// quick-open lands in Chat, whose tab list survives the install (a group's would be replaced, orphaning the document).
     func apply(_ state: UIState) {
         savedPaneSizes = state.paneSizes
+        // Installed hidden or visible as saved; no shell starts here (panes spawn lazily, `spawned` is empty).
+        terminalLayout = state.terminal ?? TerminalLayout()
         recentCommands = state.recentCommands
     }
 

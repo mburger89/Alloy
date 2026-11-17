@@ -71,6 +71,12 @@ public enum BuiltinCommands {
         add("search.replaceInFiles", "Replace in Files", .view, chord([.cmd, .shift], ch("h")), .menu, menu: .view, recents: true,
             menuID: "view-replace-in-files", enabled: hasWorkspace) { current()?.showSearch(replace: true) }
 
+        // The terminal panel lives in Code mode only; Chat mode has none, so both commands are disabled there.
+        add("terminal.toggle", "Toggle Terminal", .view, chord(.ctrl, ch("`")), .menu, menu: .view, recents: true,
+            menuID: "view-toggle-terminal", enabled: inCode) { current()?.toggleTerminal() }
+        add("terminal.new", "New Terminal", .view, chord([.ctrl, .shift], ch("`")), .menu, menu: .view, recents: true,
+            menuID: "view-new-terminal", enabled: inCode) { current()?.newTerminalTab() }
+
         add("view.commandPalette", "Command Palette…", .view, chord([.primary, .shift], ch("p")), .menu, menu: .view,
             menuID: "view-command-palette", enabled: hasWorkspace) { [unowned center] in
             guard let workspace = current() else { return }

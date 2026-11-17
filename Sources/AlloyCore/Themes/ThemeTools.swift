@@ -109,7 +109,7 @@ enum ThemeTools {
     /// Resolves a draft against `library` and builds the check fields shared by check, preview and save.
     static func report(_ draft: ThemeFile, library: ThemeLibrary, catalog: [ThemeSlotInfo]) -> Report {
         let (theme, notes) = library.resolve(draft: draft)
-        let known = Set(catalog.map(\.name))
+        let known = Set(catalog.map(\.name)).union(TerminalTokens.names)
         let ignored = draft.colors.keys.filter { !known.contains($0) }.sorted()
         let findings = ThemeContrast.findings(theme)
         return Report(theme: theme, fields: [

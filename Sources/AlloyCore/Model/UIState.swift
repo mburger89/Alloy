@@ -20,6 +20,8 @@ public struct UIState: Codable, Equatable, Sendable {
     public var layout: CodeLayoutState?
     /// Project-relative paths of the file tree's open folders.
     public var expandedFolders: [String]
+    /// The terminal panel's tabs, splits and visibility; nil until one was saved.
+    public var terminal: TerminalLayout?
     /// Which tab Code mode's sidebar shows.
     public var sidebarTab: SidebarTab
     /// The last project search that ran; nil until one did.
@@ -30,14 +32,15 @@ public struct UIState: Codable, Equatable, Sendable {
     public static let recentCommandLimit = 10
 
     public init(version: Int = UIState.currentVersion, mode: WorkspaceMode = .chat, paneSizes: [String: [Double]] = [:],
-                chatCollapsed: Bool = false, layout: CodeLayoutState? = nil, expandedFolders: [String] = [], recentCommands: [String] = [],
+                chatCollapsed: Bool = false, layout: CodeLayoutState? = nil, expandedFolders: [String] = [],
+                terminal: TerminalLayout? = nil, recentCommands: [String] = [],
                 sidebarTab: SidebarTab = .files, lastSearch: SearchQuery? = nil) {
         self.version = version; self.mode = mode; self.paneSizes = paneSizes
         self.chatCollapsed = chatCollapsed; self.layout = layout; self.expandedFolders = expandedFolders
-        self.recentCommands = recentCommands; self.sidebarTab = sidebarTab; self.lastSearch = lastSearch
+        self.terminal = terminal; self.recentCommands = recentCommands; self.sidebarTab = sidebarTab; self.lastSearch = lastSearch
     }
 
-    private enum CodingKeys: String, CodingKey { case version, mode, paneSizes, chatCollapsed, layout, expandedFolders, recentCommands, sidebarTab, lastSearch }
+    private enum CodingKeys: String, CodingKey { case version, mode, paneSizes, chatCollapsed, layout, expandedFolders, terminal, recentCommands, sidebarTab, lastSearch }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -49,6 +52,8 @@ public struct UIState: Codable, Equatable, Sendable {
         chatCollapsed = (try? c.decodeIfPresent(Bool.self, forKey: .chatCollapsed)) ?? false
         layout = (try? c.decodeIfPresent(CodeLayoutState.self, forKey: .layout)) ?? nil
         expandedFolders = (try? c.decodeIfPresent([String].self, forKey: .expandedFolders)) ?? []
+        // A malformed value is nil; a decodable one is repaired (duplicate ids, dangling focus) or dropped.
+        terminal = ((try? c.decodeIfPresent(TerminalLayout.self, forKey: .terminal)) ?? nil)?.sanitized()
         sidebarTab = (try? c.decodeIfPresent(SidebarTab.self, forKey: .sidebarTab)) ?? .files
         lastSearch = (try? c.decodeIfPresent(SearchQuery.self, forKey: .lastSearch)) ?? nil
         recentCommands = (try? c.decodeIfPresent([String].self, forKey: .recentCommands)) ?? []
@@ -62,6 +67,7 @@ public struct UIState: Codable, Equatable, Sendable {
         try c.encode(chatCollapsed, forKey: .chatCollapsed)
         try c.encodeIfPresent(layout, forKey: .layout)
         try c.encode(expandedFolders, forKey: .expandedFolders)
+        try c.encodeIfPresent(terminal, forKey: .terminal)
         try c.encode(Array(recentCommands.prefix(Self.recentCommandLimit)), forKey: .recentCommands)
         try c.encode(sidebarTab, forKey: .sidebarTab)
         try c.encodeIfPresent(lastSearch, forKey: .lastSearch)

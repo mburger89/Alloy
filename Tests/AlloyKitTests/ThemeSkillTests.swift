@@ -37,6 +37,16 @@ import Testing
         }
     }
 
+    @Test func slotsReferenceListsTerminalTokensAsOptional() throws {
+        let text = try #require(ThemeSkill.files(themesFolder: Self.folder)["reference/slots.md"])
+        let header = try #require(text.range(of: "## Terminal tokens (optional)"))
+        let tail = String(text[header.upperBound...])
+        for name in TerminalTokens.names { #expect(tail.contains("- `\(name)`:"), "\(name)") }
+        #expect(tail.contains("optional"))
+        let required = String(text[..<header.lowerBound])
+        #expect(!required.contains("terminal."))
+    }
+
     @Test func sixReferenceThemesResolveToTheBuiltIns() throws {
         let files = ThemeSkill.files(themesFolder: Self.folder)
         let library = ThemeLibrary(builtIns: BuiltInThemes.all)

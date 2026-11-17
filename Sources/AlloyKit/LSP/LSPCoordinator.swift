@@ -70,7 +70,7 @@ public final class LSPCoordinator {
         workspace.languageServices = coordinator
         workspace.onSaved = { [weak coordinator] path in coordinator?.documentSaved(path) }
         workspace.onLanguageServersChanged = { [weak coordinator] overrides in coordinator?.reload(overrides: overrides) }
-        workspace.onStop = { [weak coordinator] in await coordinator?.shutdown() }
+        workspace.addStopHook { [weak coordinator] in await coordinator?.shutdown() }
         return coordinator
     }
 

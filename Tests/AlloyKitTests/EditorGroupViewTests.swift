@@ -287,7 +287,7 @@ import Testing
         let workspace = rig.workspace
         let window = try TestWindow(size: Size(width: Pixels(1200), height: Pixels(800))) {
             VStack(spacing: 0) {
-                CodeIslandRow(workspace: workspace, store: sessions, panel: panel, quickOpen: quickOpen, splitStore: store, style: .defaults)
+                CodeIslandRow(workspace: workspace, store: sessions, panel: panel, terminal: TerminalPanelStore(workspace: workspace), quickOpen: quickOpen, splitStore: store, style: .defaults)
             }
         }
         window.installAlloyMenu(rig.workspace)

@@ -179,6 +179,14 @@ private final class FakeWorkshop: ThemeWorkshop {
         #expect(r.shop.previews.isEmpty)
     }
 
+    @Test func checkDoesNotIgnoreTerminalTokens() async throws {
+        let r = rig()
+        let theme = draft(["base": .string("alloy-dark"),
+                           "colors": .object(["terminal.background": .string("#101010"), "terminal.ansi3": .string("#E0C060")])])
+        let o = try object(await call(r, "theme_check", ["theme": theme]))
+        #expect(o["ignoredSlots"]?.arrayValue == [])
+    }
+
     @Test func previewCallsWorkshopWithResolvedDraft() async throws {
         let r = rig()
         let result = await call(r, "theme_preview", ["theme": draft()])

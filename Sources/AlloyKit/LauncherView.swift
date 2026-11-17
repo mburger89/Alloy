@@ -26,6 +26,36 @@ public final class LauncherModel {
         guard let workspace else { return .now }
         pendingReplies.append(reply)
         guard !shuttingDown else { return .later }
+        // One alert covers every request that arrives while it is open.
+        guard quitPrompt == nil else { return .later }
+        let busy = workspace.busyTerminalCount?() ?? 0
+        if busy > 0 {
+            quitPrompt = busy == 1
+                ? "1 terminal is running a process. Quit anyway?"
+                : "\(busy) terminals are running a process. Quit anyway?"
+            return .later
+        }
+        beginShutdown(workspace)
+        return .later
+    }
+
+    /// Non-nil while the busy-terminal alert is showing; its text is the alert message.
+    public private(set) var quitPrompt: String?
+
+    /// The alert's answer. Quit runs the normal shutdown; Cancel refuses every waiting request and does nothing else.
+    public func answerQuitPrompt(_ quit: Bool) {
+        guard quitPrompt != nil else { return }
+        quitPrompt = nil
+        if quit, let workspace {
+            beginShutdown(workspace)
+        } else {
+            let replies = pendingReplies
+            pendingReplies = []
+            for r in replies { r(false) }
+        }
+    }
+
+    private func beginShutdown(_ workspace: Workspace) {
         shuttingDown = true
         Task { @MainActor [weak self] in
             await workspace.saveAll()
@@ -41,7 +71,6 @@ public final class LauncherModel {
             shuttingDown = false
             for r in replies { r(true) }
         }
-        return .later
     }
 }
 
@@ -68,6 +97,14 @@ public func launcherRoot(model: LauncherModel, themes: ThemeController? = nil, c
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity)
     .background { WindowBackdropView(style: themes?.style ?? .defaults).equatable() }
+    .alert("Quit Alloy?", isPresented: Binding(get: { model.quitPrompt != nil }, set: { if !$0 { model.answerQuitPrompt(false) } })) {
+        Button("Quit") { model.answerQuitPrompt(true) }
+            .accessibilityIdentifier("quit-terminal-confirm")
+        Button("Cancel") { model.answerQuitPrompt(false) }
+            .accessibilityIdentifier("quit-terminal-cancel")
+    } message: {
+        Text(verbatim: model.quitPrompt ?? "")
+    }
 }
 
 struct ChooseProjectView: Component {

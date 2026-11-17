@@ -22,11 +22,11 @@ import Testing
         var documentGrew: Bool
     }
 
-    private func exists(_ window: TestWindow, _ id: String) -> Bool { (try? window.element(identifier: id)) != nil }
+    func exists(_ window: TestWindow, _ id: String) -> Bool { (try? window.element(identifier: id)) != nil }
 
     /// A window on `layout` with login.swift open (plus other.swift in the third group), settled; `codeViewID` is the
     /// code view that takes the typing.
-    private func rigged(_ layout: Layout) async throws -> (rig: Rig, window: TestWindow, codeViewID: String) {
+    func rigged(_ layout: Layout) async throws -> (rig: Rig, window: TestWindow, codeViewID: String) {
         let (rig, _) = try await editedRig()
         try "let other = 1\n".write(to: rig.root.appendingPathComponent("other.swift"), atomically: true, encoding: .utf8)
         let workspace = rig.workspace
@@ -59,7 +59,7 @@ import Testing
 
     /// The warm-up of `typingLeavesSidebarScreenAndChatAlone`, then 20 counted keystroke frames. `probe` names get their
     /// re-run counts; `bodies` is every body evaluation of every probe.
-    private func typing(_ window: TestWindow, _ rig: Rig, codeViewID: String, names: [String]) async throws -> Typing {
+    func typing(_ window: TestWindow, _ rig: Rig, codeViewID: String, names: [String]) async throws -> Typing {
         for _ in 0..<10 { window.tick(); await Task.yield() }
         try window.click(window.element(identifier: codeViewID))
         for _ in 0..<5 { window.tick(); await Task.yield() }
@@ -87,7 +87,7 @@ import Testing
         return Typing(perFrame: work, requests: work.reduce(0, +), bodies: bodies, reruns: reruns, documentGrew: doc.buffer.version != version)
     }
 
-    private static let watched = ["IslandRow", "CodeIslandRow", "EditorAreaView", "EditorGroupView", "GroupBar", "GroupTabStrip", "FilePanelHeader",
+    static let watched = ["IslandRow", "CodeIslandRow", "EditorAreaView", "EditorGroupView", "GroupBar", "GroupTabStrip", "FilePanelHeader",
                                   "FileTabStrip", "CodeChatColumn", "CodeSidebarView", "TitleIsland", "IslandBackdrop", "GlassBackdrop",
                                   "ChatView", "ChatColumn", "SidebarView", "AlloyScreen", "CodePanel", "FilePanelView", "TranscriptView"]
 
@@ -104,11 +104,11 @@ import Testing
     // The steady keystroke frame of Code mode, measured on this branch (Chat mode is `ViewRerunTests.steadyFrameRequests`,
     // 90). A group adds its own glass bar, tab strip, header and code view; the same file in two groups types into both.
     // History: 109 / 126 / 137 before CodeSidebarView, CodeChatColumn and CodeIslandRow became equatable.
-    private static let steadyCode1 = 46
-    private static let steadyCode2 = 62
-    private static let steadyCode3 = 72
+    static let steadyCode1 = 46
+    static let steadyCode2 = 62
+    static let steadyCode3 = 72
 
-    private func guardTyping(_ layout: Layout, steady: Int) async throws {
+    func guardTyping(_ layout: Layout, steady: Int) async throws {
         let (rig, window, id) = try await rigged(layout)
         let t = try await typing(window, rig, codeViewID: id, names: Self.watched)
         #expect(t.documentGrew)

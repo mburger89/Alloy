@@ -1,5 +1,5 @@
 import AlloyCore
-import AlloyKit
+@testable import AlloyKit
 import AlloyTestSupport
 import Foundation
 import MetalUI
@@ -8,8 +8,10 @@ import Testing
 
 /// The app's real root element in a headless 1200x800 window, settled so lists have built their rows.
 @MainActor
-func alloyWindow(_ workspace: Workspace) throws -> TestWindow {
-    let window = try TestWindow(size: Size(width: Pixels(1200), height: Pixels(800))) { rootView(workspace: workspace, center: testCenter(for: workspace)) }
+func alloyWindow(_ workspace: Workspace, terminal: TerminalPanelStore? = nil) throws -> TestWindow {
+    let window = try TestWindow(size: Size(width: Pixels(1200), height: Pixels(800))) {
+        rootView(workspace: workspace, themes: nil, center: testCenter(for: workspace), terminal: terminal)
+    }
     // The menu bar as main.swift installs it: Settings… lives there now.
     window.installAlloyMenu(workspace)
     window.tick()

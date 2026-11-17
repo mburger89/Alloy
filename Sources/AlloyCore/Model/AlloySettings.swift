@@ -49,6 +49,9 @@ public struct AlloySettings: Codable, Equatable, Sendable {
     /// empty string to hide the image the theme file names. A theme with no entry shows its file's own image, if any.
     public var backgroundImages: [String: String]
 
+    /// The integrated terminal's preferences.
+    public var terminal: TerminalSettings
+
     /// The most matches a project search collects before it stops (clamped to `searchResultRange`).
     public var searchMaxResults: Int
 
@@ -68,9 +71,10 @@ public struct AlloySettings: Codable, Equatable, Sendable {
                 lightTheme: String = "alloy-light", darkTheme: String = "dracula",
                 languageServers: [String: ServerConfigOverride] = [:],
                 appearance: AppearanceOverrides = AppearanceOverrides(), glass: Bool = true,
-                backgroundImages: [String: String] = [:],
+                backgroundImages: [String: String] = [:], terminal: TerminalSettings = TerminalSettings(),
                 keybindings: [String: String] = [:],
                 searchMaxResults: Int = AlloySettings.defaultSearchMaxResults, searchExcludes: [String] = []) {
+        self.terminal = terminal
         self.searchMaxResults = min(max(searchMaxResults, Self.searchResultRange.lowerBound), Self.searchResultRange.upperBound)
         self.searchExcludes = searchExcludes
         self.keybindings = keybindings
@@ -92,7 +96,7 @@ public struct AlloySettings: Codable, Equatable, Sendable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case claudePath, lastProjectPath, shareKnowledge, shareAcrossProjects, askBeforeSharedNotes, followEdits, paletteShowsDisabled, themeMode, theme, lightTheme, darkTheme, languageServers, appearance, glass, backgroundImages, keybindings, searchMaxResults, searchExcludes
+        case claudePath, lastProjectPath, shareKnowledge, shareAcrossProjects, askBeforeSharedNotes, followEdits, paletteShowsDisabled, themeMode, theme, lightTheme, darkTheme, languageServers, appearance, glass, backgroundImages, keybindings, searchMaxResults, searchExcludes, terminal
     }
 
     /// Every key is optional, so a file written by an older Alloy still loads with its values intact.
@@ -114,6 +118,7 @@ public struct AlloySettings: Codable, Equatable, Sendable {
         appearance = (try? c.decodeIfPresent(AppearanceOverrides.self, forKey: .appearance)) ?? AppearanceOverrides()
         glass = try c.decodeIfPresent(Bool.self, forKey: .glass) ?? true
         backgroundImages = (try? c.decodeIfPresent([String: String].self, forKey: .backgroundImages)) ?? [:]
+        terminal = (try? c.decodeIfPresent(TerminalSettings.self, forKey: .terminal)) ?? TerminalSettings()
         let maxResults = (try? c.decodeIfPresent(Int.self, forKey: .searchMaxResults)) ?? Self.defaultSearchMaxResults
         searchMaxResults = min(max(maxResults, Self.searchResultRange.lowerBound), Self.searchResultRange.upperBound)
         searchExcludes = (try? c.decodeIfPresent([String].self, forKey: .searchExcludes)) ?? []

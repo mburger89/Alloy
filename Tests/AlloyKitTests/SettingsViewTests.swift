@@ -211,6 +211,24 @@ import Testing
         await rig.workspace.stopAll()
     }
 
+    @Test func terminalSectionShowsEveryControlAndSavesAtOnce() async throws {
+        let rig = Rig()
+        let main = try alloyWindow(rig.workspace)
+        let window = try await open(main)
+        for id in ["settings-terminal-heading", "settings-terminal-shell", "settings-terminal-font-size",
+                   "settings-terminal-scrollback", "settings-terminal-option-meta", "settings-terminal-cursor",
+                   "settings-terminal-blink", "settings-terminal-paste-confirm"] {
+            _ = try window.element(identifier: id)
+        }
+        #expect(rig.workspace.settings.terminal.cursorBlink)
+        try window.click(window.element(identifier: "settings-terminal-blink"))
+        try await window.runUntil { !rig.workspace.settings.terminal.cursorBlink }
+        await rig.workspace.settle()
+        let support = rig.root.appendingPathComponent("support")
+        #expect(!AlloySettings.load(appSupport: support).terminal.cursorBlink)
+        await rig.workspace.stopAll()
+    }
+
     @Test func rereadStatShowsOnlyWhenNonZero() async throws {
         let rig = Rig()
         let a = await rig.workspace.newSession(name: "A")

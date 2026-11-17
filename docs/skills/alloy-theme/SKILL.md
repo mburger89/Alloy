@@ -25,7 +25,8 @@ Alloy's themes folder:
    whenever a choice is unclear; do not guess.
 2. Pick the closest built-in as `base`. Each one is in `reference/<id>.json` with every slot filled in:
    `dracula`, `alloy-dark`, `alloy-light`, `solarized-dark`, `solarized-light`, `one-dark`.
-   `reference/slots.md` lists every slot and what it colours.
+   `reference/slots.md` lists every slot and what it colours, and the optional `terminal.*` tokens (the
+   terminal derives them from the editor slots when a theme leaves them out).
 3. Write only the slots you change under `colors`; the rest come from the base.
 4. Name it for what it is, never with a built-in's name (Dracula, Alloy Dark, Alloy Light, Solarized Dark,
    Solarized Light, One Dark) as the theme name or the file name. Save it as
@@ -57,6 +58,9 @@ Alloy's themes folder:
    - `island text` on `windowBackground` over `islandFill`: 4.5:1 (island text is textPrimary; islandFill is drawn at the theme's island opacity over windowBackground, which is what chat, sidebar and code sit on; the pair is named "text on island")
    - `control text` on `islandFill` over `controlFill`: 4.5:1 (control text is textPrimary; controlFill is drawn at the theme's controlOpacity over islandFill; the pair is named "control text on control fill")
    - `sessionColors[*]` on `sidebarFill`: 3:1
+   - `terminal.foreground` on `terminal.background`: 4.5:1 (terminal tokens are optional; a missing one is derived from the editor palette)
+   - `terminal.ansi1`, `terminal.ansi2`, `terminal.ansi3`, `terminal.ansi4`, `terminal.ansi5`, `terminal.ansi6`, `terminal.ansi9`, `terminal.ansi10`, `terminal.ansi11`, `terminal.ansi12`, `terminal.ansi13`, `terminal.ansi14` on `terminal.background`: 3:1 (ANSI black, white, bright black and bright white are exempt, as they are conventionally low contrast)
+   - `terminal.foreground` on `terminal.background` over `terminal.selection`: 3:1
    Fix every pair under its minimum before telling the user it is ready.
 6. Tell the user to pick the theme in Alloy's Settings. Alloy re-checks contrast itself and warns before
    activating a theme that falls short.

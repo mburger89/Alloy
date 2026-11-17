@@ -73,3 +73,29 @@ Every colour slot a theme file can set under `colors`, in file order, with what 
 - `syntax.link`: Links in code and Markdown.
 
 `sessionColors` is a separate list of 6 to 12 colours, one per session row in the sidebar.
+
+## Terminal tokens (optional)
+
+The integrated terminal reads these optional `colors` keys. A theme does not need to set them: any token left
+out is derived from the editor slots above, so every theme already works. Set them only to tune the terminal.
+
+- `terminal.background`: Terminal panel background. Falls back to `surface`.
+- `terminal.foreground`: Default terminal text. Falls back to `textPrimary`.
+- `terminal.cursor`: Terminal cursor. Falls back to `textPrimary`.
+- `terminal.selection`: Selected text in the terminal, drawn over the background. Falls back to `codeSelectionFill`.
+- `terminal.ansi0`: ANSI black. Falls back to `background`.
+- `terminal.ansi1`: ANSI red. Falls back to `errorInk`.
+- `terminal.ansi2`: ANSI green. Falls back to `syntax.string`.
+- `terminal.ansi3`: ANSI yellow. Falls back to `warningInk`.
+- `terminal.ansi4`: ANSI blue. Falls back to `syntax.function`.
+- `terminal.ansi5`: ANSI magenta. Falls back to `syntax.keyword`.
+- `terminal.ansi6`: ANSI cyan. Falls back to `syntax.type`.
+- `terminal.ansi7`: ANSI white. Falls back to `textPrimary` at reduced alpha.
+- `terminal.ansi8`: ANSI bright black. Falls back to ANSI black moved toward the foreground.
+- `terminal.ansi9`: ANSI bright red. Falls back to ANSI red moved toward the foreground.
+- `terminal.ansi10`: ANSI bright green. Falls back to ANSI green moved toward the foreground.
+- `terminal.ansi11`: ANSI bright yellow. Falls back to ANSI yellow moved toward the foreground.
+- `terminal.ansi12`: ANSI bright blue. Falls back to ANSI blue moved toward the foreground.
+- `terminal.ansi13`: ANSI bright magenta. Falls back to ANSI magenta moved toward the foreground.
+- `terminal.ansi14`: ANSI bright cyan. Falls back to ANSI cyan moved toward the foreground.
+- `terminal.ansi15`: ANSI bright white. Falls back to ANSI white moved toward the foreground.

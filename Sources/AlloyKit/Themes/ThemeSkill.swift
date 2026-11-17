@@ -42,6 +42,13 @@ public enum ThemeSkill {
         for slot in ThemeSlots.all { lines.append("- `\(slot.name)`: \(slot.purpose)") }
         lines.append("")
         lines.append("`sessionColors` is a separate list of 6 to 12 colours, one per session row in the sidebar.")
+        lines.append("")
+        lines.append("## Terminal tokens (optional)")
+        lines.append("")
+        lines.append("The integrated terminal reads these optional `colors` keys. A theme does not need to set them: any token left")
+        lines.append("out is derived from the editor slots above, so every theme already works. Set them only to tune the terminal.")
+        lines.append("")
+        for name in TerminalTokens.names { lines.append("- `\(name)`: \(TerminalTokens.purposes[name] ?? "")") }
         return lines.joined(separator: "\n") + "\n"
     }
 
@@ -84,7 +91,8 @@ public enum ThemeSkill {
            whenever a choice is unclear; do not guess.
         2. Pick the closest built-in as `base`. Each one is in `reference/<id>.json` with every slot filled in:
            `dracula`, `alloy-dark`, `alloy-light`, `solarized-dark`, `solarized-light`, `one-dark`.
-           `reference/slots.md` lists every slot and what it colours.
+           `reference/slots.md` lists every slot and what it colours, and the optional `terminal.*` tokens (the
+           terminal derives them from the editor slots when a theme leaves them out).
         3. Write only the slots you change under `colors`; the rest come from the base.
         4. Name it for what it is, never with a built-in's name (Dracula, Alloy Dark, Alloy Light, Solarized Dark,
            Solarized Light, One Dark) as the theme name or the file name. Save it as

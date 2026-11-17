@@ -415,6 +415,96 @@ import Testing
         try "{\"version\":1,\"mode\":\"code\",\"layout\":{\"nope\":1},\"chatCollapsed\":\"x\"}".write(to: url, atomically: true, encoding: .utf8)
         #expect(UIStateFile.load(url) == .state(UIState(mode: .code)))
     }
+
+    // MARK: terminal field
+
+    @Test func fileWithoutTerminalDecodesAndVersionStaysOne() throws {
+        let state = try JSONDecoder().decode(UIState.self, from: Data(#"{"version":1,"mode":"code"}"#.utf8))
+        #expect(state.terminal == nil)
+        #expect(UIState.currentVersion == 1)
+    }
+
+    @Test func terminalRoundTripsThroughSaveAndLoad() throws {
+        var layout = TerminalLayout()
+        layout.toggle(defaultCwd: "/p")
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("ui-\(UUID().uuidString).json")
+        defer { try? FileManager.default.removeItem(at: url) }
+        try UIStateFile.save(UIState(terminal: layout), to: url)
+        guard case .state(let loaded) = UIStateFile.load(url) else { Issue.record("state"); return }
+        #expect(loaded.terminal == layout)
+    }
+
+    @Test func malformedTerminalValueDecodesAsNilNotCorrupt() throws {
+        for bad in ["5", #"{"tabs":"x"}"#, "[]", "null"] {
+            let url = FileManager.default.temporaryDirectory.appendingPathComponent("ui-\(UUID().uuidString).json")
+            defer { try? FileManager.default.removeItem(at: url) }
+            try #"{"version":1,"mode":"code","terminal":\#(bad)}"#.write(to: url, atomically: true, encoding: .utf8)
+            guard case .state(let loaded) = UIStateFile.load(url) else { Issue.record("not state for \(bad)"); return }
+            #expect(loaded.terminal == nil)
+        }
+    }
+
+    @Test func terminalWithDanglingFocusIsRepaired() throws {
+        var layout = TerminalLayout()
+        layout.addTab(cwd: "/a"); layout.addTab(cwd: "/b")
+        var object = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(layout)) as? [String: Any])
+        var tabs = try #require(object["tabs"] as? [[String: Any]])
+        tabs[0]["focusedPane"] = UUID().uuidString
+        object["tabs"] = tabs
+        object["activeTab"] = UUID().uuidString
+        let data = try JSONSerialization.data(withJSONObject: ["version": 1, "terminal": object])
+        let state = try JSONDecoder().decode(UIState.self, from: data)
+        let t = try #require(state.terminal)
+        #expect(t.tabs.count == 2)
+        #expect(t.activeTab == t.tabs[0].id)
+        #expect(t.tabs[0].panes[t.tabs[0].focusedPane] != nil)
+        let empty = try JSONDecoder().decode(UIState.self, from: Data(#"{"version":1,"terminal":{"visible":true,"tabs":[]}}"#.utf8))
+        #expect(empty.terminal == nil)
+    }
+
+    @Test func workspaceRestoreInstallsLayoutLazily() async throws {
+        let e = Env(); defer { e.cleanup() }
+        var layout = TerminalLayout()
+        layout.addTab(cwd: "/a"); layout.addTab(cwd: "/b"); layout.addTab(cwd: "/c")
+        layout.visible = false
+        try seed(e, String(decoding: try JSONEncoder().encode(UIState(terminal: layout)), as: UTF8.self))
+        await e.ws.restoreUIState()
+        #expect(e.ws.terminalLayout.tabs.count == 3)
+        #expect(e.ws.terminalLayout.panesToSpawn().isEmpty)
+        e.ws.terminalLayout.visible = true
+        #expect(e.ws.terminalLayout.panesToSpawn().count == 1)
+    }
+
+    @Test func workspaceWritesTerminalLayoutOnChange() async {
+        let e = Env(); defer { e.cleanup() }
+        await e.ws.restoreUIState()
+        e.ws.terminalLayout.toggle(defaultCwd: "/proj")
+        await waitUntil("timer armed") { e.clock.pendingSleepers == 1 }
+        await settle(e, 0.5)
+        await waitUntil("written") { e.ws.uiStateWriteCount == 1 }
+        guard case .state(let state) = UIStateFile.load(e.ws.uiStateURL) else { Issue.record("state"); return }
+        #expect(state.terminal?.tabs.count == 1 && state.terminal?.visible == true)
+    }
+
+    @Test func spawnedChangesDoNotWrite() async {
+        let e = Env(); defer { e.cleanup() }
+        await e.ws.restoreUIState()
+        e.ws.terminalLayout.toggle(defaultCwd: "/proj")
+        await waitUntil("timer armed") { e.clock.pendingSleepers == 1 }
+        await settle(e, 0.5)
+        await waitUntil("written") { e.ws.uiStateWriteCount == 1 }
+        e.ws.terminalLayout.markSpawned(e.ws.terminalLayout.tabs[0].focusedPane)
+        await settle(e, 1)
+        #expect(e.ws.uiStateWriteCount == 1)
+    }
+
+    @Test func terminalLayoutDoesNotWriteBeforeRestore() async {
+        let e = Env(); defer { e.cleanup() }
+        e.ws.terminalLayout.toggle(defaultCwd: "/proj")
+        await settle(e, 1)
+        #expect(e.ws.uiStateWriteCount == 0)
+        #expect(!FileManager.default.fileExists(atPath: e.ws.uiStateURL.path))
+    }
 }
 
 @MainActor @Suite struct RecentCommandsTests {

@@ -45,6 +45,8 @@ public enum ThemeContrast {
     private static let tints = ["thinkingTint", "readTint", "shellTint", "editAddTint", "editRemoveTint", "errorTint",
                                 "warningTint", "questionTint", "planTint", "commandTint", "webTint"]
 
+    private static let terminalColoured = (1...6).map { "terminal.ansi\($0)" } + (9...14).map { "terminal.ansi\($0)" }
+
     /// Every pair group `findings` checks, in a form the theme skill renders. A test keeps it equal to `findings`.
     public static let rules: [ContrastRule] = [
         ContrastRule(foregrounds: ["textPrimary", "mutedInk", "textSecondary"], backgrounds: textFills.map { [$0] }, minimum: 4.5,
@@ -73,6 +75,11 @@ public enum ThemeContrast {
         ContrastRule(foregrounds: ["control text"], backgrounds: [["islandFill", "controlFill"]], minimum: 4.5,
                      note: "control text is textPrimary; controlFill is drawn at the theme's controlOpacity over islandFill; the pair is named \"control text on control fill\""),
         ContrastRule(foregrounds: ["sessionColors[*]"], backgrounds: [["sidebarFill"]], minimum: 3, note: nil),
+        ContrastRule(foregrounds: ["terminal.foreground"], backgrounds: [["terminal.background"]], minimum: 4.5,
+                     note: "terminal tokens are optional; a missing one is derived from the editor palette"),
+        ContrastRule(foregrounds: terminalColoured, backgrounds: [["terminal.background"]], minimum: 3,
+                     note: "ANSI black, white, bright black and bright white are exempt, as they are conventionally low contrast"),
+        ContrastRule(foregrounds: ["terminal.foreground"], backgrounds: [["terminal.background", "terminal.selection"]], minimum: 3, note: nil),
     ]
 
     /// WCAG 2.1 contrast ratio of two colours (alpha is ignored; composite first).
@@ -194,6 +201,16 @@ public enum ThemeContrast {
         for (i, color) in theme.sessionColors.enumerated() {
             check("sessionColors[\(i)]", color, on: ["sidebarFill"], 3)
         }
+
+        // Terminal: the resolved palette (explicit tokens or editor-derived fallbacks) as synthetic layers.
+        let terminal = TerminalPalette.resolve(colors: theme.colors, appearance: theme.appearance)
+        synthetic["terminal.background"] = terminal.background
+        synthetic["terminal.selection"] = terminal.selection
+        check("terminal.foreground", terminal.foreground, on: ["terminal.background"], 4.5)
+        for i in Array(1...6) + Array(9...14) {
+            check("terminal.ansi\(i)", terminal.ansi[i], on: ["terminal.background"], 3)
+        }
+        check("terminal.foreground", terminal.foreground, on: ["terminal.background", "terminal.selection"], 3)
         return out
     }
 

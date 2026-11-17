@@ -282,6 +282,22 @@ public final class Workspace {
     /// True once `restoreUIState` has finished (also with no, a corrupt or a newer file). Split views read their saved sizes when
     /// first built, so Code mode builds its split only after this; it never goes back to false.
     public internal(set) var uiStateRestored = false
+    /// The terminal panel's tabs and focus (see Workspace+Terminal.swift). A change schedules the `ui-state.json` write.
+    public var terminalLayout = TerminalLayout() {
+        didSet {
+            guard terminalLayout != oldValue else { return }
+            if terminalVisible != terminalLayout.visible { terminalVisible = terminalLayout.visible }
+            scheduleUIStateWrite()
+        }
+    }
+    /// Mirrors `terminalLayout.visible` as a property of its own, so a view that reads only this does not rerun on tab changes.
+    public internal(set) var terminalVisible = false
+    /// Set by the terminal manager: how many terminals run a foreground process. Nil means none.
+    @ObservationIgnored public var busyTerminalCount: (@MainActor () -> Int)?
+    /// The object that installed `busyTerminalCount` and `onTerminalHidden`; a later one only installs while this is gone.
+    @ObservationIgnored public weak var terminalHooksOwner: AnyObject?
+    /// Run after the terminal panel hides, so its owner can drop focus state.
+    @ObservationIgnored public var onTerminalHidden: (@MainActor () -> Void)?
     /// The ids of the commands run most recently, newest first. Read when the palette opens; never observed.
     @ObservationIgnored public internal(set) var recentCommands: [String] = []
     @ObservationIgnored var savedPaneSizes: [String: [Double]] = [:]
@@ -446,8 +462,10 @@ public final class Workspace {
     @ObservationIgnored public var onSaved: (@MainActor (String) -> Void)?
     /// Called when a settings update changed the language-server overrides.
     @ObservationIgnored public var onLanguageServersChanged: (@MainActor ([String: ServerConfigOverride]) -> Void)?
-    /// Awaited at the end of `stopAll()`: whatever else must stop before the app quits (the language servers).
-    @ObservationIgnored public var onStop: (@MainActor () async -> Void)?
+    /// Run concurrently at the end of `stopAll()`: whatever else must stop before the app quits (the language
+    /// servers, the terminals). Each hook runs once; `stopAll()` clears the list as it takes it.
+    @ObservationIgnored public private(set) var onStopHooks: [@MainActor () async -> Void] = []
+    public func addStopHook(_ hook: @escaping @MainActor () async -> Void) { onStopHooks.append(hook) }
     /// Called from `updateSettings` when the user's key overrides changed; the command registry resolves them into the keymap.
     @ObservationIgnored public var onKeybindingsChanged: (@MainActor ([String: String]) -> Void)?
     /// Go to Definition for the active tab's caret (set by the code panel; the menu and F12 call it).
@@ -1448,7 +1466,11 @@ public final class Workspace {
             if case .exited = s.status { continue }
             s.status = .exited(status: 0, message: "Stopped")
         }
-        await onStop?()
+        let hooks = onStopHooks
+        onStopHooks = []
+        await withTaskGroup(of: Void.self) { group in
+            for hook in hooks { group.addTask { await hook() } }
+        }
     }
 
     /// Whether the transport took the message.

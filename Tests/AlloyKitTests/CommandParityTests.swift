@@ -48,12 +48,12 @@ import Testing
         #expect(view.items.map(\.title) == [
             "Chat Mode", "Code Mode", "Split Right", "Split Down", "Focus Left Group", "Focus Right Group",
             "Focus Up Group", "Focus Down Group", "Reveal in Tree", "Toggle Chat Column",
-            "Find in Files", "Replace in Files", "Command Palette…",
+            "Find in Files", "Replace in Files", "Toggle Terminal", "New Terminal", "Command Palette…",
         ])
         #expect(view.items.compactMap(\.accessibilityIdentifier) == [
             "view-mode-chat", "view-mode-code", "view-split-right", "view-split-down", "view-focus-left",
             "view-focus-right", "view-focus-up", "view-focus-down", "view-reveal-in-tree", "view-toggle-chat-column",
-            "view-find-in-files", "view-replace-in-files", "view-command-palette",
+            "view-find-in-files", "view-replace-in-files", "view-toggle-terminal", "view-new-terminal", "view-command-palette",
         ])
         #expect(menuItem(window, "app-settings")?.shortcut == PlatformKeyEquivalent(key: ",", modifiers: [.command]))
         #expect(menuItem(window, "view-split-down")?.shortcut == PlatformKeyEquivalent(key: "\\", modifiers: [.option, .command]))

@@ -12,9 +12,15 @@ public let alloyFilePanelIdealWidth = Pixels(360)
 /// The window's one root element, rebuilt every frame: sidebar | chat | file panel.
 @MainActor
 public func rootView(workspace: Workspace, themes: ThemeController? = nil, center: CommandCenter) -> some Element {
+    rootView(workspace: workspace, themes: themes, center: center, terminal: nil)
+}
+
+/// The same, with the terminal panel's store supplied (tests reach the window's store this way).
+@MainActor
+func rootView(workspace: Workspace, themes: ThemeController?, center: CommandCenter, terminal: TerminalPanelStore?) -> some Element {
     center.bind(workspace)
     return VStack(spacing: 0) {
-        AlloyScreen(workspace: workspace, themes: themes, center: center).equatable()
+        AlloyScreen(workspace: workspace, themes: themes, center: center, terminal: terminal).equatable()
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity)
     .background { WindowBackdropView(style: themes?.style ?? .defaults).equatable() }
@@ -105,14 +111,17 @@ struct AlloyScreen: Component {
     @State var store = SessionUIStore()
     /// The code panel's per-document state and highlight engine.
     @State var panel = CodePanelStore()
+    /// The terminal panel's shell state.
+    @State var terminal: TerminalPanelStore
     /// The shared registry and quick-open (⌘P) model, used by the global keys and the file panel.
     let center: CommandCenter
     /// Split sizes, kept in the project's `ui-state.json`.
     @State var splitStore: UIStateSplitStore
 
-    init(workspace: Workspace, themes: ThemeController? = nil, center: CommandCenter) {
+    init(workspace: Workspace, themes: ThemeController? = nil, center: CommandCenter, terminal: TerminalPanelStore? = nil) {
         self.workspace = workspace; self.themes = themes; self.center = center
         _splitStore = State(wrappedValue: UIStateSplitStore(workspace: workspace))
+        _terminal = State(wrappedValue: terminal ?? TerminalPanelStore(workspace: workspace))
     }
 
     var content: some ElementGroup {
@@ -127,7 +136,7 @@ struct AlloyScreen: Component {
                     IslandRow(workspace: workspace, store: store, panel: panel, quickOpen: quickOpen, keymap: center.registry.keymap, themes: themes,
                               style: style).equatable()
                 case .code:
-                    CodeIslandRow(workspace: workspace, store: store, panel: panel, quickOpen: quickOpen, splitStore: splitStore,
+                    CodeIslandRow(workspace: workspace, store: store, panel: panel, terminal: terminal, quickOpen: quickOpen, splitStore: splitStore,
                                   themes: themes, style: style).equatable()
                 }
             }

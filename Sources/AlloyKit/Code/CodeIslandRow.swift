@@ -5,21 +5,20 @@ import MetalUI
 let codeSidebarWidths = (min: Pixels(180), ideal: Pixels(240), max: Pixels(420))
 let codeChatWidths = (min: Pixels(280), ideal: Pixels(340), max: Pixels(560))
 let codeEditorMinWidth = Pixels(320)
-/// The reserved bottom panel: no view and no space until a later feature turns it on.
-let codeBottomPanelVisible = false
 
 /// Code mode's island row: sidebar | editor area | chat column, with resizable gutters.
 struct CodeIslandRow: Component, Equatable {
     let workspace: Workspace
     let store: SessionUIStore
     let panel: CodePanelStore
+    let terminal: TerminalPanelStore
     let quickOpen: QuickOpenModel
     let splitStore: UIStateSplitStore
     var themes: ThemeController?
     let style: AppearanceStyle
 
     nonisolated static func == (a: Self, b: Self) -> Bool {
-        a.workspace === b.workspace && a.store === b.store && a.panel === b.panel && a.quickOpen === b.quickOpen
+        a.workspace === b.workspace && a.store === b.store && a.panel === b.panel && a.terminal === b.terminal && a.quickOpen === b.quickOpen
             && a.splitStore === b.splitStore && a.themes === b.themes && a.style == b.style
     }
 
@@ -29,11 +28,25 @@ struct CodeIslandRow: Component, Equatable {
             .frame(minWidth: codeSidebarWidths.min, idealWidth: codeSidebarWidths.ideal, maxWidth: codeSidebarWidths.max)
     }
 
+    private func editorArea() -> some ElementGroup {
+        EditorAreaView(workspace: workspace, store: store, panel: panel, quickOpen: quickOpen, splitStore: splitStore,
+                       themes: themes, style: style).equatable()
+    }
+
     private func editorIsland() -> some ElementGroup {
         VStack(spacing: 0) {
-            EditorAreaView(workspace: workspace, store: store, panel: panel, quickOpen: quickOpen, splitStore: splitStore,
-                           themes: themes, style: style).equatable()
-            if codeBottomPanelVisible { Color.clear.accessibilityIdentifier("code-bottom-panel") }
+            // Hidden is exactly the old tree: no split and no panel element.
+            if terminal.visible {
+                VSplitView {
+                    editorArea()
+                    TerminalPanel(store: terminal, workspace: workspace, style: style).equatable()
+                        .frame(minHeight: terminalMinHeight, idealHeight: terminalIdealHeight)
+                }
+                .splitViewAutosaveName("code-terminal", store: splitStore)
+                .splitViewDividerIdentifier("code-terminal")
+            } else {
+                editorArea()
+            }
         }
         .island(style: style, identifier: "island-code-editor")
         .frame(minWidth: codeEditorMinWidth, maxWidth: .infinity)

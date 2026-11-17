@@ -76,6 +76,8 @@ struct SettingsView: Component {
                 Divider()
                 LanguageServersSection(workspace: workspace, builtIn: coordinator.builtIn, locator: coordinator.locator)
             }
+            Divider()
+            TerminalSettingsSection(workspace: workspace)
             if saved {
                 Text("Saved").font(size: 12).foregroundColor(.mutedInk).accessibilityIdentifier("settings-saved")
             }
