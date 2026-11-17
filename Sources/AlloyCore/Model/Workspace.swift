@@ -89,7 +89,18 @@ public final class Workspace {
     @ObservationIgnored var fileTreeDebounceTask: Task<Void, Never>?
     @ObservationIgnored var fileTreeRefreshCount = 0
     public private(set) var sessions: [Session] = []
-    public private(set) var ledger: ProjectLedger { didSet { if fileTreeActive { updateFileTreeMarks() } } }
+    /// The edit ledger. Observation is hand-written so a ledger batch (`withLedgerBatch`) notifies observers once, when
+    /// it ends, instead of once per file: each notification costs the window a full frame, and a replace across
+    /// hundreds of files waited for one frame per file.
+    @ObservationIgnored private var storedLedger: ProjectLedger
+    @ObservationIgnored private var ledgerNotifyPending = false
+    public private(set) var ledger: ProjectLedger {
+        get { access(keyPath: \.ledger); return storedLedger }
+        set { ledgerWillChange(); storedLedger = newValue; ledgerDidChange() }
+        _modify { ledgerWillChange(); yield &storedLedger; ledgerDidChange() }
+    }
+    private func ledgerWillChange() { if ledgerBatchDepth > 0 { ledgerNotifyPending = true } else { withMutation(keyPath: \.ledger) {} } }
+    private func ledgerDidChange() { if ledgerBatchDepth == 0, fileTreeActive { updateFileTreeMarks() } }
     public var selectedSessionID: Session.ID? {
         didSet {
             guard let id = selectedSessionID, id != oldValue, historyPending.contains(id) else { return }
@@ -529,7 +540,7 @@ public final class Workspace {
         self.fileIndex = FileIndex(root: projectRoot)
         self.projectRoot = projectRoot; self.appSupport = appSupport; self.settings = settings
         self.locate = locate; self.loginPATH = loginPATH; self.makeTransport = makeTransport; self.now = now; self.writeFile = writeFile
-        self.ledger = ProjectLedger(projectRoot: projectRoot)
+        self.storedLedger = ProjectLedger(projectRoot: projectRoot)
         self.knowledgeScope = KnowledgeScope(ownRoot: projectRoot.path)
         self.hasCurrentNote = { [weak self] path, stamp in
             self?.notes.notes(for: .file(path)).contains { $0.stamp == stamp } ?? false
@@ -2260,7 +2271,10 @@ public final class Workspace {
         ledgerBatchDepth += 1
         defer {
             ledgerBatchDepth -= 1
-            if ledgerBatchDepth == 0, ledgerDirty { ledgerDirty = false; persistLedger() }
+            if ledgerBatchDepth == 0 {
+                if ledgerNotifyPending { ledgerNotifyPending = false; withMutation(keyPath: \.ledger) {}; ledgerDidChange() }
+                if ledgerDirty { ledgerDirty = false; persistLedger() }
+            }
         }
         return try await body()
     }

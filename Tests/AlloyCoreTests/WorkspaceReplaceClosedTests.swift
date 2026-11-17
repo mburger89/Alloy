@@ -1,7 +1,17 @@
 @testable import AlloyCore
 import AlloyTestSupport
 import Foundation
+import Observation
 import Testing
+
+@MainActor private final class LedgerWatch {
+    let ws: Workspace
+    var count = 0
+    init(_ ws: Workspace) { self.ws = ws }
+    func arm() {
+        withObservationTracking({ _ = ws.ledger }, onChange: { MainActor.assumeIsolated { self.count += 1; self.arm() } })
+    }
+}
 
 @MainActor @Suite struct WorkspaceReplaceClosedTests {
     private func makePlan(_ e: Env, _ names: [String], find: String = "foo", with template: String = "bar") throws -> ReplacePlan {
@@ -31,6 +41,26 @@ import Testing
             groups.insert(edits[0].group)
         }
         #expect(groups == [report.group])
+    }
+
+    /// A ledger batch tells observers once. Each notification costs the window a frame, so a notification per file
+    /// made Replace All over 200 files take seconds (a frame per file); it must stay a constant.
+    @Test func replaceAcross200FilesNotifiesLedgerObserversOnce() async throws {
+        let e = Env(); defer { e.cleanup() }
+        let names = (0..<200).map { "f\($0).txt" }
+        for n in names { e.write(n, "one foo\n") }
+        await e.ws.settle()
+        let plan = try makePlan(e, names)
+        let watch = LedgerWatch(e.ws)
+        watch.arm()
+        let before = e.ws.ledgerPersistCount
+        let report = await e.ws.replace(plan)
+        await Task.yield()
+        #expect(report.perFile.count == 200)
+        #expect(report.perFile.allSatisfy { $0.outcome == .applied(edits: 1) })
+        #expect(watch.count == 1, "ledger observers were notified \(watch.count) times")
+        #expect(e.ws.ledgerPersistCount == before + 1)
+        #expect(e.ws.ledger.files.count == 200)
     }
 
     @Test func watcherAttributesNothingOutside() async throws {
