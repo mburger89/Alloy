@@ -12,7 +12,7 @@ import Testing
 @MainActor
 @Suite struct HoverGuardTests {
     private typealias Perf = CodeModePerformanceTests
-    private static let knownPopoverGap = 2
+    private static let knownPopoverGap = 0
 
     private func guardTyping(_ layout: Perf.Layout, steady: Int) async throws {
         let perf = Perf()
@@ -21,7 +21,7 @@ import Testing
         #expect(t.documentGrew)
         print("HOVERGUARD typing \(layout.rawValue) perFrame=\(t.perFrame) requests=\(t.requests) bodies=\(t.bodies)")
         // KNOWN MetalUI GAP (reported): the hidden text-anchored popover(item:attachmentAnchor:) adds 1-2 element requests
-        // per frame while item is nil. Drop `knownPopoverGap` to 0 when MetalUI fixes it; never raise it.
+        // per frame while item is nil. MetalUI #343 fixed it; keep `knownPopoverGap` at 0, never raise it.
         #expect(t.perFrame.allSatisfy { $0 <= steady + Self.knownPopoverGap }, "per-frame element requests \(t.perFrame)")
         #expect(t.requests <= (steady + Self.knownPopoverGap) * 20, "element requests \(t.requests)")
         #expect(t.reruns["CodePanel"] == 0, "CodePanel re-ran \(t.reruns["CodePanel"] ?? -1) times while typing")

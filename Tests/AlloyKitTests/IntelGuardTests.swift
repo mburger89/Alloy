@@ -12,7 +12,7 @@ import Testing
 @Suite struct IntelGuardTests {
     private typealias Perf = CodeModePerformanceTests
     /// The hover's hidden text-anchored popover (a known MetalUI gap, see `HoverGuardTests`); never raise it.
-    private static let knownPopoverGap = 2
+    private static let knownPopoverGap = 0
 
     private static func script(hits: Int = 3, root: String = "") -> String {
         let symbol = #"{"name":"login","kind":12,"range":{"start":{"line":0,"character":0},"end":{"line":0,"character":5}},"selectionRange":{"start":{"line":0,"character":0},"end":{"line":0,"character":5}}}"#
