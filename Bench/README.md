@@ -1,16 +1,16 @@
 # alloy-bench
 
-Benchmark harness comparing Zed, Delta and Alloy (spec section 6.6). Separate SwiftPM package, no MetalUI dependency.
+Benchmark harness comparing Zed, Delta, Alloy and the optional editors VS Code, Cursor, Sublime Text and IntelliJ IDEA (spec section 6.6; ids `zed`, `delta`, `alloy`, `vscode`, `cursor`, `sublime`, `idea`). Separate SwiftPM package, no MetalUI dependency.
 Run tests: `swift test --package-path Bench`.
 
 ## Capability survey (read-only: `--help`, Info.plist, docs; no GUI launched)
 
-| | Zed 1.27.0 | Delta 0.1.0 | Alloy |
-|---|---|---|---|
-| App binary | `/Applications/Zed.app/Contents/MacOS/zed` (CLI shim: `/opt/homebrew/bin/zed`) | `/Applications/Delta.app/Contents/MacOS/delta-app` (CLI: `.../delta`) | `<Alloy repo>/.build/release/Alloy` |
-| Open with a file | `zed <file>` (also `path:line:col`). The harness launches the app binary, which takes `paths_or_urls` and `--user-data-dir` but not the CLI shim's `-n` | `delta open <PATH_OR_URL>` (path or `delta://` link; activates app); URL scheme `delta://` registered. No documented flag to open a file in an editor view | `Alloy <project-dir> [<file>]` |
-| Isolated profile | Yes: `--user-data-dir <DIR>` | None found in `delta --help` (only `--json`, `--debug`) | n/a (no persistent profile) |
-| Disable cursor blink w/o touching user settings | Not via CLI. Setting `cursor_blink` lives in settings.json, which the harness must not edit. With `--user-data-dir` a temp profile could carry its own settings.json (config dir is separate from data dir, so unconfirmed); otherwise record as a caveat. Harness additionally ignores diffs in regions <= 4 px wide | No setting/flag found; record as caveat | No blink in Plan 1 |
+| | Zed 1.27.0 | Delta 0.1.0 | Alloy | VS Code 1.147.0 | Cursor 3.30.14 | Sublime Text Build 4215 | IntelliJ IDEA 2026.3 |
+|---|---|---|---|---|---|---|---|
+| App binary | `/Applications/Zed.app/Contents/MacOS/zed` (CLI shim: `/opt/homebrew/bin/zed`) | `/Applications/Delta.app/Contents/MacOS/delta-app` (CLI: `.../delta`) | `<Alloy repo>/.build/release/Alloy` | `/Applications/Visual Studio Code.app/Contents/MacOS/Code` (read from Info.plist; bundle id `com.microsoft.VSCode`) | `/Applications/Cursor.app/Contents/MacOS/Cursor` (bundle id `com.todesktop.230313mzl4w4u92`) | `/Applications/Sublime Text.app/Contents/MacOS/sublime_text` (bundle id `com.sublimetext.4`) | `/Applications/IntelliJ IDEA.app/Contents/MacOS/idea` (bundle id `com.jetbrains.intellij`) |
+| Open with a file | `zed <file>` (also `path:line:col`). The harness launches the app binary, which takes `paths_or_urls` and `--user-data-dir` but not the CLI shim's `-n` | `delta open <PATH_OR_URL>` (path or `delta://` link; activates app); URL scheme `delta://` registered. No documented flag to open a file in an editor view | `Alloy <project-dir> [<file>]` | `Code <file>` plus `--disable-extensions --skip-welcome --skip-release-notes --disable-workspace-trust`; flags checked against the bundled `bin/code --help`. Open: whether typing needs a focus click | Same flags as VS Code (same Electron base). Open: first-run login or onboarding that no flag skips | `sublime_text --safe-mode <file>`; `--safe-mode` read from `--help`. Open: nothing known | `idea <file>`; the GUI binary's `--help` was not run. Open: pid after launch (the launcher may hand off to another process) |
+| Isolated profile | Yes: `--user-data-dir <DIR>` | None found in `delta --help` (only `--json`, `--debug`) | n/a (no persistent profile) | Yes: `--user-data-dir <DIR>` and `--extensions-dir <DIR>/extensions`, with a seeded `User/settings.json` | Same as VS Code | Safe mode uses its own sandboxed data folder, not cleaned by the harness. Open: whether it persists state outside the run | Yes: `IDEA_PROPERTIES` points at a per-run `idea.properties` (config, system, plugins and log paths) plus seeded `config/options/ide.general.xml`. Open: licence and data-sharing consent live outside the profile, so a first-run dialog may remain |
+| Disable cursor blink w/o touching user settings | Not via CLI. Setting `cursor_blink` lives in settings.json, which the harness must not edit. With `--user-data-dir` a temp profile could carry its own settings.json (config dir is separate from data dir, so unconfirmed); otherwise record as a caveat. Harness additionally ignores diffs in regions <= 4 px wide | No setting/flag found; record as caveat | No blink in Plan 1 | Seeded per-run `editor.cursorBlinking: solid` (read from the settings schema, unverified live) | Same as VS Code | Safe mode ignores user settings, so the caret may blink; recorded as a caveat | Not handled; the harness ignores diffs in regions <= 4 px wide |
 
 Note: `zed` CLI forks the real app and exits; the harness launches the app binary directly so the tracked PID is the app.
 
@@ -21,6 +21,7 @@ Note: `zed` CLI forks the real app and exits; the harness launches the app binar
 - Delta / largeFileOpen: `delta open` takes a path or delta:// link only; no editor-open semantics documented.
 - Delta / scrollFrames and memory: Delta opens projects, not files; needs a live probe to learn what it displays.
 - Zed: all metrics supported.
+- VS Code, Cursor, Sublime Text, IntelliJ IDEA: no metric is marked unsupported; nothing is known impossible without a live probe. Open questions for the live probe: VS Code and Cursor typing focus (whether a click is needed), Cursor first-run login, Sublime safe-mode data folder persistence, IntelliJ consent state outside the profile and its pid after launch. A metric the probe shows to be impossible becomes `n/a: <reason>` then.
 
 Revisit the Delta entries when a live (BENCH_LIVE=1) probe is possible.
 
@@ -43,8 +44,9 @@ Run it only on a quiet machine: nothing else may be using the screen, keyboard o
 1. **Permissions.** Grant the terminal (the app that launches `swift run`) Screen Recording and Accessibility in
    System Settings > Privacy & Security, then restart the terminal. The harness checks both and exits with exact
    instructions (exit code 3) before launching anything.
-2. **Quit Zed and Delta first.** The harness refuses (exit code 2) when either is running, matched by bundle id
-   (`dev.zed.Zed`, `com.zed-industries.delta`) and by executable path, and names the main app pid. It re-checks before
+2. **Quit every selected editor first.** The harness refuses (exit code 2) when one is running, matched by bundle id
+   (`dev.zed.Zed`, `com.zed-industries.delta`, `com.microsoft.VSCode`, `com.todesktop.230313mzl4w4u92`, `com.sublimetext.4`,
+   `com.jetbrains.intellij`) and by executable path (`zed`, `delta-app`, `Code`, `Cursor`, `sublime_text`, `idea`), and names the main app pid. It re-checks before
    each app's block of metrics. It never kills an app it did not launch.
 3. **Keep the target area clear.** Before each app's block the harness refuses (exit code 4) when any other app's
    normal window (layer 0, the terminal running the harness included) covers more than 10 % of the central 60 % x 60 %
@@ -57,6 +59,7 @@ Run it only on a quiet machine: nothing else may be using the screen, keyboard o
    ```
    swift run --package-path Bench -c release alloy-bench --apps zed,delta
    swift run --package-path Bench -c release alloy-bench --apps zed,delta,alloy --alloy-build <Alloy repo root>
+   swift run --package-path Bench -c release alloy-bench --apps vscode,cursor,sublime,idea
    ```
 
    `--alloy-build` points at the Alloy repo root (build it first with `swift build -c release`; the binary is
@@ -96,7 +99,7 @@ Run it only on a quiet machine: nothing else may be using the screen, keyboard o
    terminal away from where app windows open: activating an app dims the previous frontmost window and invalidates
    runs. Use a single display: capture is main-display only. Keep the screen awake and the Mac on AC power.
 7. **Approximate run time.** About 25 minutes for zed and delta together: startup 10 launches, typing one launch
-   (~30 s), scroll 5 x ~15 s, memory 5 x ~25 s, memoryIdle + idleCPU 3 x ~45 s, largeFileOpen 10 launches, per app.
+   (~30 s), scroll 5 x ~15 s, memory 5 x ~25 s, memoryIdle + idleCPU 3 x ~45 s, largeFileOpen 10 launches, per app. Each of vscode, cursor, sublime and idea adds roughly another 10 to 12 minutes (IntelliJ more, with indexing).
 
 ### What each app is given to open
 
@@ -107,6 +110,17 @@ be modified.
 - Zed: the file, plus `--user-data-dir <fresh temp dir per run>` (an isolated profile; Zed's own settings are not touched).
 - Alloy: `<directory> <file>`.
 - Delta: the directory (it opens projects, not files), which contains only that file.
+- VS Code, Cursor, Sublime Text, IntelliJ IDEA: the file, plus the per-run profile below.
+
+### Per-run profiles
+
+Each editor gets a fresh temporary profile per run; no real profile under the user's library is read or edited.
+
+- VS Code and Cursor: `--user-data-dir <profile>` and `--extensions-dir <profile>/extensions`, with `--disable-extensions`, and a seeded `User/settings.json` (telemetry off, no updates, no startup editor, solid cursor).
+- Sublime Text: `--safe-mode`; no profile directory is passed.
+- IntelliJ IDEA: `IDEA_PROPERTIES` names a per-run `idea.properties` whose config, system, plugins and log paths sit in the profile, plus a seeded `config/options/ide.general.xml`.
+
+The landing page race stays Alloy vs Zed; the /benchmarks page lists every measured editor.
 
 ### Survivor policy
 

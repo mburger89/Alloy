@@ -10,7 +10,7 @@ struct RunCommand: AsyncParsableCommand {
     static let configuration = CommandConfiguration(commandName: "run",
         abstract: "Run the benchmark (the default subcommand).")
 
-    @Option(help: "Comma-separated: zed,delta,alloy (default: zed,delta; plus alloy when --alloy-build is given)") var apps: String?
+    @Option(help: "Comma-separated: zed,delta,vscode,cursor,sublime,idea,alloy (default: zed,delta; plus alloy when --alloy-build is given)") var apps: String?
     @Option(help: "Comma-separated metrics (default: all)") var metrics: String?
     @Option(help: "Override the number of runs per metric") var runs: Int?
     @Flag(help: "Purge disk caches before each startup run (needs passwordless sudo)") var cold = false

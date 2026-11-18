@@ -34,7 +34,7 @@ public enum SitePage {
     /// `runs` are the published results in index order (oldest first); the newest is the headline.
     public static func render(index: PublishedIndex, runs: [RunResult]) -> String {
         var body = "<h1>Alloy benchmarks</h1>\n"
-        body += "<p class=\"lead\">Alloy (built on MetalUI) measured against Zed and Delta on the same Mac, from outside the apps.</p>\n"
+        body += "<p class=\"lead\">Alloy (built on MetalUI) measured against \(lead(runs.last)) on the same Mac, from outside the apps.</p>\n"
         if let latest = runs.last, let entry = index.runs.last {
             body += headline(latest, partial: entry.partial)
             body += table(latest)
@@ -54,6 +54,12 @@ public enum SitePage {
 
     // MARK: sections
 
+    /// "Zed and Delta" for results that only know the original editors; "Zed, Delta and VS Code" when more were measured.
+    private static func lead(_ r: RunResult?) -> String {
+        let names = r.map { EditorCatalog.present(in: $0).filter { $0.id != "alloy" }.map(\.name) } ?? ["Zed", "Delta"]
+        return names.dropLast().joined(separator: ", ") + " and " + names[names.count - 1]
+    }
+
     private static func headline(_ r: RunResult, partial: Bool) -> String {
         let verdicts = Metric.allCases.map { Parity.judge(r, metric: $0) }
         let judged = verdicts.filter { if case .unjudged = $0 { return false } else { return true } }
@@ -69,7 +75,9 @@ public enum SitePage {
     }
 
     private static func table(_ r: RunResult) -> String {
-        var s = "<div class=\"scroll\"><table>\n<thead><tr><th>Metric</th><th>Zed</th><th>Delta</th><th>Alloy</th><th>Verdict</th></tr></thead>\n<tbody>\n"
+        let apps = EditorCatalog.present(in: r)
+        var s = "<div class=\"scroll\"><table>\n<thead><tr><th>Metric</th>" + apps.map { "<th>\(escape($0.name))</th>" }.joined()
+            + "<th>Verdict</th></tr></thead>\n<tbody>\n"
         for m in Metric.allCases {
             let v = Parity.judge(r, metric: m)
             let word = Publisher.word(v)
@@ -79,7 +87,7 @@ public enum SitePage {
             case .ahead, .par: break
             }
             s += "<tr><th scope=\"row\">\(title(m))</th>"
-            for app in ["zed", "delta", "alloy"] { s += "<td>\(cell(r.outcomes[app]?[m]))</td>" }
+            for app in apps { s += "<td>\(cell(r.outcomes[app.id]?[m]))</td>" }
             s += "<td>\(vcell)</td></tr>\n"
         }
         return s + "</tbody>\n</table></div>\n"
@@ -103,7 +111,7 @@ public enum SitePage {
             ("Start", e.cold ? "cold" : "warm"),
             ("Harness", r.harnessSHA),
         ]
-        for (id, name) in [("zed", "Zed"), ("delta", "Delta"), ("alloy", "Alloy")] {
+        for (id, name) in EditorCatalog.present(in: r) {
             if let v = r.apps[id] { rows.append((name + " version", v)) }
         }
         var s = "<h2>Environment and versions</h2>\n<dl>\n"
@@ -113,7 +121,7 @@ public enum SitePage {
 
     private static func notes(_ r: RunResult) -> String {
         var items: [String] = []
-        for (id, name) in [("zed", "Zed"), ("delta", "Delta"), ("alloy", "Alloy")] {
+        for (id, name) in EditorCatalog.present(in: r) {
             for m in Metric.allCases {
                 if case .measured(_, _, let notes, let failures)? = r.outcomes[id]?[m] {
                     for n in notes { items.append("\(name) \(title(m)): \(n)") }
@@ -152,7 +160,10 @@ public enum SitePage {
     private static func history(_ runs: [RunResult]) -> String {
         let charts = Metric.allCases.compactMap { m in SiteChart.svg(metric: m, runs: runs).map { (m, $0) } }
         guard !charts.isEmpty else { return "" }
-        var s = "<h2>History</h2>\n<p class=\"legend\"><span class=\"key zed\">Zed median</span> <span class=\"key alloy\">Alloy median</span></p>\n<div class=\"charts\">\n"
+        var s = "<h2>History</h2>\n<p class=\"legend\"><span class=\"key zed\">Zed median</span> <span class=\"key alloy\">Alloy median</span>"
+        let plotted = Set(Metric.allCases.flatMap { SiteChart.extraEditors(metric: $0, runs: runs) })
+        for e in EditorCatalog.all where plotted.contains(e.id) { s += " <span class=\"key \(e.id)\">\(escape(e.name)) median</span>" }
+        s += "</p>\n<div class=\"charts\">\n"
         for (m, svg) in charts { s += "<figure><figcaption>\(title(m))</figcaption>\(svg)</figure>\n" }
         return s + "</div>\n"
     }
@@ -188,10 +199,10 @@ public enum SitePage {
 
     private static let css = """
     :root { color-scheme: light dark; --bg: #ffffff; --fg: #1a1a1f; --muted: #5c5c66; --line: #d8d8de; --panel: #f5f5f8;
-      --zed: #1f5fd1; --alloy: #c2410c; --good: #17692f; --bad: #b3261e; --warn: #8a5a00; }
+      --zed: #1f5fd1; --alloy: #c2410c; --vscode: #0e7490; --cursor: #7c3aed; --sublime: #a21caf; --idea: #4d7c0f; --good: #17692f; --bad: #b3261e; --warn: #8a5a00; }
     @media (prefers-color-scheme: dark) {
       :root { --bg: #111114; --fg: #e8e8ec; --muted: #a0a0ab; --line: #34343c; --panel: #1b1b20;
-        --zed: #6cb0ff; --alloy: #ff9a5c; --good: #6fd08c; --bad: #ff8a80; --warn: #e6b84d; } }
+        --zed: #6cb0ff; --alloy: #ff9a5c; --vscode: #5cd0e8; --cursor: #b794ff; --sublime: #f0abfc; --idea: #a3d65c; --good: #6fd08c; --bad: #ff8a80; --warn: #e6b84d; } }
     * { box-sizing: border-box; }
     body { margin: 0; background: var(--bg); color: var(--fg); font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
     main { max-width: 60rem; margin: 0 auto; padding: 24px 16px 48px; }
@@ -222,7 +233,12 @@ public enum SitePage {
     .series { fill: none; stroke-width: 2; }
     .series.zed { stroke: var(--zed); } .dot.zed { fill: var(--zed); }
     .series.alloy { stroke: var(--alloy); stroke-dasharray: 5 3; } .dot.alloy { fill: var(--alloy); }
+    .series.vscode { stroke: var(--vscode); stroke-dasharray: 2 3; } .dot.vscode { fill: var(--vscode); }
+    .series.cursor { stroke: var(--cursor); stroke-dasharray: 8 3; } .dot.cursor { fill: var(--cursor); }
+    .series.sublime { stroke: var(--sublime); stroke-dasharray: 1 3; } .dot.sublime { fill: var(--sublime); }
+    .series.idea { stroke: var(--idea); stroke-dasharray: 8 3 2 3; } .dot.idea { fill: var(--idea); }
     .key { font-weight: 600; margin-right: 16px; } .key.zed { color: var(--zed); } .key.alloy { color: var(--alloy); }
+    .key.vscode { color: var(--vscode); } .key.cursor { color: var(--cursor); } .key.sublime { color: var(--sublime); } .key.idea { color: var(--idea); }
     a { color: var(--zed); }
 
     """

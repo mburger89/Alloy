@@ -76,6 +76,48 @@ import Foundation
         #expect(TargetApp.alloy(buildDir: "/x").seededFiles.isEmpty)
     }
 
+    private func stub(flag: String? = nil, envKey: String? = nil,
+                      profileArguments: (@Sendable (String) -> [String])? = nil,
+                      mapper: (@Sendable (String) -> String)? = nil) -> TargetApp {
+        var app = TargetApp(id: "stub", displayName: "Stub", bundlePath: nil, executablePath: "/x",
+                            launchArguments: { [$0 ?? ""] }, userDataDirFlag: flag, dataDirEnvironmentKey: envKey)
+        if let profileArguments { app.profileArguments = profileArguments }
+        if let mapper { app.dataDirEnvironmentValue = mapper }
+        return app
+    }
+
+    @Test func profileArgumentsFollowTheDataDirFlag() {
+        let app = stub(flag: "--user-data-dir", profileArguments: { ["--extensions-dir", $0 + "/extensions"] })
+        #expect(Launcher.arguments(for: app, file: "/a b/c.swift", userDataDir: "/p")
+                == ["--user-data-dir", "/p", "--extensions-dir", "/p/extensions", "/a b/c.swift"])
+    }
+
+    @Test func environmentValueUsesTheMapper() {
+        let app = stub(envKey: "IDEA_PROPERTIES", mapper: { $0 + "/idea.properties" })
+        #expect(Launcher.environment(for: app, userDataDir: "/p", base: ["X": "1"])
+                == ["X": "1", "IDEA_PROPERTIES": "/p/idea.properties"])
+    }
+
+    @Test func seedReplacesProfileDirPlaceholder() throws {
+        let dir = NSTemporaryDirectory() + "bench-seed-\(getpid())-\(UUID().uuidString)"
+        defer { try? FileManager.default.removeItem(atPath: dir) }
+        try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+        try Launcher.seed(["idea.properties": "idea.config.path=\(TargetApp.profileDirPlaceholder)/config\n"], into: dir)
+        let text = try String(contentsOfFile: dir + "/idea.properties", encoding: .utf8)
+        #expect(text == "idea.config.path=\(dir)/config\n")
+        #expect(!text.contains(TargetApp.profileDirPlaceholder))
+    }
+
+    @Test func zedAndAlloyOutputUnchanged() throws {
+        #expect(Launcher.arguments(for: .zed, file: "/tmp/a.swift", userDataDir: "/tmp/ud") == ["--user-data-dir", "/tmp/ud", "/tmp/a.swift"])
+        #expect(Launcher.environment(for: .alloy(buildDir: "/x"), userDataDir: "/tmp/ud", base: [:]) == ["ALLOY_DATA_DIR": "/tmp/ud"])
+        let dir = NSTemporaryDirectory() + "bench-seed-\(getpid())-\(UUID().uuidString)"
+        defer { try? FileManager.default.removeItem(atPath: dir) }
+        try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+        try Launcher.seed(TargetApp.zed.seededFiles, into: dir)
+        #expect(try String(contentsOfFile: dir + "/config/settings.json", encoding: .utf8) == TargetApp.zed.seededFiles["config/settings.json"])
+    }
+
     @Test func seedWritesNestedFilesUnderDirectory() throws {
         let dir = NSTemporaryDirectory() + "bench-seed-\(getpid())-\(UUID().uuidString)"
         defer { try? FileManager.default.removeItem(atPath: dir) }

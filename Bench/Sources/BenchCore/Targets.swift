@@ -36,6 +36,14 @@ public struct TargetApp: Sendable {
     /// (it would otherwise cover the editor and swallow keystrokes); it is the state of a user who has trusted the project.
     /// `enable_language_server: false` keeps Zed from starting (or downloading) rust-analyzer for the Rust corpus; Alloy has none.
     public var seededFiles: [String: String]
+    /// Placeholder in seeded file contents that the launcher replaces with the per-run profile directory.
+    public static let profileDirPlaceholder = "@PROFILE_DIR@"
+    /// Extra arguments that depend on the per-run profile directory, appended after `userDataDirFlag <dir>` and
+    /// before `launchArguments` (VS Code's `--extensions-dir <dir>/extensions`).
+    public var profileArguments: @Sendable (_ profileDir: String) -> [String]
+    /// Value for `dataDirEnvironmentKey` given the profile directory; default is the bare directory
+    /// (IntelliJ points its key at a properties file inside it).
+    public var dataDirEnvironmentValue: @Sendable (_ profileDir: String) -> String
 
     public init(id: String, displayName: String, bundlePath: String?, executablePath: String,
                 launchArguments: @escaping @Sendable (String?) -> [String],
@@ -43,13 +51,16 @@ public struct TargetApp: Sendable {
                 bundleID: String? = nil, userDataDirFlag: String? = nil, dataDirEnvironmentKey: String? = nil,
                 caveats: [String] = [], seededFiles: [String: String] = [:],
                 scrollPoint: @escaping @Sendable (CGRect) -> CGPoint = { CGPoint(x: $0.midX, y: $0.midY) },
-                typingClickPoint: (@Sendable (CGRect) -> CGPoint)? = nil) {
+                typingClickPoint: (@Sendable (CGRect) -> CGPoint)? = nil,
+                profileArguments: @escaping @Sendable (String) -> [String] = { _ in [] },
+                dataDirEnvironmentValue: @escaping @Sendable (String) -> String = { $0 }) {
         self.id = id; self.displayName = displayName; self.bundlePath = bundlePath
         self.executablePath = executablePath; self.launchArguments = launchArguments
         self.unsupported = unsupported; self.repoPath = repoPath
         self.bundleID = bundleID; self.userDataDirFlag = userDataDirFlag; self.caveats = caveats; self.seededFiles = seededFiles
         self.dataDirEnvironmentKey = dataDirEnvironmentKey
         self.scrollPoint = scrollPoint; self.typingClickPoint = typingClickPoint
+        self.profileArguments = profileArguments; self.dataDirEnvironmentValue = dataDirEnvironmentValue
     }
 
     /// The real app binary (not the `zed` CLI shim, which forks and exits), so the launched PID is the app.
@@ -76,6 +87,93 @@ public struct TargetApp: Sendable {
         ],
         bundleID: "com.zed-industries.delta",
         caveats: ["Delta has no isolation flag: it ran against the user's real Delta profile and state"])
+
+    // MARK: Editors measured against Alloy (never launched by tests)
+
+    /// All four optional editors in catalogue order.
+    public static let editors: [TargetApp] = [vscode, cursor, sublime, idea]
+
+    public static let vscode = electronEditor(
+        id: "vscode", displayName: "VS Code", app: "Visual Studio Code", executable: "Code",
+        bundleID: "com.microsoft.VSCode", caveats: [
+            "VS Code: per-run profile (--user-data-dir and --extensions-dir) with extensions disabled, telemetry and update checks off, no welcome tab or workspace trust prompt; opens already focused (no typing click yet)",
+        ])
+
+    public static let cursor = electronEditor(
+        id: "cursor", displayName: "Cursor", app: "Cursor", executable: "Cursor",
+        bundleID: "com.todesktop.230313mzl4w4u92", caveats: [
+            "Cursor: same flags and profile as VS Code (same Electron base); a fresh profile may show login or onboarding that no flag skips, which the live probe must confirm and record per metric",
+        ])
+
+    /// VS Code and Cursor share an Electron base: two flags isolate the profile, three skip first-run screens.
+    private static func electronEditor(id: String, displayName: String, app: String, executable: String,
+                                       bundleID: String, caveats: [String]) -> TargetApp {
+        TargetApp(
+            id: id, displayName: displayName, bundlePath: "/Applications/\(app).app",
+            executablePath: "/Applications/\(app).app/Contents/MacOS/\(executable)",
+            launchArguments: { file in
+                ["--disable-extensions", "--skip-welcome", "--skip-release-notes", "--disable-workspace-trust"]
+                    + (file.map { [$0] } ?? [])
+            },
+            bundleID: bundleID, userDataDirFlag: "--user-data-dir",
+            caveats: caveats,
+            seededFiles: ["User/settings.json": electronSettings],
+            profileArguments: { ["--extensions-dir", $0 + "/extensions"] })
+    }
+
+    private static let electronSettings = """
+        {"telemetry.telemetryLevel":"off","update.mode":"none","workbench.startupEditor":"none","editor.cursorBlinking":"solid"}
+
+        """
+
+    public static let sublime = TargetApp(
+        id: "sublime", displayName: "Sublime Text", bundlePath: "/Applications/Sublime Text.app",
+        executablePath: "/Applications/Sublime Text.app/Contents/MacOS/sublime_text",
+        launchArguments: { file in ["--safe-mode"] + (file.map { [$0] } ?? []) },
+        bundleID: "com.sublimetext.4",
+        caveats: [
+            "Sublime Text: launched with --safe-mode (clean sandboxed environment, no packages); safe mode ignores user settings, so the caret may blink",
+            "Sublime Text: safe mode uses its own data folder that the harness does not clean; whether it persists state outside the run is an open question for the live probe",
+        ])
+
+    public static let idea = TargetApp(
+        id: "idea", displayName: "IntelliJ IDEA", bundlePath: "/Applications/IntelliJ IDEA.app",
+        executablePath: "/Applications/IntelliJ IDEA.app/Contents/MacOS/idea",
+        launchArguments: { file in file.map { [$0] } ?? [] },
+        bundleID: "com.jetbrains.intellij",
+        dataDirEnvironmentKey: "IDEA_PROPERTIES",
+        caveats: [
+            "IntelliJ IDEA: per-run config, system, plugins and log directories through IDEA_PROPERTIES; post-open indexing inflates startup and memory",
+            "IntelliJ IDEA: licence and data-sharing consent are stored outside the profile, so a first-run dialog may remain; open question for the live probe, which records the affected metrics as n/a if so",
+            "IntelliJ IDEA: whether the launcher runs the JVM in the launched process is an open question for the live probe",
+        ],
+        seededFiles: [
+            "idea.properties": ideaProperties,
+            "config/options/ide.general.xml": ideaGeneralXML,
+        ],
+        dataDirEnvironmentValue: { $0 + "/idea.properties" })
+
+    private static let ideaProperties = """
+        idea.config.path=@PROFILE_DIR@/config
+        idea.system.path=@PROFILE_DIR@/system
+        idea.plugins.path=@PROFILE_DIR@/plugins
+        idea.log.path=@PROFILE_DIR@/log
+        idea.initially.ask.config=false
+        idea.trust.all.projects=true
+        jb.consents.confirmation.enabled=false
+        ide.show.tips.on.startup.default.value=false
+
+        """
+
+    private static let ideaGeneralXML = """
+        <application>
+          <component name="GeneralSettings">
+            <option name="showTipsOnStartup" value="false" />
+            <option name="confirmExit" value="false" />
+          </component>
+        </application>
+
+        """
 
     /// - Parameter buildDir: the Alloy repo root (not the `.build` directory); the binary is `<buildDir>/.build/release/Alloy`.
     /// Launched as `Alloy <project-dir> [<file>]`.

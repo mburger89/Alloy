@@ -180,14 +180,13 @@ public struct RunResult: Codable, Sendable, Equatable {
 }
 
 public enum Report {
-    static let columns: [(id: String, name: String)] = [("zed", "Zed"), ("delta", "Delta"), ("alloy", "Alloy")]
-
     public static func fileStem(_ r: RunResult) -> String {
         "\(r.environment.date)-\(r.environment.time)-\(r.environment.machine)"
     }
 
     public static func markdown(_ r: RunResult) -> String {
         let e = r.environment
+        let columns = EditorCatalog.present(in: r)
         var lines: [String] = []
         lines.append("# Alloy benchmark \(e.date) \(e.time)")
         lines.append("")

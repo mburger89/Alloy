@@ -258,10 +258,14 @@ public enum CLIArguments {
             switch id {
             case "zed": return .zed
             case "delta": return .delta
+            case "vscode": return .vscode
+            case "cursor": return .cursor
+            case "sublime": return .sublime
+            case "idea": return .idea
             case "alloy":
                 guard let dir = alloyBuild else { throw Invalid(description: "--alloy-build <dir> is required for alloy") }
                 return .alloy(buildDir: dir)
-            default: throw Invalid(description: "unknown app '\(id)' (zed, delta, alloy)")
+            default: throw Invalid(description: "unknown app '\(id)' (zed, delta, vscode, cursor, sublime, idea, alloy)")
             }
         }
     }

@@ -123,7 +123,7 @@ public enum Launcher {
             let url = URL(fileURLWithPath: dir).appendingPathComponent(rel)
             do {
                 try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-                try Data(contents.utf8).write(to: url)
+                try Data(contents.replacingOccurrences(of: TargetApp.profileDirPlaceholder, with: dir).utf8).write(to: url)
             } catch { throw LauncherError.seedFailed(rel, error.localizedDescription) }
         }
     }
@@ -136,14 +136,14 @@ public enum Launcher {
         guard let key = app.dataDirEnvironmentKey, let dir = userDataDir else { return nil }
         var env = base
         for (k, v) in extra { env[k] = v }
-        env[key] = dir
+        env[key] = app.dataDirEnvironmentValue(dir)
         return env
     }
 
     /// Full argument vector: the isolation flag (when the app has one) followed by the app's own arguments.
     public static func arguments(for app: TargetApp, file: String?, userDataDir: String?) -> [String] {
         var args: [String] = []
-        if let flag = app.userDataDirFlag, let dir = userDataDir { args += [flag, dir] }
+        if let flag = app.userDataDirFlag, let dir = userDataDir { args += [flag, dir] + app.profileArguments(dir) }
         return args + app.launchArguments(file)
     }
 
