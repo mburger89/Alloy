@@ -2378,12 +2378,15 @@ public final class Workspace {
 
     public func restore(opening file: String? = nil) async {
         ensureLoaded()
+        StartupTrace.mark("restore-ensureLoaded-done")
         guard !restored else { return }
         restored = true
         await restoreUIState()
+        StartupTrace.mark("restore-uiState-done")
         // The command-line file opens in the restored mode's pane, before the server starts.
         if let file { openFilePath = file }
         await startServer()
+        StartupTrace.mark("restore-server-started")
         var renamedOnRestore = false
         for r in records where session(r.id) == nil {
             let s = Session(id: r.id, name: r.name, colorIndex: r.colorIndex, projectRoot: projectRoot,
@@ -2402,6 +2405,7 @@ public final class Workspace {
             sessions.append(s)
             if selectedSessionID == nil { selectedSessionID = s.id }
         }
+        StartupTrace.mark("restore-sessions-rebuilt")
         if renamedOnRestore { persistSessions() }
         // Commits made while Alloy was closed: files the ledger still shows as changed may now equal HEAD.
         track { [weak self] in await self?.checkGitBaselines() }
