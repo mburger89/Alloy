@@ -24,7 +24,7 @@ func collectStrict(runs: Int, unit: String, notes: () -> [String], _ body: (Int)
 /// pre-launch baseline. Display capture runs before the launch (no capture-ready floor); the window is found by
 /// polling CGWindowList every 5 ms. Warm unless `cold` (then `sudo -n purge` precedes each run).
 public struct StartupScenario: Scenario {
-    public static let warmUpNote = "one untimed warm-up launch before the timed launches (same for every app)"
+    public static let warmUpNote = RunMarkers.warmUpNote
     public var metric: Metric { .startup }
     public var cold: Bool
     public var windowTimeout: Duration

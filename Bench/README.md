@@ -156,6 +156,16 @@ At exit the harness lists, and only reports, any process matching a target app t
    to `Bench/site/data/`. Screenshots, the hero video and its poster live in `Bench/site/assets/`; the landing page uses
    whichever of them exist. The pages are static: inline CSS and SVG, no JavaScript, no external resources. An existing
    `Bench/site/appcast.xml` (written by the release script) is left alone.
+   To combine two runs (say a second run that re-measured apps whose adapters were fixed) into one result before step 2:
+   `swift run --package-path Bench alloy-bench merge <base.json> <override.json> [--apps a,b,...] --drop-first-startup --out <merged.json>`.
+   Every app in `--apps` (default: every app in the override) takes all its outcomes, run counts and version from the
+   override; the other apps keep the base's. Both runs must share machine model, macOS, display refresh/scale and power
+   source (and warm/cold), otherwise merge refuses; attributed and traced runs are refused too. The later run's date and
+   time are kept, and result-level notes record the merge (and a differing harness SHA). `--drop-first-startup` removes
+   the first startup sample of every app's measured `startup` outcome, recomputes its summary and adds a note. It is the
+   retroactive equivalent of the warm-up launch (see "Measurement notes") and applies to every app alike, never to a
+   startup outcome that already has a warm-up launch. No other metric is touched. The merged file is an ordinary result:
+   pass it to `publish`.
 4. Commit `Bench/published` and `Bench/site`. `SitePageTests.committedSiteIsCurrent` fails when either page is stale.
 
 The page is hosted on GitHub Pages from the public repository: `.github/workflows/pages.yml` deploys `Bench/site` when

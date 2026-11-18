@@ -2,6 +2,8 @@ import Foundation
 
 /// Message prefixes the runner puts on outcomes it did not attempt; the publisher treats them as partial.
 public enum RunMarkers {
+    /// Startup note: a warm-up launch preceded the timed launches (also used by `merge` to skip already-warmed runs).
+    public static let warmUpNote = "one untimed warm-up launch before the timed launches (same for every app)"
     public static let refusedPrefix = "preflight refused: "
     public static let abortedPrefix = "not run, aborted: "
     public static func isRefusalOrAbort(_ why: String) -> Bool {
