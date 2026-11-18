@@ -29,7 +29,7 @@ public struct LandingContent: Sendable {
     public var heroMetaSoon = "Coming soon for Apple-silicon Macs · macOS 14 or later · free, MIT"
     public var heroPoster = "hero-poster.png"
     public var heroVideo = "hero.mp4"
-    public var heroAlt = "Alloy with three Claude Code sessions open on one folder, in the Dracula theme."
+    public var heroAlt = "Alloy with two Claude Code sessions editing the same function, and the overlap warning that follows, in the Dracula theme."
 
     public var raceTitle = "Feel the difference."
     public var raceSub = "Replayed from the published benchmark. Only tests Alloy really wins are listed."

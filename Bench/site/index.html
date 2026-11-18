@@ -115,9 +115,9 @@ footer{padding:26px 0;color:var(--mute);font-size:13px}footer .wrap{display:flex
 <p class="lead">The code editor for Claude Code — written in Swift, drawn on the GPU with Metal.</p>
 <p><span class="btn p soon" aria-disabled="true">Coming soon</span><a class="btn s" href="https://github.com/mburger89/Alloy">View on GitHub</a></p>
 <p class="meta">Coming soon for Apple-silicon Macs · macOS 14 or later · free, MIT</p>
-<figure class="app has-poster"><video autoplay muted loop playsinline poster="assets/hero-poster.png" aria-label="Alloy with three Claude Code sessions open on one folder, in the Dracula theme."><source src="assets/hero.mp4" type="video/mp4"></video><img class="poster" src="assets/hero-poster.png" alt="Alloy with three Claude Code sessions open on one folder, in the Dracula theme." fetchpriority="high"></figure>
+<figure class="app has-poster"><video autoplay muted loop playsinline poster="assets/hero-poster.png" aria-label="Alloy with two Claude Code sessions editing the same function, and the overlap warning that follows, in the Dracula theme."><source src="assets/hero.mp4" type="video/mp4"></video><img class="poster" src="assets/hero-poster.png" alt="Alloy with two Claude Code sessions editing the same function, and the overlap warning that follows, in the Dracula theme." fetchpriority="high"></figure>
 </div></header>
-<section class="strip" aria-label="Headline numbers"><div class="wrap"><div><b class="n">6 of 7</b><span>benchmarks ahead of Zed</span></div><div><b class="n">56 MiB</b><span>memory with a 2 MB file open</span></div><div><b class="n">0</b><span>web views</span></div></div></section>
+<section class="strip" aria-label="Headline numbers"><div class="wrap"><div><b class="n">6 of 7</b><span>benchmarks ahead of Zed</span></div><div><b class="n">77 MiB</b><span>memory with a 2 MB file open</span></div><div><b class="n">0</b><span>web views</span></div></div></section>
 <section id="speed"><div class="wrap">
 <div class="tag">Speed</div><h2>Feel the difference.</h2><p class="sub">Replayed from the published benchmark. Only tests Alloy really wins are listed.</p>
 <div class="race">
@@ -130,40 +130,40 @@ footer{padding:26px 0;color:var(--mute);font-size:13px}footer .wrap{display:flex
 <div class="tabs"><label for="race-0">Start up</label><label for="race-1">Type</label><label for="race-2">Memory, 2 MB file open</label><label for="race-3">Memory, idle</label><label for="race-4">Open a 2 MB file</label><label for="race-5">Idle CPU</label></div>
 <div class="panels">
 <div class="panel p0" role="group" aria-label="Start up">
-<div class="lane"><div class="n">Alloy</div><div class="t"><div class="f alloy" style="width:34%"></div></div><div class="v">135 ms</div></div>
-<div class="lane"><div class="n">Zed</div><div class="t"><div class="f" style="width:57.8%"></div></div><div class="v">231 ms</div></div>
-<div class="lane"><div class="n">Delta</div><div class="t"><div class="f" style="width:100%"></div></div><div class="v">399 ms</div></div>
+<div class="lane"><div class="n">Alloy</div><div class="t"><div class="f alloy" style="width:27.9%"></div></div><div class="v">129 ms</div></div>
+<div class="lane"><div class="n">Zed</div><div class="t"><div class="f" style="width:42.4%"></div></div><div class="v">196 ms</div></div>
+<div class="lane"><div class="n">Delta</div><div class="t"><div class="f" style="width:100%"></div></div><div class="v">462 ms</div></div>
 <p class="note">Shorter is better.</p>
 </div>
 <div class="panel p1" role="group" aria-label="Type">
-<div class="lane"><div class="n">Alloy</div><div class="t"><div class="f alloy" style="width:76.2%"></div></div><div class="v">38.0 ms</div></div>
-<div class="lane"><div class="n">Zed</div><div class="t"><div class="f" style="width:100%"></div></div><div class="v">49.9 ms</div></div>
+<div class="lane"><div class="n">Alloy</div><div class="t"><div class="f alloy" style="width:56.1%"></div></div><div class="v">29.5 ms</div></div>
+<div class="lane"><div class="n">Zed</div><div class="t"><div class="f" style="width:100%"></div></div><div class="v">52.5 ms</div></div>
 <p class="note">Shorter is better.</p>
 </div>
 <div class="panel p2" role="group" aria-label="Memory, 2 MB file open">
-<div class="lane"><div class="n">Alloy</div><div class="t"><div class="f alloy" style="width:30.1%"></div></div><div class="v">56 MiB</div></div>
-<div class="lane"><div class="n">Zed</div><div class="t"><div class="f" style="width:100%"></div></div><div class="v">186 MiB</div></div>
+<div class="lane"><div class="n">Alloy</div><div class="t"><div class="f alloy" style="width:44.1%"></div></div><div class="v">77 MiB</div></div>
+<div class="lane"><div class="n">Zed</div><div class="t"><div class="f" style="width:100%"></div></div><div class="v">174 MiB</div></div>
 <p class="note">Shorter is better.</p>
 </div>
 <div class="panel p3" role="group" aria-label="Memory, idle">
-<div class="lane"><div class="n">Alloy</div><div class="t"><div class="f alloy" style="width:21.2%"></div></div><div class="v">44 MiB</div></div>
-<div class="lane"><div class="n">Zed</div><div class="t"><div class="f" style="width:46.1%"></div></div><div class="v">95 MiB</div></div>
-<div class="lane"><div class="n">Delta</div><div class="t"><div class="f" style="width:100%"></div></div><div class="v">205 MiB</div></div>
+<div class="lane"><div class="n">Alloy</div><div class="t"><div class="f alloy" style="width:69%"></div></div><div class="v">66 MiB</div></div>
+<div class="lane"><div class="n">Zed</div><div class="t"><div class="f" style="width:100%"></div></div><div class="v">95 MiB</div></div>
+<div class="lane"><div class="n">Delta</div><div class="t"><div class="f" style="width:81.4%"></div></div><div class="v">78 MiB</div></div>
 <p class="note">Shorter is better.</p>
 </div>
 <div class="panel p4" role="group" aria-label="Open a 2 MB file">
-<div class="lane"><div class="n">Alloy</div><div class="t"><div class="f alloy" style="width:65.4%"></div></div><div class="v">157 ms</div></div>
-<div class="lane"><div class="n">Zed</div><div class="t"><div class="f" style="width:100%"></div></div><div class="v">241 ms</div></div>
+<div class="lane"><div class="n">Alloy</div><div class="t"><div class="f alloy" style="width:82.2%"></div></div><div class="v">186 ms</div></div>
+<div class="lane"><div class="n">Zed</div><div class="t"><div class="f" style="width:100%"></div></div><div class="v">226 ms</div></div>
 <p class="note">Shorter is better.</p>
 </div>
 <div class="panel p5" role="group" aria-label="Idle CPU">
-<div class="lane"><div class="n">Alloy</div><div class="t"><div class="f alloy" style="width:1.5%"></div></div><div class="v">0.003 %</div></div>
-<div class="lane"><div class="n">Zed</div><div class="t"><div class="f" style="width:100%"></div></div><div class="v">0.36 %</div></div>
-<div class="lane"><div class="n">Delta</div><div class="t"><div class="f" style="width:62.6%"></div></div><div class="v">0.23 %</div></div>
+<div class="lane"><div class="n">Alloy</div><div class="t"><div class="f alloy" style="width:1.5%"></div></div><div class="v">0.004 %</div></div>
+<div class="lane"><div class="n">Zed</div><div class="t"><div class="f" style="width:100%"></div></div><div class="v">0.35 %</div></div>
+<div class="lane"><div class="n">Delta</div><div class="t"><div class="f" style="width:48.3%"></div></div><div class="v">0.17 %</div></div>
 <p class="note">Shorter is better.</p>
 </div>
 </div></div>
-<p class="foot">Mac18,5 · macOS 27.2.0 · 60 Hz display · 2026-11-11, Zed 1.28.1, Delta 0.1.0. Medians of repeated runs, measured from outside the apps. <a href="benchmarks/">Every number and method →</a></p>
+<p class="foot">Mac18,5 · macOS 27.2.1 · 60 Hz display · 2026-11-18, Zed 1.29.2, Delta 0.1.0. Medians of repeated runs, measured from outside the apps. <a href="benchmarks/">Every number and method →</a></p>
 </div></section>
 <section id="notes"><div class="wrap">
 <div class="tag">Shared notes</div><h2>Stop paying to read the same file twice.</h2><p class="sub">Your sessions share what they learn.</p>

@@ -39,6 +39,30 @@
         "startup" : "ahead",
         "typingLatency" : "ahead"
       }
+    },
+    {
+      "apps" : {
+        "alloy" : "eea49df",
+        "cursor" : "3.30.14",
+        "delta" : "0.1.0",
+        "idea" : "2026.3",
+        "sublime" : "Build 4215",
+        "vscode" : "1.147.0",
+        "zed" : "1.29.2"
+      },
+      "date" : "2026-11-18",
+      "harnessSHA" : "eea49df",
+      "partial" : false,
+      "stem" : "2026-11-18-152641-Mac18,5",
+      "verdicts" : {
+        "idleCPU" : "ahead",
+        "largeFileOpen" : "ahead",
+        "memory" : "ahead",
+        "memoryIdle" : "ahead",
+        "scrollFrames" : "par",
+        "startup" : "ahead",
+        "typingLatency" : "ahead"
+      }
     }
   ],
   "schemaVersion" : 1
