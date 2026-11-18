@@ -6,6 +6,7 @@ import MetalUICodeBuffer
 public enum Feature: String, Sendable, CaseIterable {
     case definition, hover, references, documentSymbol, formatting, rangeFormatting
     case completion, completionResolve, signatureHelp, codeAction, codeActionResolve, executeCommand
+    case prepareRename, rename
 
     var method: String {
         switch self {
@@ -21,6 +22,8 @@ public enum Feature: String, Sendable, CaseIterable {
         case .codeAction: "textDocument/codeAction"
         case .codeActionResolve: "codeAction/resolve"
         case .executeCommand: "workspace/executeCommand"
+        case .prepareRename: "textDocument/prepareRename"
+        case .rename: "textDocument/rename"
         }
     }
 
@@ -38,6 +41,8 @@ public enum Feature: String, Sendable, CaseIterable {
         case .codeAction: caps.codeAction
         case .codeActionResolve: caps.codeActionResolve
         case .executeCommand: !caps.executeCommands.isEmpty
+        case .prepareRename: caps.renamePrepare
+        case .rename: caps.rename
         }
     }
 }
@@ -66,6 +71,8 @@ public struct FeatureSet: Sendable, Equatable {
     public var completion = false
     public var signatureHelp = false
     public var codeAction = false
+    public var rename = false
+    public var renamePrepare = false
     /// What the main server says about completion and signature help (the editor decides from these when to ask).
     public var completionTriggers: [String] = []
     public var completionCommitCharacters: [String] = []
@@ -77,7 +84,10 @@ public struct FeatureSet: Sendable, Equatable {
                 formatting: Bool = false, rangeFormatting: Bool = false,
                 completion: Bool = false, signatureHelp: Bool = false, codeAction: Bool = false,
                 completionTriggers: [String] = [], completionCommitCharacters: [String] = [], completionResolve: Bool = false,
-                signatureTriggers: [String] = [], signatureRetriggers: [String] = []) {
+                signatureTriggers: [String] = [], signatureRetriggers: [String] = [],
+                rename: Bool = false, renamePrepare: Bool = false) {
+        self.rename = rename
+        self.renamePrepare = renamePrepare
         self.completionTriggers = completionTriggers
         self.completionCommitCharacters = completionCommitCharacters
         self.completionResolve = completionResolve
@@ -99,7 +109,8 @@ public struct FeatureSet: Sendable, Equatable {
                   completion: caps.completion, signatureHelp: caps.signatureHelp, codeAction: caps.codeAction,
                   completionTriggers: caps.completionTriggerCharacters, completionCommitCharacters: caps.completionCommitCharacters,
                   completionResolve: caps.completionResolve, signatureTriggers: caps.signatureTriggerCharacters,
-                  signatureRetriggers: caps.signatureRetriggerCharacters)
+                  signatureRetriggers: caps.signatureRetriggerCharacters,
+                  rename: caps.rename, renamePrepare: caps.renamePrepare)
     }
 
     mutating func formUnion(_ other: FeatureSet) {
@@ -112,6 +123,8 @@ public struct FeatureSet: Sendable, Equatable {
         signatureHelp = signatureHelp || other.signatureHelp
         codeAction = codeAction || other.codeAction
         completionResolve = completionResolve || other.completionResolve
+        rename = rename || other.rename
+        renamePrepare = renamePrepare || other.renamePrepare
         func merge(_ a: inout [String], _ b: [String]) { for x in b where !a.contains(x) { a.append(x) } }
         merge(&completionTriggers, other.completionTriggers)
         merge(&completionCommitCharacters, other.completionCommitCharacters)

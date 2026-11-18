@@ -41,6 +41,13 @@ import Testing
         }
     }
 
+    @Test func renameSymbolListsF2() async throws {
+        let (_, _, settings, center) = try await open()
+        _ = try settings.element(identifier: "keyboard-row-edit.rename")
+        #expect(center.registry.keymap.chord(for: "edit.rename") == KeyChord(modifiers: [], key: .named(.f2)))
+        #expect(try text(settings, "keyboard-chord-edit.rename") == "F2")
+    }
+
     @Test func customSourceAndResetShowOnlyWhenOverridden() async throws {
         let (rig, _, settings, _) = try await open()
         #expect(!exists(settings, "keyboard-reset-view.toggleChatColumn"))

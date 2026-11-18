@@ -244,14 +244,16 @@ touching it.
   is a second `Text`.
 - **Submit**: look the command up again by id, then `hide()`, then `registry.run(id:)`, which re-checks `isEnabled()`.
   A missing id (a plugin unloaded) or a disabled command does nothing and the palette still closes.
-- **Focus after close**: MetalUI drops focus when the focused field leaves the tree and does not restore it (its
-  probe F2 matches SwiftUI), the same as quick open today. Commands do not depend on keyboard focus: Alloy's commands
-  act on the workspace's own pane model (`workspace.defaultPane`, the focused group), which the palette never changes,
-  so a command run from the palette hits the same target as from the menu. Putting keyboard focus back where it was is
-  MetalUI gap 2; the palette ships with quick open's behaviour until it lands, with no Alloy-side substitute.
+- **Focus after close**: the palette content carries MetalUI's `.restoresFocusOnDismiss()` (placed inside the content
+  that goes away, on the panel after its accessibility modifiers), so when the palette closes by Esc, Return, a
+  chosen command or focus loss, focus returns to the element that had it before the palette opened, normally the code
+  view. Opening with nothing focused leaves focus `nil`. A click on another focusable element leaves focus on that
+  element. Commands do not depend on keyboard focus either way: Alloy's commands act on the workspace's own pane
+  model (`workspace.defaultPane`, the focused group), so a command run from the palette hits the same target as from
+  the menu. Quick open and the branch picker (`QuickOpenField`) carry the same modifier.
 - **Commands that open something** (Settings window, the dirty-tab prompt) run after `hide()` in the same action, so
-  whatever focus they set is the last focus write of that frame. Gap 2 asks MetalUI to skip a restore when something
-  else took focus in the same frame.
+  whatever focus they set is the last focus write of that frame; MetalUI skips the restore when something else took
+  focus in the same frame.
 - **IME**: ⇧⌘P is a menu command shortcut. MetalUI runs the command stage only after the focused view declined the key,
   and a field mid-composition owns every key, so the palette never opens mid-composition. Inside the palette field,
   composition works like any text field; ↩ while composing commits the composition, not a run, because the field
@@ -361,13 +363,8 @@ Guards:
    path for the current platform, plus `public func displayText(for platform: TextEditing.Platform) -> String` so a
    macOS test can check the Linux and Windows forms. SwiftUI has no direct equivalent (the system draws the shortcut in
    a menu). Blocks Goal 4: rows ship without the shortcut column, behind one call site, until it lands.
-2. **Focus restore when a focused overlay goes away.** Today, removing the focused element through an `if` drops focus
-   and does not restore it (matching SwiftUI's probe F2). Wanted: a modifier such as
-   `.restoresFocusOnDismiss()` on a subtree: when the subtree that holds focus leaves the tree, focus returns to the
-   element that was focused when the subtree first took focus, if that element is still produced and nothing else took
-   focus in the same frame. The nearest SwiftUI equivalents are `focusScope(_:)` with
-   `@Environment(\.resetFocus)` and `prefersDefaultFocus(_:in:)` on macOS, or a `.popover`/`.sheet` returning focus to
-   its presenter. Quick open would adopt it too. Not blocking: without it the palette behaves like quick open.
+2. **Focus restore when a focused overlay goes away.** Landed in MetalUI as `.restoresFocusOnDismiss()` (and popovers
+   return focus to their presenter). Adopted by the palette and quick open; no Alloy-side focus code remains.
 3. **Confirm** that `KeyboardShortcut("p", modifiers: [.primary, .shift])` as a `CommandMenu` item matches ⇧⌘P on
    macOS and Ctrl+Shift+P on SDL platforms (`KeyboardShortcut.swift` compares `charactersIgnoringModifiers`
    lower-cased, so it should). Ask for a probe test on the SDL path, including the shifted character.

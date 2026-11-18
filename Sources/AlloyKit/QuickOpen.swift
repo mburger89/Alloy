@@ -390,6 +390,8 @@ struct QuickOpenField<Source: RowSource>: Component {
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier(source.panelID)
+        // Inside the content that goes away: focus returns to what had it before the field opened.
+        .restoresFocusOnDismiss()
     }
 }
 

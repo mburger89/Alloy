@@ -15,6 +15,9 @@ final class WorkspaceEditApplier {
         var group: UUID
     }
 
+    /// One workspace edit touching more files than this is refused whole (a runaway rename must not rewrite a repository).
+    static let maxFiles = 1_000
+
     private let workspace: Workspace
     private let coordinator: LSPCoordinator?
     /// Runs between validation and the first write. Tests use it to change a file in that window.
@@ -36,6 +39,10 @@ final class WorkspaceEditApplier {
     func apply(_ files: [FileEdits], baseVersions: [String: UInt64], label: String,
                saveOpenFiles: Bool = true) async -> ApplyOutcome {
         let group = UUID()
+        if files.count > Self.maxFiles {
+            return ApplyOutcome(applied: [], failed: [:],
+                                message: "Rename touches \(files.count) files, over the 1,000 limit; \(label) not applied", group: group)
+        }
         let stale = ApplyOutcome(applied: [], failed: [:], message: "File changed, \(label) not applied", group: group)
         var targets: [Target] = []
         for file in files {

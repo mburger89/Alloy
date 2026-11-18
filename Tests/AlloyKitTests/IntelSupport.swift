@@ -175,3 +175,32 @@ extension IntelRig {
         return #"{"result":{"signatures":[\#(list)],"activeSignature":\#(activeSignature),"activeParameter":\#(active)},"delayMs":\#(delayMs)}"#
     }
 }
+
+extension IntelRig {
+    /// A script whose server offers rename (with `prepareRename` unless `prepare` is nil), hover when `hover`, and answers
+    /// `rename` (a reply entry such as `{"result":null}`) to the rename request.
+    nonisolated static func renameScript(prepare: String? = #"{"result":{"defaultBehavior":true}}"#, rename: String = #"{"result":null}"#,
+                                         hover: Bool = false, completion: Bool = false) -> String {
+        var caps = prepare != nil ? #""renameProvider":{"prepareProvider":true}"# : #""renameProvider":true"#
+        var replies = #""textDocument/rename":[\#(rename)]"#
+        if let prepare { replies += #","textDocument/prepareRename":[\#(prepare)]"# }
+        if hover {
+            caps += #","hoverProvider":true"#
+            replies += #","textDocument/hover":[{"result":{"contents":{"kind":"markdown","value":"**docs**"}}}]"#
+        }
+        if completion {
+            caps += #","completionProvider":{"triggerCharacters":["."]}"#
+            replies += #","textDocument/completion":[{"result":[{"label":"alpha"},{"label":"alphabet"}]}]"#
+        }
+        return script(caps: caps, extra: #","replies":{\#(replies)}"#)
+    }
+}
+
+extension IntelRig {
+    /// The `params` of the last `method` request the server received.
+    func lastParams(_ method: String) -> JSONValue? {
+        guard let text = try? String(contentsOf: log, encoding: .utf8) else { return nil }
+        return text.split(separator: "\n").compactMap { JSONValue.parse(Data($0.utf8)) }
+            .last { $0["method"]?.stringValue == method }?["params"]
+    }
+}

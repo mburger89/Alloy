@@ -49,6 +49,8 @@ public enum BuiltinCommands {
         // Shift-F12: the code panel's own key handler claims the key first, so this item and the handler never both fire.
         addIntel("go.references", "Find References", .go, chord(.shift, .named(.f12)), menu: .go,
                  menuID: "menu-find-references", .findReferences)
+        // F2: the code view's own key handler does not claim it, so the menu shortcut runs after the focused view declines.
+        addIntel("edit.rename", "Rename Symbol", .edit, chord([], .named(.f2)), menu: .edit, menuID: "menu-rename", .rename)
         addIntel("edit.formatDocument", "Format Document", .edit, chord([.alt, .shift], ch("f")), menu: .edit,
                  menuID: "menu-format", .formatDocument)
         addIntel("edit.formatSelection", "Format Selection", .edit, nil, menu: .edit,

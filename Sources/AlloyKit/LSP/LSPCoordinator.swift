@@ -243,6 +243,22 @@ public final class LSPCoordinator {
         return await manager.codeActions(path: path, range: range, snapshot: snapshot, automatic: automatic)
     }
 
+    /// Whether the symbol at `utf8Offset` of `snapshot` can be renamed, and which text it covers.
+    func prepareRename(path: String, utf8Offset: Int, snapshot: CodeSnapshot) async -> LSPOutcome<PrepareRenameInfo?> {
+        guard openPaths.contains(path), commands != nil, let manager else { return .unavailable }
+        await withCheckedContinuation { (done: CheckedContinuation<Void, Never>) in send(.barrier(done)) }
+        guard !Task.isCancelled else { return .unavailable }
+        return await manager.prepareRename(path: path, utf8Offset: utf8Offset, snapshot: snapshot)
+    }
+
+    /// The workspace edit renaming the symbol at `utf8Offset` of `snapshot` to `newName`.
+    func rename(path: String, utf8Offset: Int, newName: String, snapshot: CodeSnapshot) async -> LSPOutcome<RenameAnswer?> {
+        guard openPaths.contains(path), commands != nil, let manager else { return .unavailable }
+        await withCheckedContinuation { (done: CheckedContinuation<Void, Never>) in send(.barrier(done)) }
+        guard !Task.isCancelled else { return .unavailable }
+        return await manager.rename(path: path, utf8Offset: utf8Offset, newName: newName, snapshot: snapshot)
+    }
+
     /// `item` with the `edit` the server fills in late.
     func resolveCodeAction(path: String, item: CodeActionItem, snapshot: CodeSnapshot) async -> LSPOutcome<CodeActionItem> {
         guard openPaths.contains(path), commands != nil, let manager else { return .unavailable }

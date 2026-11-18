@@ -341,4 +341,56 @@ import Testing
         try await window.runUntil { !self.exists(window, "command-palette-field") }
         #expect(rig.workspace.codeLayout.groups.count == 2)
     }
+
+    // MARK: Focus returns on close (MetalUI `.restoresFocusOnDismiss()`)
+
+    private func codeFocused(_ window: TestWindow, _ rig: Rig) -> Bool {
+        (try? window.element(identifier: "code-view-\(rig.workspace.codeLayout.focusedGroupID.uuidString)").isFocused) == true
+    }
+    private func codeViewID(_ rig: Rig) -> String { "code-view-\(rig.workspace.codeLayout.focusedGroupID.uuidString)" }
+
+    private func focusedCodeRig() async throws -> (Rig, TestWindow) {
+        let (rig, window) = try await codeRig()
+        try await window.runUntil { self.exists(window, self.codeViewID(rig)) }
+        try window.click(window.element(identifier: codeViewID(rig)))
+        try await window.runUntil { self.codeFocused(window, rig) }
+        return (rig, window)
+    }
+
+    @Test func escapeReturnsFocusToTheCodeView() async throws {
+        let (rig, window) = try await focusedCodeRig()
+        try await open(window)
+        window.typeKey(.escape)
+        try await window.runUntil { !self.exists(window, "command-palette-field") }
+        try await window.runUntil { self.codeFocused(window, rig) }
+    }
+
+    @Test func returnOnACommandThatTakesNoFocusReturnsFocusToTheCodeView() async throws {
+        let (rig, window) = try await focusedCodeRig()
+        try await open(window)
+        window.typeText("Toggle Sidebar")
+        window.typeKey(.return)
+        try await window.runUntil { !self.exists(window, "command-palette-field") }
+        try await window.runUntil { self.codeFocused(window, rig) }
+    }
+
+    @Test func aClickOnAnotherFocusableLeavesFocusThere() async throws {
+        let rig = Rig()
+        _ = await rig.workspace.newSession(name: "A")
+        let window = try alloyWindow(rig.workspace)
+        try await window.runUntil { self.exists(window, "composer") }
+        try await open(window)
+        try window.click(window.element(identifier: "composer"))
+        try await window.runUntil { !self.exists(window, "command-palette-field") }
+        try await window.runUntil { (try? window.element(identifier: "composer").isFocused) == true }
+    }
+
+    @Test func openingWithNoPriorFocusLeavesFocusNil() async throws {
+        let rig = Rig()
+        let window = try alloyWindow(rig.workspace)
+        try await open(window)
+        window.typeKey(.escape)
+        try await window.runUntil { !self.exists(window, "command-palette-field") }
+        #expect(!codeFocused(window, rig))
+    }
 }

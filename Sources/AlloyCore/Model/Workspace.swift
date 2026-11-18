@@ -390,7 +390,7 @@ public final class Workspace {
 
     /// Runs `body` in the background; `settle()` waits for it, and the entry is dropped when it finishes.
     @discardableResult
-    func track(_ body: @escaping @MainActor () async -> Void) -> Task<Void, Never> {
+    public func track(_ body: @escaping @MainActor () async -> Void) -> Task<Void, Never> {
         backgroundCounter += 1
         let id = backgroundCounter
         let task = Task { @MainActor [weak self] in

@@ -148,7 +148,7 @@ final class DocumentServices {
 
     private func bufferChanged() {
         // Matches follow edits but a new one is not found by that, so an open find searches again (off main).
-        for entry in views { entry.view?.searchAgainIfOpen(); entry.view?.gitMarks?.typed() }
+        for entry in views { entry.view?.searchAgainIfOpen(); entry.view?.gitMarks?.typed(); entry.view?.renameBufferChanged() }
         drainEdits()
     }
 

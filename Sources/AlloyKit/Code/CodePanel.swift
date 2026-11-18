@@ -94,6 +94,10 @@ final class OpenDocumentView {
     @ObservationIgnored private var schedulerFeatures = FeatureSet()
     /// The store's code action service, for the lightbulb probe and the action list.
     @ObservationIgnored weak var actionService: CodeActionService?
+    /// The store's rename service; asked only when a rename begins.
+    @ObservationIgnored weak var renameService: RenameService?
+    @ObservationIgnored private var renameTask: Task<Void, Never>?
+    @ObservationIgnored private var renameGeneration = 0
     /// The line the lightbulb is on (set only when it changes).
     @ObservationIgnored private(set) var lightbulbLine: Int?
     /// The tag of the lightbulb's gutter marker, told apart from every diff tag.
@@ -138,6 +142,7 @@ final class OpenDocumentView {
         messageTask?.cancel()
         gitMarks?.coordinator?.detach(self)
         dismissHover()
+        dismissRename()
         scheduler?.stop()
         scheduler = nil
         services.detach(self)
@@ -359,6 +364,7 @@ final class OpenDocumentView {
         guard now != features else { return }
         features = now
         if !now.hover { dismissHover() }
+        if !now.rename { dismissRename() }
         rebuildScheduler()
     }
 
@@ -395,6 +401,7 @@ final class OpenDocumentView {
     /// Asks for the hover at `offset` (the primary caret when nil) and opens the popover when something comes back. Each
     /// call supersedes the one before; the answer is dropped when the text, the tab or the request moved on.
     func showHover(at offset: Int?, workspace: Workspace) {
+        guard popoverSlot.rename == nil, popoverSlot.summary == nil else { return }
         hoverTask?.cancel()
         hoverGeneration += 1
         let generation = hoverGeneration
@@ -434,10 +441,89 @@ final class OpenDocumentView {
 
     /// The pointer's rest on text: asks once per grapheme; the end of the hover closes the popover.
     func textHover(_ phase: CodeHoverPhase, workspace: Workspace) {
+        guard popoverSlot.rename == nil, popoverSlot.summary == nil else { return }
         switch phase {
         case .active(let hit), .moved(let hit): showHover(at: hit.character?.lowerBound ?? hit.offset, workspace: workspace)
         case .ended: dismissHover()
         }
+    }
+
+    // MARK: Rename
+
+    /// Whether the code view carries the rename field: the server offers rename and the document is open at it, editable.
+    func renameAttached(editable: Bool) -> Bool { features.rename && editable && services.lspOpen && lsp != nil }
+
+    /// Whether the view's text-anchored popover (slot B) is mounted: for the hover or for the rename field.
+    func slotAttached(editable: Bool) -> Bool { hoverAttached(editable: editable) || renameAttached(editable: editable) }
+
+    /// Starts Rename Symbol at the primary caret: asks the server what the caret is on, then opens the field anchored to
+    /// that symbol. A refusal shows the server's message; an answer for text or a tab that moved on is dropped.
+    func beginRename(workspace: Workspace) {
+        guard let service = renameService, !closed, renameAttached(editable: document.state == .editable) else { return }
+        dismissHover()
+        scheduler?.close()
+        dismissRename()
+        let generation = renameGeneration
+        let path = document.path, pane = pane
+        renameTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            let prepared = await service.prepare(view: self)
+            guard !Task.isCancelled, !self.closed, self.renameGeneration == generation,
+                  workspace.activeTab(in: pane) == path else { return }
+            switch prepared {
+            case .refused(let message):
+                self.flash(message, seconds: Self.messageSeconds)
+            case .target(let target):
+                guard self.document.buffer.version == target.snapshotVersion else { return }
+                self.selection(in: workspace).select(target.range)
+                self.popoverSlot.rename = RenameFieldState(target: target)
+            }
+        }
+    }
+
+    /// Sends the typed name. An empty or unchanged name only closes the field; the answer of a field that was dismissed
+    /// meanwhile is shown in the header, not in the field.
+    func submitRename(_ typed: String, workspace: Workspace) {
+        guard let state = popoverSlot.rename, !state.busy, let service = renameService, !closed else { return }
+        let name = typed.trimmingCharacters(in: .whitespacesAndNewlines)
+        if name.isEmpty || name == state.target.oldName { dismissRename(); return }
+        state.busy = true
+        state.error = nil
+        renameTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            let result = await service.commit(state.target, newName: name, view: self)
+            let current = self.popoverSlot.rename === state
+            if let message = result.message {
+                if current { state.busy = false; state.error = message } else { self.flash(message, seconds: Self.messageSeconds) }
+            } else if current {
+                self.finishRename(result, target: state.target, workspace: workspace)
+            }
+        }
+    }
+
+    /// Closes the field and abandons a request in flight.
+    func dismissRename() {
+        renameTask?.cancel()
+        renameTask = nil
+        renameGeneration += 1
+        if popoverSlot.rename != nil { popoverSlot.rename = nil }
+        if popoverSlot.summary != nil { popoverSlot.summary = nil }
+    }
+
+    /// The rename applied: the field gives way to the summary (a result without rows only closes the field).
+    private func finishRename(_ result: RenameResult, target: RenameTarget, workspace: Workspace) {
+        guard !result.rows.isEmpty else { dismissRename(); return }
+        let length = document.buffer.snapshot().utf8Count
+        let lower = min(target.range.lowerBound, length)
+        let summary = RenameSummaryState(group: result.group, rows: result.rows, anchor: lower..<min(max(target.range.upperBound, lower), length))
+        popoverSlot.rename = nil
+        popoverSlot.summary = summary
+    }
+
+    /// The buffer changed under an open field (typing, an undo): the field closes. The rename's own edits do not.
+    func renameBufferChanged() {
+        guard let state = popoverSlot.rename, !state.busy else { return }
+        dismissRename()
     }
 
     // MARK: Go to definition
@@ -769,6 +855,14 @@ final class CodePanelStore {
             return store.codeActionService
         }.first
     }
+    /// The rename service of whichever store made the Chat view of `document`, so a test can shorten its timeout.
+    package static func existingRenameService(for document: EditorDocument) -> RenameService? {
+        registry.removeAll { $0.store == nil }
+        return registry.lazy.compactMap { entry -> RenameService? in
+            guard let store = entry.store, store.view(for: document, in: .chat) != nil else { return nil }
+            return store.renameService
+        }.first
+    }
     /// The format service of whichever store made the Chat view of `document`, so a test can shorten its timeouts.
     package static func existingFormatService(for document: EditorDocument) -> FormatService? {
         registry.removeAll { $0.store == nil }
@@ -799,6 +893,7 @@ final class CodePanelStore {
         guard let coordinator = workspace.languageServices as? LSPCoordinator, coordinator !== lsp else { return }
         lsp = coordinator
         installFormat(workspace: workspace, coordinator: coordinator)
+        installRename(workspace: workspace, coordinator: coordinator)
         installCodeActions(workspace: workspace, coordinator: coordinator)
         coordinator.savedHandler = { [weak self] path in
             self?.servicesByPath[path]?.lspSaved()
@@ -859,6 +954,10 @@ final class CodePanelStore {
             guard let self, let workspace else { return }
             self.focusedView(workspace: workspace)?.scheduler?.showActions()
         }
+        workspace.intelHooks.run[.rename] = { [weak self, weak workspace] in
+            guard let self, let workspace else { return }
+            self.focusedView(workspace: workspace)?.beginRename(workspace: workspace)
+        }
         workspace.intelHooks.isEnabled = { [weak self, weak workspace] command in
             guard let self, let workspace, let view = self.focusedView(workspace: workspace) else { return false }
             let editable = view.document.state == .editable
@@ -877,6 +976,9 @@ final class CodePanelStore {
             case .quickFix:
                 let selections = view.selection(in: workspace).selections
                 return view.scheduler != nil && view.features.codeAction && selections.count == 1
+                    && workspace.presentation(of: view.document.path, in: view.pane) != .sideBySide
+            case .rename:
+                return view.renameAttached(editable: editable) && renameService != nil
                     && workspace.presentation(of: view.document.path, in: view.pane) != .sideBySide
             case .formatDocument: return editable && view.services.lspOpen && view.features.formatting && formatService != nil
             case .formatSelection:
@@ -903,6 +1005,16 @@ final class CodePanelStore {
         }
         formatService = service
         workspace.formatBeforeSave = { [weak service] doc in await service?.formatForSave(doc) }
+    }
+
+    /// Rename symbol; made once a coordinator is attached.
+    private(set) var renameService: RenameService?
+
+    private func installRename(workspace: Workspace, coordinator: LSPCoordinator) {
+        let service = RenameService(workspace: workspace, coordinator: coordinator,
+                                    applier: WorkspaceEditApplier(workspace: workspace, coordinator: coordinator))
+        renameService = service
+        for view in views.values { view.renameService = service }
     }
 
     /// Quick fixes and server-initiated edits; made once a coordinator is attached.
@@ -1000,6 +1112,7 @@ final class CodePanelStore {
         }
         let view = OpenDocumentView(document: document, pane: pane, services: services, engine: engine, lsp: lsp)
         view.actionService = codeActionService
+        view.renameService = renameService
         views[key] = view
     }
 
@@ -1105,14 +1218,15 @@ struct CodePanel: Component {
                 // Completion (and later signature help and code actions) share the one suggestion overlay, chained after the
                 // hover popover (slot B) when the server offers hover.
                 let model = view.overlayModel
-                if view.hoverAttached(editable: editable) {
+                if view.slotAttached(editable: editable) {
                     let slot = view.popoverSlot
                     codeView(editable: editable)
                         .onTextHover(delay: .milliseconds(500)) { phase in view.textHover(phase, workspace: workspace) }
                         .gitPopovers(view: view)
-                        .popover(item: Binding(get: { slot.hover }, set: { slot.hover = $0 }),
-                                 attachmentAnchor: .range(slot.hover?.range ?? 0..<0), arrowEdge: .bottom) { presentation in
-                            HoverView(presentation: presentation, cache: slot.markdownCache)
+                        .popover(item: Binding(get: { slot.item }, set: { slot.item = $0 }),
+                                 attachmentAnchor: .range(slot.item?.range ?? 0..<0), arrowEdge: .bottom) { presentation in
+                            SlotContent(presentation: presentation, slot: slot, workspace: workspace,
+                                        onRename: { view.submitRename($0, workspace: workspace) }, onDone: { view.dismissRename() })
                         }
                         .intelligenceOverlay(scheduler: scheduler, model: model, identifier: codeViewIdentifier)
                 } else {
@@ -1120,15 +1234,16 @@ struct CodePanel: Component {
                         .gitPopovers(view: view)
                         .intelligenceOverlay(scheduler: scheduler, model: model, identifier: codeViewIdentifier)
                 }
-            } else if view.hoverAttached(editable: editable) {
-                // The server offers hover: the view carries the text hover and its one text-anchored popover (slot B).
+            } else if view.slotAttached(editable: editable) {
+                // The server offers hover or rename: the view carries the text hover and its one text-anchored popover (slot B).
                 let slot = view.popoverSlot
                 codeView(editable: editable)
                     .onTextHover(delay: .milliseconds(500)) { phase in view.textHover(phase, workspace: workspace) }
                     .gitPopovers(view: view)
-                    .popover(item: Binding(get: { slot.hover }, set: { slot.hover = $0 }),
-                             attachmentAnchor: .range(slot.hover?.range ?? 0..<0), arrowEdge: .bottom) { presentation in
-                        HoverView(presentation: presentation, cache: slot.markdownCache)
+                    .popover(item: Binding(get: { slot.item }, set: { slot.item = $0 }),
+                             attachmentAnchor: .range(slot.item?.range ?? 0..<0), arrowEdge: .bottom) { presentation in
+                        SlotContent(presentation: presentation, slot: slot, workspace: workspace,
+                                        onRename: { view.submitRename($0, workspace: workspace) }, onDone: { view.dismissRename() })
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .accessibilityIdentifier(codeViewIdentifier)

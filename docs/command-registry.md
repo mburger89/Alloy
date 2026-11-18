@@ -54,6 +54,17 @@ workspace when they run (`center.workspace`), because the registry outlives work
 Selection, menu ids `cmd-<id>`). They act on the focused view's selection state through `Workspace.runMultiCursor`
 and are disabled when no code view is focused (project chooser, no tab, a non-code tab).
 
+### Rename Symbol
+
+`edit.rename` ("Rename Symbol", F2, category Edit, menu id `menu-rename`) sits in the Edit menu after the pasteboard
+items and before Format Document, and is recorded in recents. It runs `IntelCommand.rename`: the focused code view
+opens the rename field at its primary caret (any selection count). It is enabled only when that view's server offers
+`renameProvider`, the document is open at the server and editable, and the view is not the old-text pane of side by
+side; with no server, a read-only document or no focused code view it is disabled and `run(id:)` does nothing. F2 is
+a menu shortcut, so a focused handler that claims F2 wins; the code view claims none. A user keymap entry in
+`AlloySettings.keybindings` moves or (with `none`) unbinds it like any other command, and it shows in the Keyboard
+settings section.
+
 ### Terminal focus
 
 While a terminal pane has keyboard focus in Code mode, `tab.close` (cmd+w), `tab.next` and `tab.previous` (ctrl+tab,

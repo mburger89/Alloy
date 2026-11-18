@@ -77,6 +77,8 @@ struct CommandPaletteView: Component, Equatable {
         .cornerRadius(Pixels(10))
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("command-palette")
+        // Inside the content that goes away: focus returns to what had it before the palette opened.
+        .restoresFocusOnDismiss()
     }
 }
 
