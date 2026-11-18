@@ -24,6 +24,7 @@ func collectStrict(runs: Int, unit: String, notes: () -> [String], _ body: (Int)
 /// pre-launch baseline. Display capture runs before the launch (no capture-ready floor); the window is found by
 /// polling CGWindowList every 5 ms. Warm unless `cold` (then `sudo -n purge` precedes each run).
 public struct StartupScenario: Scenario {
+    public static let warmUpNote = "one untimed warm-up launch before the timed launches (same for every app)"
     public var metric: Metric { .startup }
     public var cold: Bool
     public var windowTimeout: Duration
@@ -32,7 +33,11 @@ public struct StartupScenario: Scenario {
     }
     public func run(_ app: TargetApp, corpus: Corpus, runs: Int) async -> Outcome {
         let windowMs = Box<[Double]>([])
-        return await collectStrict(runs: runs, unit: "ms", notes: { windowOnScreenNote(windowMs.value) }) { _ in
+        // Warm runs start with one untimed launch for every app, so a first launch's one-time system work (e.g. the
+        // code-signature check of a freshly built or installed binary) is never timed. Cold runs purge instead.
+        if !cold { _ = try? await Harness.measureOnDisplay(app, file: corpus.small, mode: .startup, timeout: windowTimeout) }
+        let warmUpNote = cold ? [] : [Self.warmUpNote]
+        return await collectStrict(runs: runs, unit: "ms", notes: { warmUpNote + windowOnScreenNote(windowMs.value) }) { _ in
             if cold, !Purge.run() { throw ScenarioFailure("purge needs sudo") }
             let r = try await Harness.measureOnDisplay(app, file: corpus.small, mode: .startup, timeout: windowTimeout)
             windowMs.update { $0.append(r.windowMs) }

@@ -101,13 +101,14 @@ public struct TargetApp: Sendable {
 
     public static let cursor = electronEditor(
         id: "cursor", displayName: "Cursor", app: "Cursor", executable: "Cursor",
-        bundleID: "com.todesktop.230313mzl4w4u92", caveats: [
-            "Cursor: same flags and profile as VS Code (same Electron base); a fresh profile may show login or onboarding that no flag skips, which the live probe must confirm and record per metric",
+        bundleID: "com.todesktop.230313mzl4w4u92", isolated: false, caveats: [
+            "Cursor: ran against the user's own logged-in Cursor profile with extensions disabled; a fresh profile stops at a mandatory Log In / Sign Up screen, so it cannot be isolated",
         ])
 
     /// VS Code and Cursor share an Electron base: two flags isolate the profile, three skip first-run screens.
+    /// `isolated: false` runs against the app's own profile (no per-run directory, nothing seeded).
     private static func electronEditor(id: String, displayName: String, app: String, executable: String,
-                                       bundleID: String, caveats: [String]) -> TargetApp {
+                                       bundleID: String, isolated: Bool = true, caveats: [String]) -> TargetApp {
         TargetApp(
             id: id, displayName: displayName, bundlePath: "/Applications/\(app).app",
             executablePath: "/Applications/\(app).app/Contents/MacOS/\(executable)",
@@ -115,10 +116,10 @@ public struct TargetApp: Sendable {
                 ["--disable-extensions", "--skip-welcome", "--skip-release-notes", "--disable-workspace-trust"]
                     + (file.map { [$0] } ?? [])
             },
-            bundleID: bundleID, userDataDirFlag: "--user-data-dir",
+            bundleID: bundleID, userDataDirFlag: isolated ? "--user-data-dir" : nil,
             caveats: caveats,
-            seededFiles: ["User/settings.json": electronSettings],
-            profileArguments: { ["--extensions-dir", $0 + "/extensions"] })
+            seededFiles: isolated ? ["User/settings.json": electronSettings] : [:],
+            profileArguments: { isolated ? ["--extensions-dir", $0 + "/extensions"] : [] })
     }
 
     private static let electronSettings = """
@@ -129,11 +130,10 @@ public struct TargetApp: Sendable {
     public static let sublime = TargetApp(
         id: "sublime", displayName: "Sublime Text", bundlePath: "/Applications/Sublime Text.app",
         executablePath: "/Applications/Sublime Text.app/Contents/MacOS/sublime_text",
-        launchArguments: { file in ["--safe-mode"] + (file.map { [$0] } ?? []) },
+        launchArguments: { file in file.map { [$0] } ?? [] },
         bundleID: "com.sublimetext.4",
         caveats: [
-            "Sublime Text: launched with --safe-mode (clean sandboxed environment, no packages); safe mode ignores user settings, so the caret may blink",
-            "Sublime Text: safe mode uses its own data folder that the harness does not clean; whether it persists state outside the run is an open question for the live probe",
+            "Sublime Text: ran against its own profile (it has no isolation flag; --safe-mode opens a modal notice that swallows keystrokes and scrolling); the caret may blink",
         ])
 
     public static let idea = TargetApp(

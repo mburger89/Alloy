@@ -22,10 +22,15 @@ Note: `zed` CLI forks the real app and exits; the harness launches the app binar
 - Delta / scrollFrames and memory: Delta opens projects, not files; needs a live probe to learn what it displays.
 - Zed: all metrics supported.
 - VS Code, Cursor, Sublime Text, IntelliJ IDEA: no metric is marked unsupported; nothing is known impossible without a live probe. Open questions for the live probe: VS Code and Cursor typing focus (whether a click is needed), Cursor first-run login, Sublime safe-mode data folder persistence, IntelliJ consent state outside the profile and its pid after launch. A metric the probe shows to be impossible becomes `n/a: <reason>` then.
+- Live probe (2026-11-18): a fresh Cursor profile stops at a mandatory Log In / Sign Up screen, so Cursor runs against the user's own logged-in profile (extensions disabled). Sublime Text's `--safe-mode` opens a modal "Safe Mode" notice that swallows keystrokes and scrolling, so Sublime runs against its own profile. IntelliJ IDEA shows the JetBrains User Agreement on first launch; the user accepts it once by hand (the harness never accepts agreements). Delta was blocked by a macOS "access files on a removable volume" prompt, which the user answers once.
 
 Revisit the Delta entries when a live (BENCH_LIVE=1) probe is possible.
 
 ## Measurement notes
+
+- **Warm-up launch.** Warm `startup` runs begin with one untimed launch of each app, so first-launch system work
+  (for example the code-signature check of a freshly built or installed binary) is never timed. It applies to every app
+  alike and is noted in each startup result. `--cold` purges instead and has no warm-up.
 
 - **Use a static desktop.** `startup` and `largeFileOpen` capture the whole main display from before the launch and
   look for the app window's region to change. Anything else that changes on screen before the window exists (video,
@@ -117,7 +122,8 @@ be modified.
 Each editor gets a fresh temporary profile per run; no real profile under the user's library is read or edited.
 
 - VS Code and Cursor: `--user-data-dir <profile>` and `--extensions-dir <profile>/extensions`, with `--disable-extensions`, and a seeded `User/settings.json` (telemetry off, no updates, no startup editor, solid cursor).
-- Sublime Text: `--safe-mode`; no profile directory is passed.
+- Sublime Text: the file only; no profile directory (its own profile, see the live-probe note above).
+- Cursor: the VS Code flags without `--user-data-dir`/`--extensions-dir` (its own logged-in profile).
 - IntelliJ IDEA: `IDEA_PROPERTIES` names a per-run `idea.properties` whose config, system, plugins and log paths sit in the profile, plus a seeded `config/options/ide.general.xml`.
 
 The landing page race stays Alloy vs Zed; the /benchmarks page lists every measured editor.

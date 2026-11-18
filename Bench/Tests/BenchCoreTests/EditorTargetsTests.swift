@@ -27,18 +27,28 @@ import Foundation
     }
 
     @Test func electronArguments() {
+        let t = TargetApp.vscode
+        #expect(Launcher.arguments(for: t, file: Self.file, userDataDir: "/p") == [
+            "--user-data-dir", "/p", "--extensions-dir", "/p/extensions", "--disable-extensions",
+            "--skip-welcome", "--skip-release-notes", "--disable-workspace-trust", Self.file])
+        #expect(Launcher.arguments(for: t, file: nil, userDataDir: "/p").last == "--disable-workspace-trust")
         for t in [TargetApp.vscode, .cursor] {
-            #expect(Launcher.arguments(for: t, file: Self.file, userDataDir: "/p") == [
-                "--user-data-dir", "/p", "--extensions-dir", "/p/extensions", "--disable-extensions",
-                "--skip-welcome", "--skip-release-notes", "--disable-workspace-trust", Self.file])
-            #expect(Launcher.arguments(for: t, file: nil, userDataDir: "/p").last == "--disable-workspace-trust")
             #expect(Launcher.environment(for: t, userDataDir: "/p", base: [:]) == nil)
             #expect(t.typingClickPoint == nil)
         }
     }
 
+    /// A fresh Cursor profile stops at a mandatory login screen, so Cursor runs against the user's own profile.
+    @Test func cursorUsesItsOwnLoggedInProfile() {
+        let t = TargetApp.cursor
+        #expect(t.userDataDirFlag == nil && t.dataDirEnvironmentKey == nil && t.seededFiles.isEmpty)
+        #expect(Launcher.arguments(for: t, file: Self.file, userDataDir: nil) == [
+            "--disable-extensions", "--skip-welcome", "--skip-release-notes", "--disable-workspace-trust", Self.file])
+        #expect(t.caveats.joined().contains("own logged-in Cursor profile"))
+    }
+
     @Test func electronSeededSettings() throws {
-        for t in [TargetApp.vscode, .cursor] {
+        for t in [TargetApp.vscode] {
             let text = try #require(t.seededFiles["User/settings.json"])
             let json = try #require(JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: String])
             #expect(json == ["telemetry.telemetryLevel": "off", "update.mode": "none",
@@ -48,8 +58,9 @@ import Foundation
 
     @Test func sublimeArguments() {
         let t = TargetApp.sublime
-        #expect(Launcher.arguments(for: t, file: Self.file, userDataDir: nil) == ["--safe-mode", Self.file])
-        #expect(Launcher.arguments(for: t, file: nil, userDataDir: nil) == ["--safe-mode"])
+        // No --safe-mode: it opens a modal notice that swallows the typing and scroll input.
+        #expect(Launcher.arguments(for: t, file: Self.file, userDataDir: nil) == [Self.file])
+        #expect(Launcher.arguments(for: t, file: nil, userDataDir: nil) == [])
         #expect(t.userDataDirFlag == nil && t.dataDirEnvironmentKey == nil && t.seededFiles.isEmpty)
         #expect(Launcher.environment(for: t, userDataDir: nil, base: [:]) == nil)
     }
