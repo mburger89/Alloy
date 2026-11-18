@@ -135,9 +135,8 @@ import Testing
 
     // MARK: focus
 
-    /// What the pane wrapper's focus-within change reports. A pointer press does not focus a `TerminalView` and the
-    /// surface is not an accessibility element, so the view-driven path is pinned by the known-issue test below and
-    /// the store's response is driven directly.
+    /// What the pane wrapper's focus-within change reports. The focus tests below drive the store's
+    /// response directly where the view-driven path is not the point.
     private func focusPane(_ store: TerminalPanelStore, _ id: UUID) { store.paneDidChangeFocus(id, focused: true) }
 
     private func splitWindow() async throws -> (Rig, TestWindow, TerminalPanelStore, UUID, UUID) {
@@ -152,26 +151,17 @@ import Testing
         return (rig, window, store, a, b)
     }
 
-    /// MetalUI gap (5.4): a press on a `TerminalView` does not focus it (the terminal's press is "the view's own" and the
-    /// view registers none), so the wrapper's `.focused` never reads true from a click. When MetalUI fixes it the
-    /// known issue stops recording and this test fails, which is the cue to drive the focus tests by clicking again.
+    /// A primary press on a `TerminalView` focuses it (MetalUI #376), so the wrapper's `.focused` reads true from a click.
     @Test func clickingAPaneFocusesIt() async throws {
         let (rig, window, store, a, b) = try await splitWindow()
-        try await withKnownIssue("MetalUI: clicking a TerminalView does not focus it") {
-            try window.click(window.element(identifier: "terminal-pane-\(b.uuidString)"))
-            await pump(window)
-            #expect(store.hasFocus)
-            #expect(try focusedPane(rig) == b)
-            try window.click(window.element(identifier: "terminal-pane-\(a.uuidString)"))
-            await pump(window)
-            #expect(try focusedPane(rig) == a)
-            #expect(store.hasFocus)
-        }
-        focusPane(store, b)
+        try window.click(window.element(identifier: "terminal-pane-\(b.uuidString)"))
+        await pump(window)
         #expect(store.hasFocus)
         #expect(try focusedPane(rig) == b)
-        focusPane(store, a)
+        try window.click(window.element(identifier: "terminal-pane-\(a.uuidString)"))
+        await pump(window)
         #expect(try focusedPane(rig) == a)
+        #expect(store.hasFocus)
         withExtendedLifetime(rig) {}
     }
 

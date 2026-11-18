@@ -61,6 +61,17 @@ ctrl+shift+tab) act on the terminal's tabs instead of the editor's (closing the 
 focus to the editor), and `tab.new` (cmd+t, "New Terminal Tab") opens a terminal tab; it is disabled otherwise. The
 panel installs `Workspace.terminalFocusActions`; the commands read it inside their closures only.
 
+Terminal commands: `terminal.copy`, `terminal.selectAll`, `terminal.find` ("Find in Terminal") and
+`terminal.clearScrollback` (category Terminal, global keys) are enabled only while a terminal pane has focus, so their
+chords (cmd+c, cmd+a, cmd+f, cmd+k; primary+shift+c/a/f/k on Linux and Windows, where Ctrl belongs to the
+program) never shadow the editor's. Each calls the matching `TerminalFocusActions` member, which acts on the focused
+pane's screen; with no session or an exited pane they do nothing. Copy puts the trimmed selection on the clipboard and
+leaves it alone when nothing is selected. Find opens a bar (`terminal-find-bar`) above the focused pane: Return selects
+the next match in the scrollback, Shift-Return the previous (both wrap), Escape closes it and returns focus to the
+terminal; the bar exists only while open and costs nothing otherwise. Paste is not a registry command: the terminal view takes
+cmd+v and Edit > Paste itself (bracketed when the program asked, ESC stripped). Clicking a link opens files inside the
+project in the focused editor group and URLs in the browser.
+
 ### Folding
 
 `editor.fold` (alt+cmd+left), `editor.unfold` (alt+cmd+right), `editor.foldAll` (alt+shift+cmd+left) and

@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 @testable import AlloyCore
 
@@ -104,5 +105,21 @@ import Testing
         #expect(a.count == 1)
         #expect(a[0].range == 3..<12)
         #expect(file(a[0])! == ("a.swift", 4, nil))
+    }
+
+    @Test func resolveRejectsASymlinkThatLeavesTheProject() throws {
+        let fm = FileManager.default
+        let base = fm.temporaryDirectory.appendingPathComponent("ld-\(UUID().uuidString)")
+        let project = base.appendingPathComponent("p"), outside = base.appendingPathComponent("out")
+        try fm.createDirectory(at: project, withIntermediateDirectories: true)
+        try fm.createDirectory(at: outside, withIntermediateDirectories: true)
+        defer { try? fm.removeItem(at: base) }
+        try "x".write(to: outside.appendingPathComponent("secret.txt"), atomically: true, encoding: .utf8)
+        try "y".write(to: project.appendingPathComponent("real.txt"), atomically: true, encoding: .utf8)
+        try fm.createSymbolicLink(at: project.appendingPathComponent("link.txt"), withDestinationURL: outside.appendingPathComponent("secret.txt"))
+        try fm.createSymbolicLink(at: project.appendingPathComponent("good.txt"), withDestinationURL: project.appendingPathComponent("real.txt"))
+        let exists: (String) -> Bool = { FileManager.default.fileExists(atPath: $0) }
+        #expect(LinkDetector.resolve("link.txt", bases: [project.path], projectRoot: project.path, fileExists: exists) == nil)
+        #expect(LinkDetector.resolve("good.txt", bases: [project.path], projectRoot: project.path, fileExists: exists) == "good.txt")
     }
 }

@@ -1,5 +1,6 @@
 import AlloyCore
 import MetalUI
+import MetalUITerminal
 import MetalUITerminalUI
 
 /// How a terminal pane looks: MetalUI's palette from Alloy's `terminal.*` theme tokens (with their editor-slot
@@ -15,6 +16,7 @@ struct TerminalAppearance: Equatable, Sendable {
     var fontSize: Double
     var cursorBlink: Bool
     var optionAsMeta: Bool
+    var cursorStyle: MetalUITerminal.TerminalCursorStyle
 
     var font: Font { .system(size: fontSize, design: .monospaced) }
 
@@ -29,6 +31,7 @@ struct TerminalAppearance: Equatable, Sendable {
             ansi: resolved.ansi.map(color), foreground: color(resolved.foreground), background: color(background),
             cursor: color(resolved.cursor), cursorText: color(background), selection: color(selection), boldIsBright: false)
         return TerminalAppearance(palette: palette, fontSize: settings.fontSize ?? defaultFontSize,
-                                  cursorBlink: settings.cursorBlink, optionAsMeta: settings.optionAsMeta)
+                                  cursorBlink: settings.cursorBlink, optionAsMeta: settings.optionAsMeta,
+                                  cursorStyle: TerminalKeys.cursorStyle(settings.cursorStyle, blink: settings.cursorBlink))
     }
 }

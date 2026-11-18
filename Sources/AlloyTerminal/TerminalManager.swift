@@ -83,6 +83,12 @@ import MetalUITerminal
     /// The live session's snapshot source, nil before spawn, after spawn failure and after retirement.
     public func snapshotSource(for pane: UUID) -> TerminalSnapshotSource? { entries[pane]?.session.snapshotSource }
 
+    /// Screen actions over the live session; nil before spawn, after failure and after retirement.
+    public func screen(for pane: UUID) -> TerminalScreen? {
+        guard let session = entries[pane]?.session else { return nil }
+        return TerminalScreen(source: session.snapshotSource, viewportRows: { [session] in session.size.rows })
+    }
+
     public func write(_ pane: UUID, _ bytes: [UInt8]) { entries[pane]?.session.write(bytes) }
 
     public func resize(_ pane: UUID, cols: Int, rows: Int) { entries[pane]?.session.resize(cols: cols, rows: rows) }

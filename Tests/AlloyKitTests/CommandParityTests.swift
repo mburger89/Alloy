@@ -137,7 +137,7 @@ import Testing
     @Test func globalKeyCountsUnchanged() async throws {
         let rig = Rig()
         let registry = testCenter(for: rig.workspace).registry
-        #expect(registry.commands.filter { $0.descriptor.binding == .global }.count == 14)
+        #expect(registry.commands.filter { $0.descriptor.binding == .global }.count == 18)
         #expect(registry.commands.filter { $0.descriptor.binding == .globalInCode }.map(\.descriptor.id) == ["session.new"])
         let window = try alloyWindow(rig.workspace)
         // The buttons are hidden from the element tree, so the registry is the record; the keys still work (see

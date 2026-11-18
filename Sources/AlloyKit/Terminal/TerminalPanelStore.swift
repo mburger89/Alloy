@@ -51,7 +51,11 @@ final class TerminalPanelStore {
                 isFocused: { [weak self] in self.map { $0.workspace.mode == .code && $0.hasFocus } ?? false },
                 closeTab: { [weak self] in self?.closeActiveTab() },
                 cycleTab: { [weak self] step in self?.cycleTab(step) },
-                newTab: { [weak self] in self?.newTab() })
+                newTab: { [weak self] in self?.newTab() },
+                copy: { [weak self] in self?.copySelection() },
+                selectAll: { [weak self] in self?.selectAll() },
+                openFind: { [weak self] in self?.openFind() },
+                clearScrollback: { [weak self] in self?.clearScrollback() })
             workspace.onTerminalLayoutChanged = { [weak self] layout in self?.spawn(layout) }
             workspace.addStopHook { await manager.shutdown() }
             onRestart = { [weak self] pane in
@@ -79,6 +83,123 @@ final class TerminalPanelStore {
 
     /// The live source of a pane's session; nil without one (lazy restore, spawn failure, exited and retired).
     func snapshotSource(of pane: UUID) -> TerminalSnapshotSource? { manager?.snapshotSource(for: pane) }
+
+    /// Bytes the terminal view encoded (keys, committed text, paste, focus reports) for the pty. An exited pane, or one
+    /// without a session, takes nothing.
+    func sendInput(_ pane: UUID, _ bytes: [UInt8]) {
+        guard !bytes.isEmpty, paneState(pane) == .running else { return }
+        manager?.write(pane, bytes)
+    }
+
+    /// Opens a URL in the browser; `main.swift` sets `TerminalLinkHooks.openURL`, so tests never launch one.
+    @ObservationIgnored var openURL: (URL) -> Void = { TerminalLinkHooks.openURL($0) }
+
+    /// A terminal link question: `.hover` gives the target under the cell, `.exit` nothing, `.activate` opens it.
+    /// Paths resolve against the pane's cwd (OSC 7, else spawn), then the project root; only existing project files count.
+    func linkQuery(_ pane: UUID, _ query: TerminalLinkQuery) -> TerminalLinkTarget? {
+        guard query.phase != .exit else { return nil }
+        let root = workspace.projectRoot.path
+        let bases = [lastCwd(of: pane), root]
+        guard let target = TerminalLinkOpener.target(
+            for: query, bases: bases, projectRoot: root, fileExists: { FileManager.default.fileExists(atPath: $0) })
+        else { return nil }
+        guard query.phase == .activate else { return target }
+        switch TerminalLinkOpener.action(for: target.payload) {
+        case .openFile(let path, let line)?:
+            workspace.requestOpen(path, line: line, in: .group(workspace.codeLayout.focusedGroupID))
+        case .openURL(let url)?:
+            openURL(url)
+        case nil:
+            break
+        }
+        return nil
+    }
+
+    /// The window's clipboard, handed over by the focused pane's view (a command has no view to read it from).
+    @ObservationIgnored var clipboard: Clipboard?
+
+    /// The focused pane's screen actions; nil without a focused pane, a session, or while it has exited.
+    var focusedScreen: TerminalScreen? {
+        guard let pane = workspace.terminalLayout.active?.focusedPane, paneState(pane) == .running else { return nil }
+        return manager?.screen(for: pane)
+    }
+
+    /// Copies the selection (trimmed plain text); no selection leaves the clipboard unchanged.
+    func copySelection() {
+        guard let screen = focusedScreen, let clipboard else { return }
+        Task { @MainActor in
+            if let text = await screen.selectedText(), !text.isEmpty { clipboard.write(text) }
+        }
+    }
+
+    func selectAll() {
+        guard let screen = focusedScreen else { return }
+        Task { await screen.selectAll() }
+    }
+
+    func clearScrollback() {
+        guard let screen = focusedScreen else { return }
+        Task { await screen.clearScrollback() }
+    }
+
+    /// The pane whose find bar is open; nil when closed. Observed: only the pane views read it.
+    private(set) var findPane: UUID?
+    /// The bar's text. Read only by the bar's body, so typing reruns the bar and nothing else.
+    var findQuery = ""
+    var findStatus: FindStatus = .idle
+    /// Bumped to put keyboard focus in the field (opening an already open bar).
+    private(set) var findFocusToken = 0
+    /// Bumped to hand keyboard focus back to the terminal.
+    private(set) var terminalFocusToken = 0
+    @ObservationIgnored private var findTask: Task<Void, Never>?
+    @ObservationIgnored private var findIsFresh = true
+
+    enum FindStatus: Equatable, Sendable { case idle, found, notFound }
+
+    /// Opens the find bar of the focused pane; its field takes focus. No-op without a running focused pane.
+    func openFind() {
+        guard let pane = workspace.terminalLayout.active?.focusedPane, paneState(pane) == .running,
+              manager?.screen(for: pane) != nil else { return }
+        if findPane != pane { findQuery = ""; findStatus = .idle; findIsFresh = true }
+        findPane = pane
+        findFocusToken &+= 1
+    }
+
+    func setFindQuery(_ text: String) {
+        guard text != findQuery else { return }
+        findQuery = text
+        findIsFresh = true
+        findStatus = .idle
+    }
+
+    /// Selects the next (or previous) match in the bar's pane, wrapping; the returned task finishes when it has.
+    @discardableResult
+    func find(next: Bool) -> Task<Void, Never>? {
+        guard let pane = findPane, paneState(pane) == .running, let screen = manager?.screen(for: pane) else { return nil }
+        let needle = findQuery
+        guard !needle.isEmpty else { findStatus = .idle; return nil }
+        let inclusive = findIsFresh
+        findIsFresh = false
+        let previous = findTask
+        let task = Task { @MainActor [weak self] in
+            await previous?.value
+            let match = await screen.find(needle, backwards: !next, inclusive: inclusive)
+            guard let self, self.findPane == pane, self.findQuery == needle else { return }
+            self.findStatus = match == nil ? .notFound : .found
+        }
+        findTask = task
+        return task
+    }
+
+    /// Closes the bar, drops the highlight it made, and returns keyboard focus to the terminal.
+    func closeFind() {
+        guard let pane = findPane else { return }
+        findPane = nil
+        findStatus = .idle
+        findTask = nil
+        terminalFocusToken &+= 1
+        if let screen = manager?.screen(for: pane) { Task { await screen.clearSelection() } }
+    }
 
     /// The view's grid size, forwarded to the pty (coalesced by the session).
     func resizePane(_ pane: UUID, cols: Int, rows: Int) { manager?.resize(pane, cols: max(cols, 2), rows: max(rows, 1)) }
@@ -125,6 +246,7 @@ final class TerminalPanelStore {
     func markExited(_ pane: UUID, status: Int32) {
         guard states[pane] != .exited(status) else { return }
         states[pane] = .exited(status)
+        if findPane == pane { findPane = nil; findStatus = .idle }
         revision &+= 1
     }
 
@@ -190,6 +312,7 @@ final class TerminalPanelStore {
         states = states.filter { live.contains($0.key) }
         notices = notices.filter { live.contains($0.key) }
         manager?.retain(only: live)
+        if let pane = findPane, !live.contains(pane) { findPane = nil; findStatus = .idle }
         if titles.count + states.count + notices.count != before { revision &+= 1 }
     }
 

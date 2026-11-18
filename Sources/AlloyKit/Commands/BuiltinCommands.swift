@@ -185,6 +185,25 @@ public enum BuiltinCommands {
             keyID: "global-key-new-terminal-tab", enabled: { current()?.terminalHasFocus ?? false }) {
             current()?.terminalFocusActions?.newTab()
         }
+        // Terminal commands: each acts only while a terminal pane is focused, so its chord never shadows the editor's
+        // copy, find or select-all. Elsewhere Ctrl belongs to the program, so they take primary+Shift.
+        #if os(macOS)
+        let terminalMods: ChordModifiers = .primary
+        #else
+        let terminalMods: ChordModifiers = [.primary, .shift]
+        #endif
+        let terminalFocused: @MainActor () -> Bool = { current()?.terminalHasFocus ?? false }
+        func addTerminal(_ id: String, _ title: String, _ key: Character, keyID: String,
+                         _ run: @escaping @MainActor (TerminalFocusActions) -> Void) {
+            add(id, title, .terminal, chord(terminalMods, ch(key)), .global, keyID: keyID, enabled: terminalFocused) {
+                if let actions = current()?.terminalFocusActions, actions.isFocused() { run(actions) }
+            }
+        }
+        addTerminal("terminal.copy", "Copy", "c", keyID: "global-key-terminal-copy") { $0.copy() }
+        addTerminal("terminal.selectAll", "Select All", "a", keyID: "global-key-terminal-select-all") { $0.selectAll() }
+        addTerminal("terminal.find", "Find in Terminal", "f", keyID: "global-key-terminal-find") { $0.openFind() }
+        addTerminal("terminal.clearScrollback", "Clear Terminal Scrollback", "k",
+                    keyID: "global-key-terminal-clear") { $0.clearScrollback() }
         for n in 1...9 {
             add("tab.select\(n)", "Go to Tab \(n)", .tab, chord(.primary, ch(Character(String(n)))), .global,
                 keyID: "global-key-tab-\(n)", enabled: hasWorkspace) { current()?.selectTab(number: n) }

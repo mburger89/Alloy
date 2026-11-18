@@ -111,6 +111,10 @@ public enum LinkDetector {
             guard full.hasPrefix(prefix) else { continue }
             guard tried.insert(full).inserted else { continue }
             if fileExists(full) {
+                // A symlink inside the project that points out of it is not a project file.
+                let real = URL(fileURLWithPath: full).resolvingSymlinksInPath().path
+                let realRoot = URL(fileURLWithPath: root).resolvingSymlinksInPath().path
+                guard real.hasPrefix(realRoot.hasSuffix("/") ? realRoot : realRoot + "/") else { continue }
                 return String(full.dropFirst(prefix.count))
             }
         }

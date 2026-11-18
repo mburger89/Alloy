@@ -76,7 +76,10 @@ import Testing
         // Defaults that knowingly share a key with a MetalUI menu item or an unconditional code view key (`id: title`).
         // A new default that shadows a built-in must be added here on purpose.
         // Close Tab deliberately takes the standard Close item's key (the app's own item replaces it).
-        let allowed: Set<String> = ["tab.close: Close"]
+        // The terminal's copy, paste and select all take the standard items' keys, but only while a terminal is focused
+        // (disabled otherwise, so the standard item keeps the key everywhere else).
+        let allowed: Set<String> = ["tab.close: Close", "terminal.copy: Copy",
+                                    "terminal.selectAll: Select All"]
         var seen: Set<String> = []
         for command in center.registry.commands {
             guard let own = command.descriptor.shortcut else { continue }

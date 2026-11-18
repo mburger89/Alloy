@@ -15,6 +15,7 @@ public struct CommandCategory: Hashable, Codable, Sendable {
     public static let go = CommandCategory(name: "Go")
     public static let view = CommandCategory(name: "View")
     public static let tab = CommandCategory(name: "Tab")
+    public static let terminal = CommandCategory(name: "Terminal")
     public static let session = CommandCategory(name: "Session")
     public static let edit = CommandCategory(name: "Edit")
     public static let file = CommandCategory(name: "File")

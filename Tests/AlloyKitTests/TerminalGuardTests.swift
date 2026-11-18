@@ -91,6 +91,111 @@ import Testing
         try await guardCode(.code1, steady: Self.visiblePanelBaseline + Self.knownVisibleTerminalGap + Self.knownTerminalViewExcess, hidden: false)
     }
 
+    /// Typing into a focused, visible terminal is surface-only: no body reruns and no more element requests than a keystroke in the editor.
+    @Test func typingInTerminalIsSurfaceOnly() async throws {
+        let rig = Rig()
+        await rig.workspace.restoreUIState()
+        rig.workspace.setMode(.code)
+        let spawner = ScriptedPtySpawner()
+        let store = TerminalPanelStore(workspace: rig.workspace, spawner: spawner, environment: ["SHELL": "/bin/sh"])
+        rig.workspace.toggleTerminal()
+        let window = try alloyWindow(rig.workspace, terminal: store)
+        for _ in 0..<10 { window.tick() }
+        let pane = try #require(rig.workspace.terminalLayout.active?.focusedPane)
+        try window.click(window.element(identifier: "terminal-pane-\(pane.uuidString)"))
+        for _ in 0..<10 { window.tick() }
+        window.resetFrameWork()
+        for _ in 0..<5 { window.tick() }
+        let idle = window.frameWork.map(\.elementRequests).max() ?? 0
+        let panel = BodyProbe.count("TerminalPanel"), row = BodyProbe.count("CodeIslandRow")
+        window.resetFrameWork()
+        for c in "abcdefghijklmnopqrst" { window.typeText(String(c)) }
+        // A key event frame re-requests the whole tree like a keystroke in the editor does (54 here, 55 with the editor
+        // focused: `visiblePanelBaseline`); the terminal adds nothing and reruns no body.
+        #expect(idle == 0)
+        #expect(window.frameWork.allSatisfy { $0.elementRequests <= Self.visiblePanelBaseline }, "\(window.frameWork.map(\.elementRequests))")
+        #expect(BodyProbe.count("TerminalPanel") == panel && BodyProbe.count("CodeIslandRow") == row)
+        #expect(spawner.spawned.first?.written.count == 20)
+        withExtendedLifetime(rig) {}
+    }
+
+    private func focusedTerminal() async throws -> (Rig, TestWindow, TerminalPanelStore, UUID) {
+        let rig = Rig()
+        await rig.workspace.restoreUIState()
+        rig.workspace.setMode(.code)
+        let store = TerminalPanelStore(workspace: rig.workspace, spawner: ScriptedPtySpawner(), environment: ["SHELL": "/bin/sh"])
+        rig.workspace.toggleTerminal()
+        let window = try alloyWindow(rig.workspace, terminal: store)
+        for _ in 0..<10 { window.tick() }
+        let pane = try #require(rig.workspace.terminalLayout.active?.focusedPane)
+        try window.click(window.element(identifier: "terminal-pane-\(pane.uuidString)"))
+        for _ in 0..<10 { window.tick() }
+        return (rig, window, store, pane)
+    }
+
+    @Test func linkHoverIsSurfaceOnly() async throws {
+        let (rig, window, _, pane) = try await focusedTerminal()
+        let terminal = try window.element(identifier: "terminal-pane-\(pane.uuidString)")
+        window.resetFrameWork()
+        for _ in 0..<3 { window.tick() }
+        let idle = window.frameWork.map(\.elementRequests).max() ?? 0
+        let panel = BodyProbe.count("TerminalPanel")
+        window.pressModifiers(.command)
+        window.resetFrameWork()
+        let frame = terminal.frame
+        for i in 1..<6 {
+            window.hover(at: Point(x: frame.origin.x + Pixels(Float(i) * 17), y: frame.origin.y + Pixels(40)))
+        }
+        #expect(idle == 0)
+        #expect(window.frameWork.allSatisfy { $0.elementRequests <= Self.visiblePanelBaseline }, "\(window.frameWork.map(\.elementRequests))")
+        #expect(BodyProbe.count("TerminalPanel") == panel)
+        withExtendedLifetime(rig) {}
+    }
+
+    private func idleRequests(_ window: TestWindow) -> [Int] {
+        window.resetFrameWork()
+        for _ in 0..<10 { window.tick() }
+        return window.frameWork.map(\.elementRequests)
+    }
+
+    @Test func findBarClosedCostsNothing() async throws {
+        let (rig, window, _, _) = try await focusedTerminal()
+        let bar = BodyProbe.count("TerminalFindBar"), panel = BodyProbe.count("TerminalPanel")
+        #expect(idleRequests(window).allSatisfy { $0 == 0 })
+        #expect(BodyProbe.count("TerminalFindBar") == bar && BodyProbe.count("TerminalPanel") == panel)
+        #expect(!exists(window, "terminal-find-bar"))
+        withExtendedLifetime(rig) {}
+    }
+
+    @Test func findBarOpenIdleCostsNothing() async throws {
+        let (rig, window, store, _) = try await focusedTerminal()
+        store.openFind()
+        for _ in 0..<10 { window.tick() }
+        #expect(exists(window, "terminal-find-bar"))
+        let panel = BodyProbe.count("TerminalPanel")
+        #expect(idleRequests(window).allSatisfy { $0 == 0 })
+        #expect(BodyProbe.count("TerminalPanel") == panel)
+        withExtendedLifetime(rig) {}
+    }
+
+    /// A key frame re-requests the whole tree; an open bar adds its own 13 elements (measured 68 against 55), nothing else.
+    static let findBarElements = 13
+
+    @Test func typingInFindFieldRerunsTheBarOnly() async throws {
+        let (rig, window, store, _) = try await focusedTerminal()
+        store.openFind()
+        for _ in 0..<10 { window.tick() }
+        let panel = BodyProbe.count("TerminalPanel"), row = BodyProbe.count("CodeIslandRow"), pane = BodyProbe.count("TerminalPaneView")
+        window.resetFrameWork()
+        window.typeText("abc")
+        for _ in 0..<5 { window.tick() }
+        #expect(store.findQuery == "abc")
+        #expect(BodyProbe.count("TerminalPanel") == panel && BodyProbe.count("CodeIslandRow") == row)
+        #expect(BodyProbe.count("TerminalPaneView") == pane)
+        #expect(window.frameWork.allSatisfy { $0.elementRequests <= Self.visiblePanelBaseline + Self.findBarElements }, "\(window.frameWork.map(\.elementRequests))")
+        withExtendedLifetime(rig) {}
+    }
+
     private func visibleWindow() async throws -> (Rig, TestWindow, TerminalPanelStore) {
         let rig = Rig()
         await rig.workspace.restoreUIState()
