@@ -58,6 +58,7 @@ extension BuiltInThemes {
     "codeSelectionFill": "#DDE8FC",
     "findMatchFill": "#FFF1C0",
     "currentFindMatchFill": "#FFDD9E",
+    "snippetPlaceholderFill": "#E6E9F0",
     "diagnosticError": "#B81D28",
     "diagnosticWarning": "#875A00",
     "diagnosticInfo": "#0757B8",

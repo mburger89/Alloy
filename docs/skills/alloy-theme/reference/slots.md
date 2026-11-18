@@ -53,6 +53,7 @@ Every colour slot a theme file can set under `colors`, in file order, with what 
 - `codeSelectionFill`: Selection fill in code views.
 - `findMatchFill`: Highlight of find matches in code views.
 - `currentFindMatchFill`: Highlight of the current find match.
+- `snippetPlaceholderFill`: Tint of the placeholders of a running snippet other than the current one.
 - `diagnosticError`: Errors from language servers: gutter bar, text tint and message row.
 - `diagnosticWarning`: Warnings from language servers: gutter bar, text tint and message row.
 - `diagnosticInfo`: Information from language servers: gutter bar and text tint.

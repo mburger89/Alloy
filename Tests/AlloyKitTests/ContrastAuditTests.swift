@@ -158,6 +158,7 @@ private func ratio(_ a: RGB, _ b: RGB) -> Double {
             add("syntax.\(token).selection", fg, [.islandFill, CodeTheme.alloy.selection], 4.5)
             add("syntax.\(token).find", fg, [.islandFill, CodeTheme.alloy.findMatch], 4.5)
             add("syntax.\(token).findCurrent", fg, [.islandFill, CodeTheme.alloy.currentFindMatch], 4.5)
+            add("syntax.\(token).snippetPlaceholder", fg, [.islandFill, .snippetPlaceholderFill], 4.5)
         }
 
         // Suggestions and quick open.
@@ -189,6 +190,7 @@ private func ratio(_ a: RGB, _ b: RGB) -> Double {
         add("panel.code.selection", text, [.islandFill, CodeTheme.alloy.selection], 4.5)
         add("panel.code.find", text, [.islandFill, CodeTheme.alloy.findMatch], 4.5)
         add("panel.code.findCurrent", text, [.islandFill, CodeTheme.alloy.currentFindMatch], 4.5)
+        add("panel.code.snippetPlaceholder", text, [.islandFill, .snippetPlaceholderFill], 4.5)
         for (name, c) in authors {
             add("panel.code.bar.\(name)", c, [.islandFill], 3)
             add("panel.code.authorRun.\(name)", text, [.islandFill, c.opacity(authorRunAlpha)], 4.5)

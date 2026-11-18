@@ -122,16 +122,65 @@ struct CompletionApplyTests {
         #expect(plan.edits == [ByteEdit(range: 2..<5, text: "foobar"), ByteEdit(range: 6..<9, text: "fin")])
     }
 
-    @Test func aSnippetIsPlainTextWithTheCaretAtTheEndStop() throws {
+    @Test func aSnippetItemCarriesAParsedSnippet() throws {
+        let s = snap("x fo")
+        let item = CompletionItem(label: "f", insertText: "f(${1:a}, ${2:b})$0", isSnippet: true)
+        let plan = try #require(CompletionApply.plan(item: item, requestSnapshot: s, current: s, requestCaret: 4, caret: 4, wordStart: 2))
+        #expect(plan.snippet?.text == "f(a, b)")
+        #expect(plan.snippet?.tabStops.map(\.index) == [1, 2, 0])
+        #expect(plan.edits == [ByteEdit(range: 2..<4, text: "f(a, b)")])
+        #expect(plan.caret == 2 + 7)
+    }
+
+    @Test func aSnippetEditRangeStillReplacesTheWord() throws {
+        let s = snap("x fo")
+        let item = CompletionItem(label: "foo", isSnippet: true,
+                                  edit: CompletionEdit(insert: 2..<4, newText: "foo($1)$0"))
+        let plan = try #require(CompletionApply.plan(item: item, requestSnapshot: s, current: s, requestCaret: 4, caret: 4, wordStart: 2))
+        #expect(plan.edits == [ByteEdit(range: 2..<4, text: "foo()")])
+        #expect(plan.snippet?.text == "foo()")
+        #expect(plan.snippet?.tabStops.map(\.index) == [1, 0])
+    }
+
+    @Test func allowsSnippetFalseGivesThePlainPlan() throws {
         let s = snap("x fo")
         let item = CompletionItem(label: "foo", insertText: "foo($1)$0", isSnippet: true)
-        let plan = try #require(CompletionApply.plan(item: item, requestSnapshot: s, current: s, requestCaret: 4, caret: 4, wordStart: 2))
+        let plan = try #require(CompletionApply.plan(item: item, requestSnapshot: s, current: s, requestCaret: 4, caret: 4, wordStart: 2,
+                                                     allowsSnippet: false))
+        #expect(plan.snippet == nil)
         #expect(plan.edits[0].text == "foo()")
         #expect(plan.caret == 2 + 5)
-        let inside = try #require(CompletionApply.plan(item: CompletionItem(label: "f", insertText: "f(${1:a})", isSnippet: true),
-                                                       requestSnapshot: s, current: s, requestCaret: 4, caret: 4, wordStart: 2))
-        #expect(inside.edits[0].text == "f(a)")
-        #expect(inside.caret == 2 + 4)   // no `$0`: the end
+    }
+
+    @Test func aSnippetWithoutAFinalStopLandsAtTheEnd() throws {
+        let s = snap("x fo")
+        let plan = try #require(CompletionApply.plan(item: CompletionItem(label: "f", insertText: "f(${1:a})", isSnippet: true),
+                                                     requestSnapshot: s, current: s, requestCaret: 4, caret: 4, wordStart: 2))
+        #expect(plan.edits[0].text == "f(a)")
+        #expect(plan.caret == 2 + 4)
+    }
+
+    @Test func malformedAndEmptySnippetsNeverTrap() throws {
+        let s = snap("x fo")
+        let bad = try #require(CompletionApply.plan(item: CompletionItem(label: "f", insertText: "${1:", isSnippet: true),
+                                                    requestSnapshot: s, current: s, requestCaret: 4, caret: 4, wordStart: 2))
+        #expect(bad.snippet != nil)
+        #expect(bad.edits[0].text == bad.snippet?.text)
+        let end = try #require(CompletionApply.plan(item: CompletionItem(label: "f", insertText: "$0", isSnippet: true),
+                                                    requestSnapshot: s, current: s, requestCaret: 4, caret: 4, wordStart: 2))
+        #expect(end.edits[0].text == "")
+        #expect(end.snippet?.tabStops.map(\.index) == [0])
+        #expect(end.caret == 2)
+    }
+
+    @Test func additionalEditsStillSurviveWithASnippet() throws {
+        let s = snap("x fo")
+        let item = CompletionItem(label: "foo", insertText: "foo($1)", isSnippet: true,
+                                  additionalEdits: [ByteEdit(range: 0..<0, text: "use b;\n"), ByteEdit(range: 1..<3, text: "!!")])
+        let plan = try #require(CompletionApply.plan(item: item, requestSnapshot: s, current: s, requestCaret: 4, caret: 4, wordStart: 2))
+        #expect(plan.edits == [ByteEdit(range: 2..<4, text: "foo()"), ByteEdit(range: 0..<0, text: "use b;\n")])
+        #expect(plan.snippet != nil)
+        #expect(plan.caret == 2 + 5 + 7)
     }
 
     @Test func aNonAsciiWordBeforeTheCaret() throws {

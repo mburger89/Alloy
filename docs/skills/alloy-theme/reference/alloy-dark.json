@@ -41,6 +41,7 @@
     "shellInk" : "#E3B341",
     "shellTint" : "#3A2D14",
     "sidebarFill" : "#1D2027",
+    "snippetPlaceholderFill" : "#2B303C",
     "surface" : "#161C2E",
     "surfaceSecondary" : "#27304A",
     "syntax.attribute" : "#E3B341",

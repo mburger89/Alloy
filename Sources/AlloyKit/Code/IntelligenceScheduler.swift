@@ -583,20 +583,35 @@ final class IntelligenceScheduler {
 
     private func applyAccept(_ index: Int, thenTyping typed: String?) -> Bool {
         let state = host.selectionState
-        guard items.indices.contains(index), let snapshot = requestSnapshot, host.isActive,
-              state.selections.count == 1, state.selections[0].isEmpty else { closeCompletion(); return false }
+        guard items.indices.contains(index), let snapshot = requestSnapshot, host.isActive else { closeCompletion(); return false }
+        // The popup closes whenever there is not a single caret (mirrors of a running session included), so a snippet
+        // always goes in at the one caret, the primary.
+        let primary = state.primarySelection
+        guard state.selections.count == 1, primary.isEmpty else { closeCompletion(); return false }
         let now = host.buffer.snapshot()
-        let caret = state.selections[0].head
+        let caret = primary.head
         guard caret >= wordStart, caret <= now.utf8Count, wordStart(in: now, caret: caret) == wordStart,
               let plan = CompletionApply.plan(item: items[index], requestSnapshot: snapshot, current: now, requestCaret: requestCaret,
                                               caret: caret, wordStart: wordStart) else { closeCompletion(); return false }
         closeCompletion()
-        _ = state.transaction { buffer in
-            for edit in plan.edits.sorted(by: { $0.range.lowerBound > $1.range.lowerBound }) {
-                buffer.replace(edit.range, with: edit.text, origin: .programmatic)
+        let ordered = plan.edits.sorted { $0.range.lowerBound > $1.range.lowerBound }
+        if let snippet = plan.snippet, let main = plan.edits.first {
+            // One undo step: edits after the word, the snippet (its session follows the later edits), edits before it.
+            _ = state.transaction { buffer in
+                for edit in ordered where edit.range.lowerBound > main.range.lowerBound {
+                    buffer.replace(edit.range, with: edit.text, origin: .programmatic)
+                }
+                state.insertSnippet(snippet, replacing: main.range, indentUnit: nil)
+                for edit in ordered where edit.range.lowerBound < main.range.lowerBound {
+                    buffer.replace(edit.range, with: edit.text, origin: .programmatic)
+                }
             }
+        } else {
+            _ = state.transaction { buffer in
+                for edit in ordered { buffer.replace(edit.range, with: edit.text, origin: .programmatic) }
+            }
+            state.select(plan.caret..<plan.caret, reveal: true)
         }
-        state.select(plan.caret..<plan.caret, reveal: true)
         if let typed { type(typed) }
         return true
     }

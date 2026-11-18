@@ -29,6 +29,11 @@ import Testing
         #expect(names.contains("syntax.keyword") && !names.contains("syntax.plain") && !names.contains("syntax.variable"))
     }
 
+    @Test func snippetPlaceholderSlotExistsAndFeedsTheCodeTheme() {
+        #expect(ThemeSlots.all.contains { $0.name == "snippetPlaceholderFill" })
+        #expect(CodeTheme.alloy.snippetPlaceholder != nil)
+    }
+
     @Test func islandSlotsAreListedWithPurposes() {
         for name in ["windowBackground", "islandFill", "controlFill", "glassRim"] {
             let slot = ThemeSlots.all.first { $0.name == name }
@@ -79,6 +84,16 @@ import Testing
         for (index, name) in names.enumerated() where !["textSecondary", "textTertiary", "pickerThumbEdge"].contains(name) && !close(plain[index], themed[index]) {
             Issue.record("\(dark ? "dark" : "light") \(name): \(plain[index]) vs \(themed[index])")
         }
+    }
+
+    @Test(arguments: [true, false])
+    func aThemeWithoutTheSnippetKeyFallsBackToItsDefault(dark: Bool) throws {
+        var theme = try resolve(dark ? "alloy-dark" : "alloy-light")
+        theme.colors["snippetPlaceholderFill"] = nil
+        let colors = [Color.snippetPlaceholderFill]
+        let fallback = try themedResolve(colors, theme: ThemeApplier.theme(for: theme), dark: dark)
+        let plain = try resolvedInWindow(colors, dark: dark)
+        #expect(close(fallback[0], plain[0]))
     }
 
     /// `colors` resolved by a window that has `theme` installed for its scheme from the start.

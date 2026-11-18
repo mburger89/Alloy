@@ -178,6 +178,10 @@ struct FindMatchFill: ThemeColorKey {
 struct CurrentFindMatchFill: ThemeColorKey {
     static let defaultValue = Color(light: Color(hex: 0xFFDD9E), dark: Color(hex: 0x4D3E12))
 }
+/// The placeholders of a running snippet other than the current one: opaque so syntax colours keep 4.5:1 on it.
+struct SnippetPlaceholderFill: ThemeColorKey {
+    static let defaultValue = Color(light: Color(hex: 0xE6E9F0), dark: Color(hex: 0x2B303C))
+}
 /// Diagnostic marks in the code view: the gutter bar, a tint over the range (at `diagnosticTintAlpha`) and the message row.
 struct DiagnosticErrorKey: ThemeColorKey {
     static let defaultValue = ErrorInk.defaultValue
@@ -290,6 +294,7 @@ extension Color {
     static let codeSelectionFill = Color(CodeSelectionFill.self)
     static let findMatchFill = Color(FindMatchFill.self)
     static let currentFindMatchFill = Color(CurrentFindMatchFill.self)
+    static let snippetPlaceholderFill = Color(SnippetPlaceholderFill.self)
     static let diagnosticError = Color(DiagnosticErrorKey.self)
     static let diagnosticWarning = Color(DiagnosticWarningKey.self)
     static let diagnosticInfo = Color(DiagnosticInfoKey.self)
@@ -310,6 +315,6 @@ extension Color {
 extension CodeTheme {
     /// MetalUI's default code theme with a clear background, so the code sits on the file island's own surface (the default
     /// `surface` painted opaque white on a light island), and the colours that fail 4.5:1 replaced: selection, line numbers
-    /// and the find highlights.
-    static let alloy = CodeTheme(background: .clear, selection: .codeSelectionFill, gutterForeground: .mutedInk, findMatch: .findMatchFill, currentFindMatch: .currentFindMatchFill)
+    /// the find highlights and the snippet placeholders.
+    static let alloy = CodeTheme(background: .clear, selection: .codeSelectionFill, gutterForeground: .mutedInk, findMatch: .findMatchFill, currentFindMatch: .currentFindMatchFill, snippetPlaceholder: .snippetPlaceholderFill)
 }

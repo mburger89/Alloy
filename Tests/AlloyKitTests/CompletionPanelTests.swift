@@ -161,15 +161,136 @@ struct CompletionPanelTests {
         }
     }
 
-    @Test func aSnippetIsInsertedAsPlainText() async throws {
-        let script = IntelRig.completionScript(completion: #"{"result":[{"label":"println","insertText":"println!(\"${1:msg}\")$0","insertTextFormat":2}]}"#)
+    private func snippetScript(_ item: String) -> String {
+        IntelRig.completionScript(completion: #"{"result":[{"label":"snip","insertText":"\#(item)","insertTextFormat":2}]}"#)
+    }
+
+    private func accept(_ r: IntelRig, _ window: TestWindow, _ letter: String = "s") async throws {
+        window.typeText(letter)
+        try await window.runUntil { r.exists(window, "completion-popup") }
+        window.typeKey(.return)
+    }
+
+    @Test func aSnippetStartsASessionAndTabStepsIt() async throws {
+        try await IntelRig.run(script: snippetScript(#"println!(${1:msg}, ${2:arg})$0"#)) { r in
+            let (window, doc, state) = try await start(r)
+            try await accept(r, window, "p")
+            #expect(text(doc) == "let x = println!(msg, arg)\n")
+            #expect(state.isSnippetActive)
+            let head = endOfLine + "println!(".utf8.count
+            #expect(state.primarySelection.range == head..<head + 3)
+            window.typeKey(.tab)
+            #expect(state.primarySelection.range == head + 5..<head + 8)
+            window.typeKey(.tab, modifierFlags: .shift)
+            #expect(state.primarySelection.range == head..<head + 3)
+            window.typeKey(.tab)
+            window.typeKey(.tab)
+            #expect(!state.isSnippetActive)
+            #expect(state.primarySelection.head == endOfLine + "println!(msg, arg)".utf8.count)
+        }
+    }
+
+    @Test func mirrorsStayLinked() async throws {
+        try await IntelRig.run(script: snippetScript(#"${1:x} = ${1:x}$0"#)) { r in
+            let (window, doc, _) = try await start(r)
+            try await accept(r, window)
+            window.typeText("y")
+            #expect(text(doc).hasPrefix("let x = y = y"))
+        }
+    }
+
+    @Test func escapeEndsTheSessionAndKeepsTheText() async throws {
+        try await IntelRig.run(script: snippetScript(#"f(${1:a})$0"#)) { r in
+            let (window, doc, state) = try await start(r)
+            try await accept(r, window)
+            window.typeKey(.escape)
+            #expect(!state.isSnippetActive)
+            #expect(text(doc) == "let x = f(a)\n")
+        }
+    }
+
+    @Test func aSnippetWithOnlyTheFinalStopStartsNoSession() async throws {
+        try await IntelRig.run(script: snippetScript(#"foo()$0"#)) { r in
+            let (window, doc, state) = try await start(r)
+            try await accept(r, window)
+            #expect(text(doc) == "let x = foo()\n")
+            #expect(!state.isSnippetActive)
+            #expect(state.primarySelection.head == endOfLine + 5)
+        }
+    }
+
+    @Test func snippetIndentFollowsTheCaretLine() async throws {
+        try await IntelRig.run(script: snippetScript(#"if ${1:c} {\n\t$0\n}"#)) { r in
+            try r.write("main.rs", "    \n")
+            let window = try await r.open("main.rs")
+            let doc = try #require(r.rig.workspace.document("main.rs"))
+            let state = try #require(r.rig.workspace.selectionState(for: "main.rs", in: .chat))
+            state.select(4..<4, reveal: false)
+            try await accept(r, window, "i")
+            let lines = text(doc).split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+            #expect(lines[0] == "    if c {")
+            #expect(lines[1].hasPrefix("    ") && lines[1].count > 4)
+            #expect(lines[2] == "    }")
+        }
+    }
+
+    @Test func additionalEditsApplyAndAreOneUndoStep() async throws {
+        let script = IntelRig.completionScript(completion: #"{"result":[{"label":"snip","insertText":"f(${1:a}, ${2:b})$0","insertTextFormat":2,"additionalTextEdits":[{"range":{"start":{"line":0,"character":0},"end":{"line":0,"character":0}},"newText":"use x;\n"}]}]}"#)
         try await IntelRig.run(script: script) { r in
             let (window, doc, state) = try await start(r)
-            window.typeText("p")
+            try await accept(r, window)
+            #expect(text(doc) == "use x;\nlet x = f(a, b)\n")
+            #expect(state.isSnippetActive)
+            #expect(text(doc).utf8.count > 0)
+            let sel = state.primarySelection.range
+            #expect(String(text(doc).utf8.dropFirst(sel.lowerBound).prefix(sel.count))! == "a")
+            window.typeKey(.tab)
+            let sel2 = state.primarySelection.range
+            #expect(String(text(doc).utf8.dropFirst(sel2.lowerBound).prefix(sel2.count))! == "b")
+            state.undo()
+            #expect(text(doc) == "let x = s\n")
+        }
+    }
+
+    @Test func aSecondSnippetEndsTheFirstSession() async throws {
+        try await IntelRig.run(script: snippetScript(#"f(${1:a})$0"#)) { r in
+            let (window, doc, state) = try await start(r)
+            try await accept(r, window)
+            state.select(endOfLine + 3..<endOfLine + 3, reveal: false)
+            window.typeKey(.tab)   // out of the first placeholder: ends or steps it
+            state.select(text(doc).utf8.count - 1..<text(doc).utf8.count - 1, reveal: false)
+            window.typeText(" ")
+            try await accept(r, window)
+            #expect(state.isSnippetActive)
+            #expect(text(doc).contains("f(a) f(a)"))
+            #expect(state.selections.count == 1)
+        }
+    }
+
+    @Test func mirroredCaretsOpenNoPopupSoNothingIsEditedElsewhere() async throws {
+        try await IntelRig.run(script: snippetScript(#"g(${1:z})$0"#)) { r in
+            try r.write("main.rs", "\n")
+            let window = try await r.open("main.rs")
+            let doc = try #require(r.rig.workspace.document("main.rs"))
+            let state = try #require(r.rig.workspace.selectionState(for: "main.rs", in: .chat))
+            state.select(0..<0, reveal: false)
+            state.insertSnippet(CodeSnippet(parsing: "${1:x} ${1:x}$0"), replacing: 0..<0)
+            #expect(state.selections.count == 2 && state.isSnippetActive)
+            window.typeText("s")
+            await r.idle(window, 0.4)
+            #expect(!r.exists(window, "completion-popup"))
+            #expect(text(doc) == "s s\n")
+        }
+    }
+
+    @Test func aStaleWordStillFallsThrough() async throws {
+        try await IntelRig.run(script: snippetScript(#"f(${1:a})$0"#)) { r in
+            let (window, doc, state) = try await start(r)
+            window.typeText("s")
             try await window.runUntil { r.exists(window, "completion-popup") }
-            window.typeKey(.return)
-            #expect(text(doc) == "let x = println!(\"msg\")\n")
-            #expect(state.primarySelection.head == endOfLine + "println!(\"msg\")".utf8.count)
+            window.typeKey(.escape)
+            #expect(text(doc) == "let x = s\n")
+            #expect(!state.isSnippetActive)
         }
     }
 

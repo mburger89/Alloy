@@ -77,7 +77,7 @@ These facts shape the design. Items marked "new" do not exist yet.
   - **Only one text-anchored presentation per `CodeView`.** There is one `textAnchorBox` per view, and the modifier
     returns a `PopoverModifier`, not a `CodeView`, so a second one cannot be chained. This blocks completion and hover
     together (gap 4).
-  - A snippet session (gap 1).
+  - A snippet session (gap 1; shipped 2026-11-16).
   - A cross-buffer undo group (gap 2).
   - Named function keys (gap 5). Alloy uses the private-use characters `\u{f70b}` and `\u{f70f}` for F8 and F12.
 
@@ -111,7 +111,12 @@ These facts shape the design. Items marked "new" do not exist yet.
    - **Order.** Fuzzy score first, then `sortText ?? label`, then label (our call).
    - **Resolve.** The selected item is resolved (`completionItem/resolve`) for docs and `additionalTextEdits`
      (auto-imports). The docs show in a side pane only while the popup is open.
-   - **Snippets.** Per Decision 2 until MetalUI gap 1 ships.
+   - **Snippets.** Items with `insertTextFormat` 2 are parsed with MetalUI's `CodeSnippet` LSP parser and inserted at the
+     primary caret through `CodeSelectionState.insertSnippet`, with the view's indent unit. Tab and ⇧Tab step the
+     placeholders, mirrors stay linked, Esc ends the session, and a new snippet ends the outer session. While the popup
+     is open Tab accepts it; otherwise Tab goes to the session. Additional edits still apply. The plain-text path
+     (`SnippetText`) remains the fallback for unusable snippets and non-editable views. Placeholders use the
+     `snippetPlaceholderFill` theme token.
    - **Ids.** `completion-popup`, `completion-row-<i>`, `completion-doc`.
 2. **Signature help.**
    - It opens on the server's trigger characters (typically `(` and `,`), or on ⌃⇧Space (our call).
@@ -270,7 +275,7 @@ These facts shape the design. Items marked "new" do not exist yet.
 - `workspace.workspaceEdit.documentChanges: true`, with `resourceOperations: []` and
   `failureHandling: "abort"`
 - `workspace.executeCommand`
-- completion: snippetSupport (only once Decision 2 allows it), resolveSupport (documentation, detail,
+- completion: snippetSupport, resolveSupport (documentation, detail,
   additionalTextEdits), `insertReplaceSupport`, markdown documentation
 - hover: markdown
 - signatureHelp: parameter labels as offsets
@@ -499,7 +504,7 @@ The guards are elements requested per frame: Chat 88, Code 91, 107 and 117. Idle
 
 ## MetalUI gaps (to forward)
 
-1. **Snippet session in CodeView.**
+1. **Snippet session in CodeView.** (Shipped 2026-11-16: `CodeSnippet`, `insertSnippet(_:replacing:indentUnit:)`, `CodeTheme.snippetPlaceholder`.)
    - Wanted: `CodeSelectionState.insertSnippet(_ snippet: CodeSnippet, replacing: Range<Int>) -> CodeTransactionID`.
      `CodeSnippet` holds the text plus tab stops (`$1`, `${2:default}`, `$0`, and linked placeholders with the same
      index).
@@ -573,7 +578,7 @@ Linter-role fakes use the existing `role: .linter` configs with a script per ser
 6. Rename, on 3, 5 and gap 3, with the rename summary and Keep All / Revert All.
 7. `executeCommand`, `workspace/applyEdit`, code actions, lightbulb and ⌘. (slot A), on 2 and 5.
 8. Scheduler and completion popup with plain-text inserts, then signature help (slot A).
-9. Snippets, on gap 1 and Decision 2.
+9. Snippets, on gap 1 and Decision 2. (Done 2026-11-16, branch feat/snippets.)
 10. Menus, the new text context menu and shortcuts, registered in the command registry if it has landed. Performance
     guards land with each UI task, not at the end.
 
@@ -591,7 +596,7 @@ Whichever of slot A (7, 8) and slot B (3, 6) merges second needs MetalUI gap 4. 
      and touches every switch over `Author`.
    - (c) Plain `.user` with no group. The edits merge into the next save's record, and there is no group revert.
    - **Recommended: (a).**
-2. **Snippet completions before MetalUI gap 1 ships?**
+2. **Snippet completions before MetalUI gap 1 ships?** (Superseded 2026-11-16: the session shipped; 2(a) no longer applies.)
    - (a) Insert snippets as plain text with the placeholders stripped and the caret at `$0`, and upgrade later.
    - (b) Hold snippet items back (do not advertise `snippetSupport`) until the session API lands.
    - **Recommended: (a).**
@@ -620,7 +625,7 @@ Whichever of slot A (7, 8) and slot B (3, 6) merges second needs MetalUI gap 4. 
 
 The user approved every recommendation above ("Approved build it"). Binding:
 - 1(a) ledger: `Author.user` plus an edit-group id on `EditRecord` (lenient decode), shared with project search.
-- 2(a) snippets inserted as plain text until the MetalUI snippet session lands.
+- 2(a) snippets inserted as plain text until the MetalUI snippet session lands. (Superseded 2026-11-16: the session shipped; 2(a) no longer applies.)
 - 3(b) rename undo per file plus Revert All; (a) once MetalUI cross-buffer undo lands.
 - 4(a) format on save only at deliberate saves: a new ⌘S Save command, focus leaving the editor, tab close. Autosave never formats.
 - 5(a) symbols in the ⇧⌘O palette only. 6(a) no Problems panel.

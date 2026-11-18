@@ -8,6 +8,9 @@ struct CompletionPlan: Equatable {
     var edits: [ByteEdit]
     /// Where the caret goes once every edit is applied.
     var caret: Int
+    /// The parsed snippet when the main edit inserts one as a session; nil for plain items and for the plain-text fallback.
+    /// `edits[0].text` is then the snippet's resolved text and `caret` the plain-text landing place (its `$0`).
+    var snippet: CodeSnippet?
 }
 
 enum CompletionApply {
@@ -15,9 +18,10 @@ enum CompletionApply {
     /// `current` with the caret at `caret` (the user may have typed or erased more of the word since). The main edit is the
     /// item's `textEdit` insert range, extended or shortened by what was typed since, when that range lies on the request's
     /// caret line and contains the caret; otherwise it replaces `wordStart..<caret` with `insertText ?? label`. A snippet
-    /// becomes plain text and the caret goes to its `$0`. Additional edits overlapping the main edit are dropped.
+    /// becomes plain text and the caret goes to its `$0`, unless `allowsSnippet` and the item is a snippet: then `snippet` carries the parsed
+    /// `CodeSnippet` too. Additional edits overlapping the main edit are dropped.
     static func plan(item: CompletionItem, requestSnapshot: CodeSnapshot, current: CodeSnapshot, requestCaret: Int,
-                     caret: Int, wordStart: Int) -> CompletionPlan? {
+                     caret: Int, wordStart: Int, allowsSnippet: Bool = true) -> CompletionPlan? {
         let count = current.utf8Count
         guard caret >= 0, caret <= count, wordStart >= 0, wordStart <= caret, requestCaret >= 0,
               requestCaret <= requestSnapshot.utf8Count else { return nil }
@@ -36,7 +40,17 @@ enum CompletionApply {
         }
         var text = source
         var snippetCaret: Int?
-        if item.isSnippet { (text, snippetCaret) = SnippetText.plain(source) }
+        var snippet: CodeSnippet?
+        if item.isSnippet {
+            let parsed = CodeSnippet(parsing: source)
+            if allowsSnippet {   // the parse never fails: malformed syntax stays literal text
+                snippet = parsed
+                text = parsed.text
+                snippetCaret = parsed.tabStops.first { $0.index == 0 }?.range.lowerBound ?? parsed.text.utf8.count
+            } else {
+                (text, snippetCaret) = SnippetText.plain(source)
+            }
+        }
         var extra: [ByteEdit] = []
         for edit in item.additionalEdits {
             // In the request's coordinates: what lies after the request caret moved by what was typed since.
@@ -57,7 +71,7 @@ enum CompletionApply {
         for edit in kept where edit.range.upperBound <= range.lowerBound {
             landed += edit.text.utf8.count - edit.range.count
         }
-        return CompletionPlan(edits: [ByteEdit(range: range, text: text)] + kept, caret: landed)
+        return CompletionPlan(edits: [ByteEdit(range: range, text: text)] + kept, caret: landed, snippet: snippet)
     }
 
     /// Whether two edit ranges touch or intersect (an insertion at the edge of another range counts).

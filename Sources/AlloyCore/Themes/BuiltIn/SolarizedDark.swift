@@ -60,6 +60,7 @@ extension BuiltInThemes {
     "codeSelectionFill": "#073642",
     "findMatchFill": "#213C2C",
     "currentFindMatchFill": "#364726",
+    "snippetPlaceholderFill": "#00252E",
     "diagnosticError": "#E77472",
     "diagnosticWarning": "#BF9100",
     "diagnosticInfo": "#4EA3DF",
