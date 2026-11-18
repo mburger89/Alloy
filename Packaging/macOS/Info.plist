@@ -3,13 +3,19 @@
 <plist version="1.0">
 <dict>
     <key>CFBundleExecutable</key>         <string>Alloy</string>
-    <key>CFBundleIdentifier</key>         <string>dev.alloy.Alloy</string>
+    <key>CFBundleIdentifier</key>         <string>com.unicornlabs.Alloy</string>
     <key>CFBundleName</key>               <string>Alloy</string>
     <key>CFBundlePackageType</key>        <string>APPL</string>
-    <key>CFBundleShortVersionString</key> <string>1.0</string>
+    <key>CFBundleShortVersionString</key> <string>0.1.0</string>
     <key>CFBundleVersion</key>            <string>1</string>
     <key>CFBundleIconFile</key>           <string>Alloy</string>
     <key>LSMinimumSystemVersion</key>     <string>14.0</string>
     <key>NSHighResolutionCapable</key>    <true/>
+    <key>SUFeedURL</key>                  <string>https://mburger89.github.io/Alloy/appcast.xml</string>
+    <key>SUEnableSystemProfiling</key>    <false/>
+    <key>SUEnableAutomaticChecks</key>    <true/>
+    <key>SUScheduledCheckInterval</key>   <integer>86400</integer>
+    <!-- Placeholder: scripts/bundle-macos.sh replaces it from ALLOY_SPARKLE_PUBLIC_KEY (required for identity-signed builds). -->
+    <key>SUPublicEDKey</key>              <string>REPLACE_AT_BUNDLE_TIME</string>
 </dict>
 </plist>

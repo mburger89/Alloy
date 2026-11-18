@@ -9,6 +9,8 @@ struct SettingsView: Component {
     let workspace: Workspace
     /// Picks the theme; nil hides the theme section.
     var themes: ThemeController?
+    /// The updater's model; nil hides the updates section.
+    var updates: UpdateModel?
     let close: @MainActor () -> Void
     /// The command registry the Keyboard section edits; nil hides the section.
     var center: CommandCenter?
@@ -27,6 +29,10 @@ struct SettingsView: Component {
                 ThemeSection(themes: themes, workspace: workspace, close: close)
                 Divider()
                 AppearanceSection(themes: themes, workspace: workspace)
+                Divider()
+            }
+            if let updates {
+                UpdatesSection(model: updates)
                 Divider()
             }
             VStack(alignment: .leading, spacing: Pixels(8)) {

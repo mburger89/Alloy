@@ -16,6 +16,8 @@ let package = Package(
         // and YAML are held to the last tags whose manifest lists `src/scanner.c` statically: the newer tags test
         // `FileManager.fileExists("src/scanner.c")` against the build's cwd, which skips the scanner and fails to link.
         .package(url: "https://github.com/ChimeHQ/SwiftTreeSitter", exact: "0.25.0"),
+        // Sparkle 2 updater (binary xcframework). Linked into AlloyKit; Task 4 adds the driver. Exact pin.
+        .package(url: "https://github.com/sparkle-project/Sparkle", exact: "2.10.1"),
         // Swift's repo keeps the generated parser.c only on the `-with-generated-files` tags; pin that tag's revision.
         .package(url: "https://github.com/alex-pinkus/tree-sitter-swift",
                  revision: "82bb3a533e0801fd2bbaa11dc49676e10bf41948"),   // 0.7.4-with-generated-files
@@ -89,6 +91,7 @@ let package = Package(
                 "AlloyTerminal",
                 .product(name: "MetalUI", package: "MetalUI"),
                 .product(name: "MetalUIMarkdown", package: "MetalUI"),
+                .product(name: "Sparkle", package: "Sparkle"),
                 .product(name: "MetalUITerminalUI", package: "MetalUI"),
             ]
         ),
@@ -97,7 +100,9 @@ let package = Package(
             dependencies: [
                 "AlloyKit",
                 .product(name: "MetalUI", package: "MetalUI"),
-            ]
+            ],
+            // Sparkle.framework lives in Alloy.app/Contents/Frameworks (scripts/bundle-macos.sh).
+            linkerSettings: [.unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks"])]
         ),
         .testTarget(
             name: "AlloyCoreTests",
@@ -141,6 +146,7 @@ let package = Package(
             ],
             resources: [.copy("Fixtures")]
         ),
+        .testTarget(name: "ReleaseScriptTests"),
     ],
     swiftLanguageModes: [.v6]
 )

@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+<!-- Alloy app icon: the "molten A" — gold through Dracula cyan to purple, paint drips at the base. Source of Packaging/icon-1024.png. -->
+<defs>
+<linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#2a2a33"/><stop offset="1" stop-color="#0e0e12"/></linearGradient>
+<linearGradient id="metal" gradientUnits="userSpaceOnUse" x1="0" y1="220" x2="0" y2="930"><stop offset="0" stop-color="#ffd27a"/><stop offset=".42" stop-color="#8be9fd"/><stop offset=".82" stop-color="#bd93f9"/><stop offset="1" stop-color="#9d6ff0"/></linearGradient>
+<filter id="lift" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="6" stdDeviation="8" flood-color="#000" flood-opacity=".45"/></filter>
+<filter id="plate" x="-10%" y="-10%" width="120%" height="125%"><feDropShadow dx="0" dy="10" stdDeviation="14" flood-color="#000" flood-opacity=".35"/></filter>
+</defs>
+<g transform="translate(512 512) scale(0.8729) translate(-512 -512)">
+<rect x="40" y="40" width="944" height="944" rx="210" fill="url(#bg)" filter="url(#plate)"/>
+<g transform="translate(0 -89)" filter="url(#lift)" fill="url(#metal)"><path d="M464.1 330.0 Q512 220 559.9 330.0 L760 790 H650 L609.1 695.7 Q598 670 570.0 670.0 L454.0 670.0 Q426 670 414.9 695.7 L374 790 H264 Z M526.8 445.6 Q512 400 497.2 445.6 L474.8 514.4 Q460 560 508.0 560.0 L516.0 560.0 Q564 560 549.2 514.4 Z" fill-rule="evenodd"/><path d="M264 780 H374 V800 C374 812 366 816 360 820 C352 826 350 850 350 872 C350 896 326 896 326 872 C326 846 322 828 310 826 C298 824 296 840 296 906 C296 934 270 934 270 906 C270 850 266 818 264 800 Z M650 780 H760 V800 C758 818 754 830 744 834 C734 838 732 860 732 890 C732 918 706 918 706 890 C706 852 702 832 690 830 C680 828 676 840 676 858 C676 880 656 880 656 858 C656 834 650 816 650 800 Z"/></g>
+</g></svg>

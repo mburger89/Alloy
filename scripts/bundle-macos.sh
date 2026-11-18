@@ -1,14 +1,50 @@
 #!/bin/sh
 # Builds build/Alloy.app from a release build: the executable, MetalUI's
 # resource bundles (shaders, highlight queries) in Contents/Resources, an .icns when
-# Packaging/icon-1024.png exists, signed ad hoc unless CODESIGN_IDENTITY is
-# set. The steps are MetalUI's docs/packaging.md.
+# Packaging/icon-1024.png exists, any Contents/Frameworks/*.framework signed
+# inside-out. The steps are MetalUI's docs/packaging.md.
+#
+# Usage: scripts/bundle-macos.sh [--version X.Y.Z] [--build N]
+#   --version  CFBundleShortVersionString (default: the value in Info.plist)
+#   --build    CFBundleVersion, a monotonically increasing integer
+#
+# Signing: with ALLOY_SIGN_IDENTITY set (CODESIGN_IDENTITY is accepted as a
+# fallback) the app is signed with the hardened runtime, a secure timestamp and
+# Packaging/macOS/Alloy.entitlements; otherwise it is signed ad hoc.
+#
+# Sparkle: ALLOY_SPARKLE_PUBLIC_KEY (the base64 EdDSA public key printed by Sparkle's
+# generate_keys) replaces the SUPublicEDKey placeholder in Info.plist. It is required
+# when signing with an identity (a release build); without it the key is removed from
+# the bundled plist. Identity-signed builds also get AlloyReleaseBuild=YES, which makes the app
+# ignore the ALLOY_UPDATE_FEED_URL test-feed override.
 set -eu
 cd "$(dirname "$0")/.."
 
+VERSION=""
+BUILD=""
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --version) [ $# -ge 2 ] || { echo "error: --version needs a value" >&2; exit 2; }; VERSION=$2; shift 2 ;;
+        --build) [ $# -ge 2 ] || { echo "error: --build needs a value" >&2; exit 2; }; BUILD=$2; shift 2 ;;
+        *) echo "usage: $0 [--version X.Y.Z] [--build N]" >&2; exit 2 ;;
+    esac
+done
+if [ -n "$VERSION" ]; then
+    echo "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' || { echo "error: --version must look like 1.2.3" >&2; exit 2; }
+fi
+if [ -n "$BUILD" ]; then
+    echo "$BUILD" | grep -Eq '^[0-9]+$' || { echo "error: --build must be an integer" >&2; exit 2; }
+fi
+
 NAME=Alloy
-swift build -c release --product "$NAME"
-BIN=$(swift build -c release --product "$NAME" --show-bin-path)
+IDENTITY="${ALLOY_SIGN_IDENTITY:-${CODESIGN_IDENTITY:-}}"
+SPARKLE_KEY="${ALLOY_SPARKLE_PUBLIC_KEY:-}"
+if [ -n "$IDENTITY" ] && [ -z "$SPARKLE_KEY" ]; then
+    echo "error: ALLOY_SPARKLE_PUBLIC_KEY is not set; a release build needs the Sparkle EdDSA public key (run Sparkle's generate_keys)" >&2
+    exit 1
+fi
+swift build -c release --arch arm64 --product "$NAME"
+BIN=$(swift build -c release --arch arm64 --product "$NAME" --show-bin-path)
 APP="build/$NAME.app"
 
 rm -rf "$APP"
@@ -22,6 +58,24 @@ done
 test -f "$APP/Contents/Resources/TreeSitterRust_TreeSitterRust.bundle/Contents/Resources/queries/highlights.scm" \
     || { echo "bundle-macos: highlight queries missing from $APP" >&2; exit 1; }
 cp Packaging/macOS/Info.plist "$APP/Contents/Info.plist"
+# Embed frameworks the build produced next to the executable (Sparkle.framework).
+for fw in "$BIN"/*.framework; do
+    [ -d "$fw" ] || continue
+    mkdir -p "$APP/Contents/Frameworks"
+    cp -R "$fw" "$APP/Contents/Frameworks/"
+done
+# Without a key (dev / ad hoc builds) the key is removed rather than shipping the invalid placeholder.
+if [ -n "$SPARKLE_KEY" ]; then
+    plutil -replace SUPublicEDKey -string "$SPARKLE_KEY" "$APP/Contents/Info.plist"
+else
+    plutil -remove SUPublicEDKey "$APP/Contents/Info.plist"
+fi
+# Identity-signed builds are release builds: this flag makes the app ignore ALLOY_UPDATE_FEED_URL.
+if [ -n "$IDENTITY" ]; then
+    plutil -insert AlloyReleaseBuild -bool YES "$APP/Contents/Info.plist"
+fi
+[ -z "$VERSION" ] || plutil -replace CFBundleShortVersionString -string "$VERSION" "$APP/Contents/Info.plist"
+[ -z "$BUILD" ] || plutil -replace CFBundleVersion -string "$BUILD" "$APP/Contents/Info.plist"
 
 if [ -f Packaging/icon-1024.png ]; then
     ICONSET="$(mktemp -d)/$NAME.iconset"
@@ -34,6 +88,41 @@ if [ -f Packaging/icon-1024.png ]; then
 fi
 
 plutil -lint "$APP/Contents/Info.plist" >/dev/null
-codesign --force --sign "${CODESIGN_IDENTITY:--}" "$APP"
-codesign --verify --strict "$APP"
+
+if [ -n "$IDENTITY" ]; then
+    # Hardened runtime + secure timestamp (both required for notarisation).
+    sign() { codesign --force --sign "$IDENTITY" --options runtime --timestamp "$@"; }
+    sign_app() { sign --entitlements Packaging/macOS/Alloy.entitlements "$@"; }
+else
+    sign() { codesign --force --sign - "$@"; }
+    sign_app() { sign "$@"; }
+fi
+
+# Frameworks (Sparkle) are signed inside-out: nested helpers and XPC services
+# first, then the framework, then the app. No --deep.
+if [ -d "$APP/Contents/Frameworks" ]; then
+    for fw in "$APP"/Contents/Frameworks/*.framework; do
+        [ -d "$fw" ] || continue
+        # Lists are captured first and looped over without a pipe: `sh` has no pipefail, and a pipe would
+        # hide a failing codesign. Any signing failure stops the script.
+        nested_list=$(find "$fw" -type d \( -name '*.xpc' -o -name '*.app' \) -prune -print | awk '{ print length($0) " " $0 }' | sort -rn | cut -d' ' -f2-)
+        while IFS= read -r nested; do
+            [ -n "$nested" ] || continue
+            sign --preserve-metadata=entitlements "$nested" || { echo "error: codesign failed for $nested" >&2; exit 1; }
+        done <<EOF
+$nested_list
+EOF
+        exe_list=$(cd "$fw" && find Versions -maxdepth 2 -type f -perm -u+x ! -path '*.xpc/*' ! -path '*.app/*')
+        while IFS= read -r exe; do
+            [ -n "$exe" ] || continue
+            sign "$fw/$exe" || { echo "error: codesign failed for $fw/$exe" >&2; exit 1; }
+        done <<EOF
+$exe_list
+EOF
+        sign "$fw" || { echo "error: codesign failed for $fw" >&2; exit 1; }
+    done
+fi
+
+sign_app "$APP" || { echo "error: codesign failed for $APP" >&2; exit 1; }
+codesign --verify --strict --deep "$APP"
 echo "$APP"

@@ -72,9 +72,30 @@ center.standardMenuClaims = { app.standardMenuShortcuts() }
 let settingsWindow = SettingsWindowController { title, size, minSize, root in
     try app.openWindow(title: title, size: size, minSize: minSize, windowStyle: .hiddenTitleBar) { settingsWindowElement(root) }
 }
+// The updater starts only in a real bundled app that has a feed URL and a public key (never under `swift run` or in
+// tests). Its UI is Alloy's own: a sidebar banner, a Settings section and the menu item below. An update installs
+// only on quit or through the banner's "Restart to update", both after the normal shutdown stopped every session.
+let updateModel = UpdateModel()
+let sparkleDriver = SparkleDriver()
+let updateController = UpdateController(driver: sparkleDriver, model: updateModel, busySessions: {
+    model.workspace?.sessions.filter { s in
+        switch s.status { case .working, .awaitingPermission: true; default: false }
+    }.count ?? 0
+}, shutdown: {
+    await withCheckedContinuation { continuation in
+        if model.shutdownRequested(reply: { _ in continuation.resume() }) == .now { continuation.resume() }
+    }
+})
+sparkleDriver.controller = updateController
+sparkleDriver.feedURLOverride = UpdateFeedPolicy.override(info: Bundle.main.infoDictionary ?? [:], environment: ProcessInfo.processInfo.environment)
+let updatesEnabled = updateController.start(bundleURL: Bundle.main.bundleURL,
+                                            info: Bundle.main.infoDictionary ?? [:],
+                                            environment: ProcessInfo.processInfo.environment)
+model.onShutdownComplete = { updateController.applicationWillQuit() }
+settingsWindow.updates = updatesEnabled ? updateModel : nil
 let window = try app.openWindow(title: "Alloy", size: alloyWindowSize, minSize: Size(width: Pixels(900), height: Pixels(500)),
                            windowStyle: .hiddenTitleBar) {
-    launcherRoot(model: model, themes: themeController, center: center)
+    launcherRoot(model: model, themes: themeController, updates: updatesEnabled ? updateModel : nil, center: center)
 }
 
 // The benchmark (ALLOY_FRAME_TIMING=1 with ALLOY_DATA_DIR) reads MetalUI's frame timing: it is written on SIGTERM.
@@ -95,7 +116,9 @@ if let dumpURL = FrameTimingRecorder.install(on: window, environment: ProcessInf
 }
 
 BuiltinCommands.register(into: center, launcher: model, settings: { settingsWindow }, themes: { themeController })
-app.commands { alloyCommands(center: center) }
+app.commands {
+    alloyCommands(center: center, updates: updatesEnabled ? updateModel : nil, checkForUpdates: { updateController.checkForUpdates() })
+}
 
 // Closing the window or quitting stops every claude process first.
 installWindowShutdown(on: window, model: model, settings: settingsWindow)

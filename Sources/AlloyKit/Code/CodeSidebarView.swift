@@ -10,8 +10,10 @@ let codeSidebarTabRowInset = (x: Float(6), y: Float(4))
 /// selected tab, so it re-runs when the tab changes and never on editor keystrokes.
 struct CodeSidebarView: Component, Equatable {
     let workspace: Workspace
+    /// Only handed to the banner child.
+    var updates: UpdateModel?
 
-    nonisolated static func == (a: Self, b: Self) -> Bool { a.workspace === b.workspace }
+    nonisolated static func == (a: Self, b: Self) -> Bool { a.workspace === b.workspace && a.updates === b.updates }
 
     /// The icon colour of a tab: the selected one is `.primary` (the ink), the other `.mutedInk`.
     static func tabInk(selected: Bool) -> Color { selected ? .primary : .mutedInk }
@@ -42,6 +44,7 @@ struct CodeSidebarView: Component, Equatable {
             } else {
                 FileTreeView(workspace: workspace)
             }
+            if let updates { UpdateBanner(model: updates).equatable() }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }

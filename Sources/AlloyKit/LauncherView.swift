@@ -10,6 +10,8 @@ public final class LauncherModel {
     public var message: String?
     /// Presents the open-folder panel (set by the entry point).
     public var chooseFolder: (@MainActor () -> Void)?
+    /// Runs when a shutdown has stopped every session, just before the quit or close is allowed.
+    public var onShutdownComplete: (@MainActor () -> Void)?
 
     public init(workspace: Workspace? = nil) { self.workspace = workspace }
 
@@ -66,6 +68,8 @@ public final class LauncherModel {
             // Let the ledger write for those saves finish before the app is told it may quit.
             await workspace.settle()
             guard let self else { return }
+            // Every session has stopped: a waiting update may now install as the app exits.
+            onShutdownComplete?()
             let replies = pendingReplies
             pendingReplies = []
             shuttingDown = false
@@ -87,12 +91,13 @@ public func installWindowShutdown(on window: Window, model: LauncherModel, setti
 }
 
 @MainActor
-public func launcherRoot(model: LauncherModel, themes: ThemeController? = nil, center: CommandCenter) -> some Element {
+public func launcherRoot(model: LauncherModel, themes: ThemeController? = nil, updates: UpdateModel? = nil,
+                         center: CommandCenter) -> some Element {
     VStack(spacing: 0) {
         if let workspace = model.workspace {
-            AlloyScreen(workspace: workspace, themes: themes, center: center)
+            AlloyScreen(workspace: workspace, themes: themes, updates: updates, center: center)
         } else {
-            ChooseProjectView(model: model)
+            ChooseProjectView(model: model, updates: updates)
         }
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -109,9 +114,25 @@ public func launcherRoot(model: LauncherModel, themes: ThemeController? = nil, c
 
 struct ChooseProjectView: Component {
     let model: LauncherModel
+    /// A waiting update shows here too (its banner and release notes), so it is not hidden until a project opens.
+    var updates: UpdateModel?
 
     var content: some ElementGroup {
         let model = model
+        ZStack {
+            VStack(spacing: 0) {
+                if let updates {
+                    UpdateBanner(model: updates).equatable()
+                }
+                chooser(model)
+            }
+            if let updates { UpdateNotesOverlay(model: updates) }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    @ElementBuilder
+    private func chooser(_ model: LauncherModel) -> some ElementGroup {
         VStack(spacing: Pixels(12)) {
             Text("Choose a project folder to open in Alloy.").font(size: 14)
             Button("Choose folder…") { model.chooseFolder?() }

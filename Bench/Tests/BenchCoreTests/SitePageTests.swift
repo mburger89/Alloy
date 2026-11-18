@@ -90,9 +90,14 @@ import Foundation
     @Test func committedSiteIsCurrent() throws {
         let bench = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
         let (index, runs) = try SitePage.load(publishedDir: bench.appendingPathComponent("published"))
-        let committed = try String(contentsOf: bench.appendingPathComponent("site/index.html"), encoding: .utf8)
+        let committed = try String(contentsOf: bench.appendingPathComponent("site/benchmarks/index.html"), encoding: .utf8)
         #expect(SitePage.render(index: index, runs: runs) == committed,
                 "Bench/site is stale: run swift run --package-path Bench alloy-bench site")
+        var content = LandingContent()
+        content.assets = LandingPage.assetNames(in: bench.appendingPathComponent("site/assets"))
+        let landing = try String(contentsOf: bench.appendingPathComponent("site/index.html"), encoding: .utf8)
+        #expect(LandingPage.render(index: index, runs: runs, content: content) == landing,
+                "Bench/site/index.html is stale: run swift run --package-path Bench alloy-bench site")
     }
 
     @Test func missingFolderIsAnError() {

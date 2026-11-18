@@ -7,6 +7,8 @@ struct SidebarView: Component {
     let workspace: Workspace
     /// The resolved keys: the New session button's ⌘N follows the user's binding for `session.new`.
     let keymap: ResolvedKeymap
+    /// Only handed to the banner child: the sidebar itself never reads the update state.
+    var updates: UpdateModel?
 
     var content: some ElementGroup {
         let _ = BodyProbe.hit("SidebarView")
@@ -39,6 +41,7 @@ struct SidebarView: Component {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             KnowledgeStats(workspace: workspace)
+            if let updates { UpdateBanner(model: updates).equatable() }
             Divider()
             ChangedFilesSection(workspace: workspace, warnings: warnings)
             if !workspace.errors.isEmpty {

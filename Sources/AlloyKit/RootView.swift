@@ -11,16 +11,18 @@ public let alloyFilePanelIdealWidth = Pixels(360)
 
 /// The window's one root element, rebuilt every frame: sidebar | chat | file panel.
 @MainActor
-public func rootView(workspace: Workspace, themes: ThemeController? = nil, center: CommandCenter) -> some Element {
-    rootView(workspace: workspace, themes: themes, center: center, terminal: nil)
+public func rootView(workspace: Workspace, themes: ThemeController? = nil, updates: UpdateModel? = nil,
+                    center: CommandCenter) -> some Element {
+    rootView(workspace: workspace, themes: themes, updates: updates, center: center, terminal: nil)
 }
 
 /// The same, with the terminal panel's store supplied (tests reach the window's store this way).
 @MainActor
-func rootView(workspace: Workspace, themes: ThemeController?, center: CommandCenter, terminal: TerminalPanelStore?) -> some Element {
+func rootView(workspace: Workspace, themes: ThemeController?, updates: UpdateModel? = nil, center: CommandCenter,
+              terminal: TerminalPanelStore?) -> some Element {
     center.bind(workspace)
     return VStack(spacing: 0) {
-        AlloyScreen(workspace: workspace, themes: themes, center: center, terminal: terminal).equatable()
+        AlloyScreen(workspace: workspace, themes: themes, updates: updates, center: center, terminal: terminal).equatable()
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity)
     .background { WindowBackdropView(style: themes?.style ?? .defaults).equatable() }
@@ -107,6 +109,8 @@ struct AlloyScreen: Component {
     let workspace: Workspace
     /// The theme controller Settings picks themes through (nil in tests that don't exercise themes).
     var themes: ThemeController?
+    /// The updater's state; nil when this build has no updater.
+    var updates: UpdateModel?
     /// Per-session UI state, kept here so it outlives the chat column's per-session identity.
     @State var store = SessionUIStore()
     /// The code panel's per-document state and highlight engine.
@@ -118,8 +122,9 @@ struct AlloyScreen: Component {
     /// Split sizes, kept in the project's `ui-state.json`.
     @State var splitStore: UIStateSplitStore
 
-    init(workspace: Workspace, themes: ThemeController? = nil, center: CommandCenter, terminal: TerminalPanelStore? = nil) {
-        self.workspace = workspace; self.themes = themes; self.center = center
+    init(workspace: Workspace, themes: ThemeController? = nil, updates: UpdateModel? = nil, center: CommandCenter,
+         terminal: TerminalPanelStore? = nil) {
+        self.workspace = workspace; self.themes = themes; self.updates = updates; self.center = center
         _splitStore = State(wrappedValue: UIStateSplitStore(workspace: workspace))
         _terminal = State(wrappedValue: terminal ?? TerminalPanelStore(workspace: workspace))
     }
@@ -134,15 +139,16 @@ struct AlloyScreen: Component {
                 switch workspace.mode {
                 case .chat:
                     IslandRow(workspace: workspace, store: store, panel: panel, quickOpen: quickOpen, keymap: center.registry.keymap, themes: themes,
-                              style: style).equatable()
+                              style: style, updates: updates).equatable()
                 case .code:
                     CodeIslandRow(workspace: workspace, store: store, panel: panel, terminal: terminal, quickOpen: quickOpen, splitStore: splitStore,
-                                  themes: themes, style: style).equatable()
+                                  themes: themes, style: style, updates: updates).equatable()
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .windowTitleBarMetrics(height: Pixels(Float(style.titleBandHeight)),
                                    controlsLeading: Pixels(Float(style.titleControlsLeading)))
+            if let updates { UpdateNotesOverlay(model: updates) }
             GlobalKeys(workspace: workspace, registry: center.registry).equatable()
             HeldReconciler(workspace: workspace, panel: panel, quickOpen: quickOpen).equatable()
             PaletteLayer(model: center.palette, titleBandHeight: style.titleBandHeight).equatable()
@@ -188,17 +194,18 @@ struct IslandRow: Component, Equatable {
     let keymap: ResolvedKeymap
     var themes: ThemeController?
     let style: AppearanceStyle
+    var updates: UpdateModel?
 
     nonisolated static func == (a: Self, b: Self) -> Bool {
         a.workspace === b.workspace && a.store === b.store && a.panel === b.panel && a.quickOpen === b.quickOpen && a.keymap === b.keymap
-            && a.themes === b.themes && a.style == b.style
+            && a.themes === b.themes && a.style == b.style && a.updates === b.updates
     }
 
     var content: some ElementGroup {
         let _ = BodyProbe.hit("IslandRow")
         let gutter = Pixels(Float(style.gutter))
         HSplitView {
-            SidebarView(workspace: workspace, keymap: keymap).equatable()
+            SidebarView(workspace: workspace, keymap: keymap, updates: updates).equatable()
                 .island(style: style, identifier: "island-sidebar")
                 .frame(minWidth: Pixels(200), idealWidth: Pixels(250), maxWidth: Pixels(380))
             ChatIslandBody(workspace: workspace, store: store, themes: themes)

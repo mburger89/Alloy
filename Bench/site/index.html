@@ -3,132 +3,228 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Alloy benchmarks</title>
+<title>Alloy — the code editor for Claude Code</title>
+<meta name="description" content="The code editor for Claude Code — written in Swift, drawn on the GPU with Metal.">
+<meta name="color-scheme" content="dark light">
+<link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+<link rel="icon" href="assets/icon-64.png" type="image/png" sizes="64x64">
+<link rel="apple-touch-icon" href="assets/icon-180.png">
 <style>
-:root { color-scheme: light dark; --bg: #ffffff; --fg: #1a1a1f; --muted: #5c5c66; --line: #d8d8de; --panel: #f5f5f8;
-  --zed: #1f5fd1; --alloy: #c2410c; --vscode: #0e7490; --cursor: #7c3aed; --sublime: #a21caf; --idea: #4d7c0f; --good: #17692f; --bad: #b3261e; --warn: #8a5a00; }
-@media (prefers-color-scheme: dark) {
-  :root { --bg: #111114; --fg: #e8e8ec; --muted: #a0a0ab; --line: #34343c; --panel: #1b1b20;
-    --zed: #6cb0ff; --alloy: #ff9a5c; --vscode: #5cd0e8; --cursor: #b794ff; --sublime: #f0abfc; --idea: #a3d65c; --good: #6fd08c; --bad: #ff8a80; --warn: #e6b84d; } }
-* { box-sizing: border-box; }
-body { margin: 0; background: var(--bg); color: var(--fg); font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
-main { max-width: 60rem; margin: 0 auto; padding: 24px 16px 48px; }
-h1 { font-size: 1.8rem; margin: 0 0 4px; }
-h2 { font-size: 1.2rem; margin: 32px 0 8px; }
-h2.headline { font-size: 1.35rem; margin-top: 24px; }
-.lead { color: var(--muted); margin: 0; }
-.muted, .why { color: var(--muted); }
-.empty { font-size: 1.2rem; margin-top: 32px; }
-.badge { display: inline-block; font-size: 0.8rem; font-weight: 600; padding: 1px 8px; border: 1px solid var(--warn); color: var(--warn); border-radius: 999px; vertical-align: middle; }
-.scroll { overflow-x: auto; }
-table { border-collapse: collapse; width: 100%; min-width: 40rem; }
-th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
-thead th { background: var(--panel); }
-.verdict { font-weight: 600; }
-.verdict.ahead, .verdict.par { color: var(--good); }
-.verdict.behind, .verdict.missing { color: var(--bad); }
-.verdict.unjudged { color: var(--muted); }
-dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 16px; margin: 0; }
-dt { color: var(--muted); } dd { margin: 0; overflow-wrap: anywhere; }
-li { margin: 4px 0; overflow-wrap: anywhere; }
-.charts { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 16px; }
-figure { margin: 0; padding: 8px; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; }
-figcaption { font-weight: 600; font-size: 0.9rem; }
-svg { width: 100%; height: auto; display: block; }
-.axis { stroke: var(--line); stroke-width: 1; }
-.tick { fill: var(--muted); font-size: 9px; }
-.series { fill: none; stroke-width: 2; }
-.series.zed { stroke: var(--zed); } .dot.zed { fill: var(--zed); }
-.series.alloy { stroke: var(--alloy); stroke-dasharray: 5 3; } .dot.alloy { fill: var(--alloy); }
-.series.vscode { stroke: var(--vscode); stroke-dasharray: 2 3; } .dot.vscode { fill: var(--vscode); }
-.series.cursor { stroke: var(--cursor); stroke-dasharray: 8 3; } .dot.cursor { fill: var(--cursor); }
-.series.sublime { stroke: var(--sublime); stroke-dasharray: 1 3; } .dot.sublime { fill: var(--sublime); }
-.series.idea { stroke: var(--idea); stroke-dasharray: 8 3 2 3; } .dot.idea { fill: var(--idea); }
-.key { font-weight: 600; margin-right: 16px; } .key.zed { color: var(--zed); } .key.alloy { color: var(--alloy); }
-.key.vscode { color: var(--vscode); } .key.cursor { color: var(--cursor); } .key.sublime { color: var(--sublime); } .key.idea { color: var(--idea); }
-a { color: var(--zed); }
+:root{color-scheme:dark light;--bg:#0e0e12;--panel:#17171d;--card:#1d1d24;--ink:#ececf1;--mute:#a3a3b3;--accent:#bd93f9;--green:#50fa7b;--pink:#ff79c6;--cyan:#8be9fd;--line:#26262f;--btn:#111111;--glow:#2b2240;--bar:#7a7a8e;--navbg:#0e0e12d9;--midbg:#211d2c}
+@media (prefers-color-scheme:light){:root{--bg:#fafafc;--panel:#f0f0f5;--card:#ffffff;--ink:#17171c;--mute:#5a5a6a;--accent:#6b3fc4;--green:#17692f;--pink:#b8267f;--cyan:#0b6a82;--line:#dcdce4;--btn:#ffffff;--glow:#e9e1fa;--bar:#7d7d8f;--navbg:#fafafcd9;--midbg:#f2ecfd}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.55 -apple-system,BlinkMacSystemFont,"SF Pro Text",system-ui,sans-serif}
+a{color:inherit;text-decoration:none}a:focus-visible,summary:focus-visible{outline:2px solid var(--cyan);outline-offset:2px;border-radius:4px}
+code{font:0.9em ui-monospace,Menlo,monospace}.wrap{max-width:1080px;margin:0 auto;padding:0 24px}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.vh{position:absolute;opacity:0;width:1px;height:1px;pointer-events:none}
+nav{position:sticky;top:0;z-index:5;background:var(--navbg);-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);border-bottom:1px solid var(--line)}
+nav .wrap{display:flex;justify-content:space-between;align-items:center;height:56px;font-size:14px}
+.brand{display:flex;align-items:center;gap:8px;font-size:16px}.brand img{border-radius:6px}
+nav .links a{margin-left:20px;color:var(--mute)}nav .links a:hover{color:var(--ink)}nav .links a.dl{color:var(--accent);font-weight:600}
+.btn{display:inline-block;padding:12px 22px;border-radius:10px;font-weight:700}.btn.p{background:var(--accent);color:var(--btn)}.btn.s{border:1px solid var(--line);margin-left:8px}
+.soon{cursor:default;user-select:none}.btn.p.soon{background:var(--panel);color:var(--mute);border:1px dashed var(--mute);padding:11px 21px}nav .links .dl.soon{margin-left:20px;color:var(--mute);font-weight:600;border:1px dashed var(--mute);border-radius:6px;padding:2px 8px}
+.hero{text-align:center;padding:84px 0 40px;background:radial-gradient(ellipse 70% 60% at 50% 0,var(--glow),transparent)}
+.hero h1{font-size:clamp(40px,8vw,64px);line-height:1.05;margin:0;letter-spacing:-.02em}.hero .lead{font-size:clamp(17px,2.4vw,20px);color:var(--mute);margin:14px 0 28px}
+.meta{font-size:13px;color:var(--mute);margin-top:12px}.meta a{text-decoration:underline}
+.app{margin:44px auto 0;max-width:960px;border-radius:14px;border:1px solid #44475a;box-shadow:0 30px 120px #bd93f940;overflow:hidden;background:#282a36}
+.app img,.app video{display:block;width:100%;height:auto}.app .poster{display:none}
+.ph{aspect-ratio:16/10;display:flex;align-items:center;justify-content:center;background:#282a36;color:#6272a4;font-weight:700;font-size:28px}
+.strip{border-top:1px solid var(--line);border-bottom:1px solid var(--line);margin-top:56px}.strip .wrap{display:flex;justify-content:space-around;flex-wrap:wrap;gap:16px;padding-top:22px;padding-bottom:22px;text-align:center}
+.strip b{display:block;font-size:30px;color:var(--green)}.strip span{font-size:13px;color:var(--mute)}
+section{padding:84px 0;border-bottom:1px solid var(--line)}h2{font-size:clamp(28px,5vw,40px);line-height:1.15;margin:0 0 8px;letter-spacing:-.01em}.sub{font-size:19px;color:var(--mute);margin:0 0 30px}
+.tag{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--mute);margin-bottom:10px}
+.tabs{display:flex;flex-wrap:wrap;gap:6px}.tabs label{padding:6px 14px;border-radius:20px;border:1px solid var(--line);font-size:13px;color:var(--mute);cursor:pointer}
+.panel{display:none}.lane{margin:14px 0;display:flex;align-items:center;gap:12px}.lane .n{width:56px;font-size:13px;color:var(--mute)}
+.lane .t{flex:1;background:var(--card);border-radius:6px;height:30px;overflow:hidden}.lane .f{height:100%;border-radius:6px;background:var(--bar);animation:grow 1.8s ease-out both}.lane .f.alloy{background:var(--green)}
+@keyframes grow{from{width:0}}.lane .v{width:96px;text-align:right;font-variant-numeric:tabular-nums;font-size:14px}
+.note{font-size:12px;color:var(--mute);margin:4px 0 0}.foot{font-size:13px;color:var(--mute);margin-top:14px}.foot a{color:var(--accent)}
+.flow{list-style:none;padding:0;display:flex;align-items:stretch;gap:14px;margin:10px 0 0}.step{flex:1;background:var(--card);border-radius:12px;padding:18px;border:1px solid var(--line);animation:glow 6s infinite}
+.step.mid{border-color:var(--accent);background:var(--midbg)}.s1{animation-delay:0s}.s2{animation-delay:2s}.s3{animation-delay:4s}
+@keyframes glow{0%,33%{box-shadow:0 0 0 2px var(--accent)}34%,100%{box-shadow:0 0 0 0 transparent}}
+.arrow{align-self:center;color:var(--mute);font-size:22px}.step b{display:block;margin-bottom:6px}.step small{color:var(--mute)}
+.ben{display:flex;gap:14px;margin-top:22px}.ben div{flex:1;background:var(--card);border-radius:12px;padding:18px}.ben b{display:block;font-size:17px}.ben span{color:var(--mute);font-size:14px}
+.promise{margin-top:18px;font-size:15px;color:var(--mute)}
+.feat{display:flex;gap:40px;align-items:center;margin:54px 0}.feat.r{flex-direction:row-reverse}.feat .txt{flex:1}.feat h3{font-size:26px;margin:0 0 8px}.feat p{color:var(--mute);margin:0}
+.shot{flex:1.2;margin:0;border-radius:12px;overflow:hidden;border:1px solid #44475a;background:#282a36}.shot img{display:block;width:100%;height:auto}.shot .ph{aspect-ratio:3/2}
+.sw{display:flex;flex-wrap:wrap;gap:12px;margin-top:20px}.sw label,.sw .mine{flex:1;min-width:130px;height:90px;border-radius:12px;display:flex;flex-direction:column;justify-content:flex-end;gap:4px;padding:10px;font-size:13px;cursor:pointer;border:1px solid var(--line)}
+.sw label i{display:inline-block;width:26px;height:6px;border-radius:3px}.sw .mine{border:1px dashed var(--mute);color:var(--mute);justify-content:center;align-items:center;cursor:default}
+.preview{--pb:#20222B;--ps:#282A36;--pf:#F8F8F2;--pk:#FF79C6;--ps2:#F1FA8C;--pc:#97A2C3;--pn:#50FA7B;margin-top:20px;border-radius:12px;background:var(--pb);border:1px solid var(--line);overflow:hidden;transition:background .25s}
+.preview pre{margin:0;padding:18px;background:var(--ps);color:var(--pf);font:13px/1.7 ui-monospace,Menlo,monospace;overflow-x:auto}.preview .bar2{height:10px;background:var(--pb)}
+.preview .k{color:var(--pk)}.preview .s{color:var(--ps2)}.preview .c{color:var(--pc)}.preview .f{color:var(--pn)}
+.pills,.plain{list-style:none;padding:0;margin:0}.pills li{display:inline-block;background:var(--card);border:1px solid var(--line);border-radius:20px;padding:6px 14px;margin:0 6px 8px 0;font-size:14px}
+.plain li{font-size:18px;color:var(--mute);margin:0 0 10px;max-width:46em}
+.stack{display:flex;flex-wrap:wrap;align-items:center;gap:12px}.stack div{background:var(--card);border-radius:12px;padding:16px 20px;border:1px solid var(--line)}.stack small{display:block;color:var(--mute)}
+.faq details{border-bottom:1px solid var(--line);padding:14px 0}.faq summary{cursor:pointer;font-weight:600}.faq p{color:var(--mute);margin:8px 0 0}
+.end{text-align:center;padding:96px 0;background:radial-gradient(ellipse 60% 70% at 50% 100%,var(--glow),transparent);border:0}
+footer{padding:26px 0;color:var(--mute);font-size:13px}footer .wrap{display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px}footer a:hover{color:var(--ink)}
+@media (max-width:720px){nav .links a.opt{display:none}.wrap{padding:0 16px}.flow,.ben{flex-direction:column}.arrow{transform:rotate(90deg)}.feat,.feat.r{flex-direction:column;gap:20px;margin:36px 0}section{padding:56px 0}.hero{padding:48px 0 24px}.btn.s{margin:8px 0 0}.lane .n{width:44px}.lane .v{width:78px;font-size:13px}}
+@media (prefers-reduced-motion:reduce){.app.has-poster video{display:none}.app.has-poster .poster{display:block}*,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
+#race-0:checked ~ .panels .p0{display:block}
+#race-0:checked ~ .tabs label[for=race-0]{background:var(--accent);color:var(--btn);border-color:var(--accent)}
+#race-0:focus-visible ~ .tabs label[for=race-0]{outline:2px solid var(--cyan);outline-offset:2px}
+#race-1:checked ~ .panels .p1{display:block}
+#race-1:checked ~ .tabs label[for=race-1]{background:var(--accent);color:var(--btn);border-color:var(--accent)}
+#race-1:focus-visible ~ .tabs label[for=race-1]{outline:2px solid var(--cyan);outline-offset:2px}
+#race-2:checked ~ .panels .p2{display:block}
+#race-2:checked ~ .tabs label[for=race-2]{background:var(--accent);color:var(--btn);border-color:var(--accent)}
+#race-2:focus-visible ~ .tabs label[for=race-2]{outline:2px solid var(--cyan);outline-offset:2px}
+#race-3:checked ~ .panels .p3{display:block}
+#race-3:checked ~ .tabs label[for=race-3]{background:var(--accent);color:var(--btn);border-color:var(--accent)}
+#race-3:focus-visible ~ .tabs label[for=race-3]{outline:2px solid var(--cyan);outline-offset:2px}
+#race-4:checked ~ .panels .p4{display:block}
+#race-4:checked ~ .tabs label[for=race-4]{background:var(--accent);color:var(--btn);border-color:var(--accent)}
+#race-4:focus-visible ~ .tabs label[for=race-4]{outline:2px solid var(--cyan);outline-offset:2px}
+#race-5:checked ~ .panels .p5{display:block}
+#race-5:checked ~ .tabs label[for=race-5]{background:var(--accent);color:var(--btn);border-color:var(--accent)}
+#race-5:focus-visible ~ .tabs label[for=race-5]{outline:2px solid var(--cyan);outline-offset:2px}
+.themes:has(#th-0:checked) .preview{--pb:#20222B;--ps:#282A36;--pf:#F8F8F2;--pk:#FF79C6;--ps2:#F1FA8C;--pc:#97A2C3;--pn:#50FA7B}
+.themes:has(#th-0:checked) label.sw0{outline:2px solid var(--accent);outline-offset:2px}
+.themes:has(#th-0:focus-visible) label.sw0{outline:2px solid var(--cyan);outline-offset:2px}
+.themes:has(#th-1:checked) .preview{--pb:#0B1020;--ps:#161C2E;--pf:#E9EDF5;--pk:#FF8F88;--ps2:#A5D6FF;--pc:#A8B0BA;--pn:#D2A8FF}
+.themes:has(#th-1:checked) label.sw1{outline:2px solid var(--accent);outline-offset:2px}
+.themes:has(#th-1:focus-visible) label.sw1{outline:2px solid var(--cyan);outline-offset:2px}
+.themes:has(#th-2:checked) .preview{--pb:#F5F5F7;--ps:#FFFFFF;--pf:#14181F;--pk:#BF1D29;--ps2:#0A3069;--pc:#59636E;--pn:#6F3FC9}
+.themes:has(#th-2:checked) label.sw2{outline:2px solid var(--accent);outline-offset:2px}
+.themes:has(#th-2:focus-visible) label.sw2{outline:2px solid var(--cyan);outline-offset:2px}
+.themes:has(#th-3:checked) .preview{--pb:#002B36;--ps:#002B36;--pf:#9EAAAA;--pk:#859900;--ps2:#2AA198;--pc:#839496;--pn:#3194DA}
+.themes:has(#th-3:checked) label.sw3{outline:2px solid var(--accent);outline-offset:2px}
+.themes:has(#th-3:focus-visible) label.sw3{outline:2px solid var(--cyan);outline-offset:2px}
+.themes:has(#th-4:checked) .preview{--pb:#FDF6E3;--ps:#FDF6E3;--pf:#3E494D;--pk:#627000;--ps2:#1F756F;--pc:#5E6C6C;--pn:#1E6EA7}
+.themes:has(#th-4:checked) label.sw4{outline:2px solid var(--accent);outline-offset:2px}
+.themes:has(#th-4:focus-visible) label.sw4{outline:2px solid var(--cyan);outline-offset:2px}
+.themes:has(#th-5:checked) .preview{--pb:#20232A;--ps:#282C34;--pf:#BCC2CC;--pk:#CC85E0;--ps2:#98C379;--pc:#9198A5;--pn:#61AFEF}
+.themes:has(#th-5:checked) label.sw5{outline:2px solid var(--accent);outline-offset:2px}
+.themes:has(#th-5:focus-visible) label.sw5{outline:2px solid var(--cyan);outline-offset:2px}
+.themes:has(label.sw0:hover) .preview{--pb:#20222B;--ps:#282A36;--pf:#F8F8F2;--pk:#FF79C6;--ps2:#F1FA8C;--pc:#97A2C3;--pn:#50FA7B}
+.themes:has(label.sw1:hover) .preview{--pb:#0B1020;--ps:#161C2E;--pf:#E9EDF5;--pk:#FF8F88;--ps2:#A5D6FF;--pc:#A8B0BA;--pn:#D2A8FF}
+.themes:has(label.sw2:hover) .preview{--pb:#F5F5F7;--ps:#FFFFFF;--pf:#14181F;--pk:#BF1D29;--ps2:#0A3069;--pc:#59636E;--pn:#6F3FC9}
+.themes:has(label.sw3:hover) .preview{--pb:#002B36;--ps:#002B36;--pf:#9EAAAA;--pk:#859900;--ps2:#2AA198;--pc:#839496;--pn:#3194DA}
+.themes:has(label.sw4:hover) .preview{--pb:#FDF6E3;--ps:#FDF6E3;--pf:#3E494D;--pk:#627000;--ps2:#1F756F;--pc:#5E6C6C;--pn:#1E6EA7}
+.themes:has(label.sw5:hover) .preview{--pb:#20232A;--ps:#282C34;--pf:#BCC2CC;--pk:#CC85E0;--ps2:#98C379;--pc:#9198A5;--pn:#61AFEF}
 </style>
 </head>
 <body>
+<nav aria-label="Main"><div class="wrap">
+<a class="brand" href="./"><img src="assets/icon-64.png" alt="" width="26" height="26"><b>Alloy</b></a>
+<div class="links"><a class="opt" href="#features">Features</a><a class="opt" href="#notes">Shared notes</a><a class="opt" href="#themes">Themes</a><a class="opt" href="benchmarks/">Benchmarks</a><a class="opt" href="#faq">FAQ</a><a class="opt" href="https://github.com/mburger89/Alloy">GitHub</a><span class="dl soon" aria-disabled="true">Coming soon</span></div>
+</div></nav>
 <main>
-<h1>Alloy benchmarks</h1>
-<p class="lead">Alloy (built on MetalUI) measured against Zed and Delta on the same Mac, from outside the apps.</p>
-<h2 class="headline">Alloy is at par or ahead of Zed on 7 of 7 measured metrics</h2>
-<p class="muted">Newest run: 2026-11-11.</p>
-<div class="scroll"><table>
-<thead><tr><th>Metric</th><th>Zed</th><th>Delta</th><th>Alloy</th><th>Verdict</th></tr></thead>
-<tbody>
-<tr><th scope="row">Startup</th><td>230.7 ms (p95 266.2)</td><td>399.0 ms (p95 421.0)</td><td>135.5 ms (p95 146.6)</td><td><span class="verdict ahead">ahead</span></td></tr>
-<tr><th scope="row">Typing latency</th><td>49.9 ms (p95 57.3)</td><td><span class="muted">n/a — Delta is agent-first with no documented way to open a file in an editor surface; typing target unverified</span></td><td>38.0 ms (p95 49.3)</td><td><span class="verdict ahead">ahead</span></td></tr>
-<tr><th scope="row">Scroll frame time</th><td>17.2 ms (p95 18.3)</td><td><span class="muted">n/a — Delta opens projects, not files; needs a live probe to learn what it displays</span></td><td>17.2 ms (p95 18.3)</td><td><span class="verdict par">par</span></td></tr>
-<tr><th scope="row">Memory</th><td>186.2 MiB (p95 196.5)</td><td><span class="muted">n/a — Delta opens projects, not files; needs a live probe to learn what it displays</span></td><td>56.0 MiB (p95 56.0)</td><td><span class="verdict ahead">ahead</span></td></tr>
-<tr><th scope="row">Memory, idle</th><td>94.6 MiB (p95 95.3)</td><td>205.4 MiB (p95 208.5)</td><td>43.5 MiB (p95 43.6)</td><td><span class="verdict ahead">ahead</span></td></tr>
-<tr><th scope="row">Large file open</th><td>240.5 ms (p95 263.7)</td><td><span class="muted">n/a — Delta has no documented open-file-in-editor command (`delta open` takes a path or delta:// link only)</span></td><td>157.3 ms (p95 182.1)</td><td><span class="verdict ahead">ahead</span></td></tr>
-<tr><th scope="row">Idle CPU</th><td>0.4 % (p95 0.4)</td><td>0.2 % (p95 0.2)</td><td>0.0 % (p95 0.0)</td><td><span class="verdict ahead">ahead</span></td></tr>
-</tbody>
-</table></div>
-<h2>Environment and versions</h2>
-<dl>
-<dt>Date</dt><dd>2026-11-11</dd>
-<dt>Machine</dt><dd>Mac18,5</dd>
-<dt>macOS</dt><dd>27.2.0</dd>
-<dt>Display refresh rate</dt><dd>60.0 Hz</dd>
-<dt>Start</dt><dd>warm</dd>
-<dt>Harness</dt><dd>0496c49</dd>
-<dt>Zed version</dt><dd>1.28.1</dd>
-<dt>Delta version</dt><dd>0.1.0</dd>
-<dt>Alloy version</dt><dd>0496c49</dd>
-</dl>
-<h2>Run notes</h2>
-<ul>
-<li>Zed Startup: window on screen: median 198 ms after launch (CGWindowList, 5 ms polling)</li>
-<li>Zed Startup: Zed: per-run profile pre-trusts the project (session.trust_all_worktrees) and turns language servers off (enable_language_server: false); Alloy runs none</li>
-<li>Zed Typing latency: Zed: per-run profile pre-trusts the project (session.trust_all_worktrees) and turns language servers off (enable_language_server: false); Alloy runs none</li>
-<li>Zed Scroll frame time: captured at 60 Hz (display refresh); dropped frames: 0.3% (3 of 860 intervals &gt; 25.0 ms = 1.5x refresh period); intervals floor at 16.7 ms; intervals trimmed to the first and last scroll post (+1 refresh period)</li>
-<li>Zed Scroll frame time: Zed: per-run profile pre-trusts the project (session.trust_all_worktrees) and turns language servers off (enable_language_server: false); Alloy runs none</li>
-<li>Zed Memory: Zed: per-run profile pre-trusts the project (session.trust_all_worktrees) and turns language servers off (enable_language_server: false); Alloy runs none</li>
-<li>Zed Memory, idle: footprint of the process tree at the end of the idle CPU window, small.rs open</li>
-<li>Zed Memory, idle: Zed: per-run profile pre-trusts the project (session.trust_all_worktrees) and turns language servers off (enable_language_server: false); Alloy runs none</li>
-<li>Zed Large file open: window on screen: median 180 ms after launch (CGWindowList, 5 ms polling)</li>
-<li>Zed Large file open: Zed: per-run profile pre-trusts the project (session.trust_all_worktrees) and turns language servers off (enable_language_server: false); Alloy runs none</li>
-<li>Zed Idle CPU: Zed: per-run profile pre-trusts the project (session.trust_all_worktrees) and turns language servers off (enable_language_server: false); Alloy runs none</li>
-<li>Delta Startup: window on screen: median 377 ms after launch (CGWindowList, 5 ms polling)</li>
-<li>Delta Startup: Delta has no isolation flag: it ran against the user's real Delta profile and state</li>
-<li>Delta Memory, idle: footprint of the process tree at the end of the idle CPU window, small.rs open</li>
-<li>Delta Memory, idle: Delta has no isolation flag: it ran against the user's real Delta profile and state</li>
-<li>Delta Idle CPU: Delta has no isolation flag: it ran against the user's real Delta profile and state</li>
-<li>Alloy Startup: window on screen: median 114 ms after launch (CGWindowList, 5 ms polling)</li>
-<li>Alloy Scroll frame time: captured at 60 Hz (display refresh); dropped frames: 0.0% (0 of 859 intervals &gt; 25.0 ms = 1.5x refresh period); intervals floor at 16.7 ms; intervals trimmed to the first and last scroll post (+1 refresh period)</li>
-<li>Alloy Memory, idle: footprint of the process tree at the end of the idle CPU window, small.rs open</li>
-<li>Alloy Large file open: window on screen: median 114 ms after launch (CGWindowList, 5 ms polling)</li>
-</ul>
-<h2>How this is measured</h2>
-<ul>
-<li>The harness drives each app from outside, with synthetic input, and detects changes by comparing screen captures. It does not rely on anything the apps report about themselves.</li>
-<li>Every metric is repeated and the page shows the median and the 95th percentile (p95) of the runs that survived. A run is dropped when its window never appeared, the screen changed before the window, or capture dropped frames; failures are listed in the run notes.</li>
-<li>Startup and large-file open are strict: if any run is excluded the whole metric shows as not measured, never a median of survivors.</li>
-<li>Pass bar: Alloy is at par with Zed when both its median and its p95 are within the larger of 5.0 % of Zed's value or an absolute floor (1.0 ms, 2.0 MiB, 0.1 %) of Zed's. It is ahead when both are lower than Zed's by more than that margin, and behind when either is higher by more than that margin. The headline counts at par and ahead.</li>
-<li>A row is missing when Zed was measured but Alloy was not, and unjudged when Zed was not measured. Parity is judged against Zed only; Delta is shown for context.</li>
-<li>Delta has no isolated profile option, so it runs against a normal Delta profile and state.</li>
-<li>Scroll frame times cannot be lower than one display refresh period, so they floor at that value.</li>
-<li>Results come from one machine and one run each time, so treat small differences with caution. Raw samples are in the JSON files linked below.</li>
-</ul>
-<h2>History</h2>
-<p class="legend"><span class="key zed">Zed median</span> <span class="key alloy">Alloy median</span></p>
-<div class="charts">
-<figure><figcaption>Startup</figcaption><svg viewBox="0 0 320 120" role="img" aria-label="Startup median over 2 runs, Zed and Alloy, in ms"><line class="axis" x1="40" y1="96.0" x2="310" y2="96.0"/><line class="axis" x1="40" y1="10" x2="40" y2="96.0"/><text class="tick" x="36" y="14" text-anchor="end">236.6</text><text class="tick" x="36" y="96.0" text-anchor="end">0</text><text class="tick" x="40" y="112">2026-11-11</text><text class="tick" x="310" y="112" text-anchor="end">2026-11-11</text><text class="tick" x="44" y="14">ms</text><polyline class="series zed" points="40.0,10.0 310.0,12.1"/><circle class="dot zed" cx="40.0" cy="10.0" r="3"/><circle class="dot zed" cx="310.0" cy="12.1" r="3"/><polyline class="series alloy" points="40.0,46.3 310.0,46.8"/><circle class="dot alloy" cx="40.0" cy="46.3" r="3"/><circle class="dot alloy" cx="310.0" cy="46.8" r="3"/></svg></figure>
-<figure><figcaption>Typing latency</figcaption><svg viewBox="0 0 320 120" role="img" aria-label="Typing latency median over 2 runs, Zed and Alloy, in ms"><line class="axis" x1="40" y1="96.0" x2="310" y2="96.0"/><line class="axis" x1="40" y1="10" x2="40" y2="96.0"/><text class="tick" x="36" y="14" text-anchor="end">49.9</text><text class="tick" x="36" y="96.0" text-anchor="end">0</text><text class="tick" x="40" y="112">2026-11-11</text><text class="tick" x="310" y="112" text-anchor="end">2026-11-11</text><text class="tick" x="44" y="14">ms</text><polyline class="series zed" points="40.0,10.8 310.0,10.0"/><circle class="dot zed" cx="40.0" cy="10.8" r="3"/><circle class="dot zed" cx="310.0" cy="10.0" r="3"/><polyline class="series alloy" points="40.0,31.8 310.0,30.4"/><circle class="dot alloy" cx="40.0" cy="31.8" r="3"/><circle class="dot alloy" cx="310.0" cy="30.4" r="3"/></svg></figure>
-<figure><figcaption>Scroll frame time</figcaption><svg viewBox="0 0 320 120" role="img" aria-label="Scroll frame time median over 2 runs, Zed and Alloy, in ms"><line class="axis" x1="40" y1="96.0" x2="310" y2="96.0"/><line class="axis" x1="40" y1="10" x2="40" y2="96.0"/><text class="tick" x="36" y="14" text-anchor="end">17.3</text><text class="tick" x="36" y="96.0" text-anchor="end">0</text><text class="tick" x="40" y="112">2026-11-11</text><text class="tick" x="310" y="112" text-anchor="end">2026-11-11</text><text class="tick" x="44" y="14">ms</text><polyline class="series zed" points="40.0,10.3 310.0,10.3"/><circle class="dot zed" cx="40.0" cy="10.3" r="3"/><circle class="dot zed" cx="310.0" cy="10.3" r="3"/><polyline class="series alloy" points="40.0,10.0 310.0,10.4"/><circle class="dot alloy" cx="40.0" cy="10.0" r="3"/><circle class="dot alloy" cx="310.0" cy="10.4" r="3"/></svg></figure>
-<figure><figcaption>Memory</figcaption><svg viewBox="0 0 320 120" role="img" aria-label="Memory median over 2 runs, Zed and Alloy, in MiB"><line class="axis" x1="40" y1="96.0" x2="310" y2="96.0"/><line class="axis" x1="40" y1="10" x2="40" y2="96.0"/><text class="tick" x="36" y="14" text-anchor="end">186.2</text><text class="tick" x="36" y="96.0" text-anchor="end">0</text><text class="tick" x="40" y="112">2026-11-11</text><text class="tick" x="310" y="112" text-anchor="end">2026-11-11</text><text class="tick" x="44" y="14">MiB</text><polyline class="series zed" points="40.0,48.8 310.0,10.0"/><circle class="dot zed" cx="40.0" cy="48.8" r="3"/><circle class="dot zed" cx="310.0" cy="10.0" r="3"/><polyline class="series alloy" points="40.0,12.2 310.0,70.2"/><circle class="dot alloy" cx="40.0" cy="12.2" r="3"/><circle class="dot alloy" cx="310.0" cy="70.2" r="3"/></svg></figure>
-<figure><figcaption>Memory, idle</figcaption><svg viewBox="0 0 320 120" role="img" aria-label="Memory, idle median over 2 runs, Zed and Alloy, in MiB"><line class="axis" x1="40" y1="96.0" x2="310" y2="96.0"/><line class="axis" x1="40" y1="10" x2="40" y2="96.0"/><text class="tick" x="36" y="14" text-anchor="end">94.6</text><text class="tick" x="36" y="96.0" text-anchor="end">0</text><text class="tick" x="40" y="112">2026-11-11</text><text class="tick" x="310" y="112" text-anchor="end">2026-11-11</text><text class="tick" x="44" y="14">MiB</text><polyline class="series zed" points="40.0,11.1 310.0,10.0"/><circle class="dot zed" cx="40.0" cy="11.1" r="3"/><circle class="dot zed" cx="310.0" cy="10.0" r="3"/><polyline class="series alloy" points="40.0,51.7 310.0,56.4"/><circle class="dot alloy" cx="40.0" cy="51.7" r="3"/><circle class="dot alloy" cx="310.0" cy="56.4" r="3"/></svg></figure>
-<figure><figcaption>Large file open</figcaption><svg viewBox="0 0 320 120" role="img" aria-label="Large file open median over 2 runs, Zed and Alloy, in ms"><line class="axis" x1="40" y1="96.0" x2="310" y2="96.0"/><line class="axis" x1="40" y1="10" x2="40" y2="96.0"/><text class="tick" x="36" y="14" text-anchor="end">240.5</text><text class="tick" x="36" y="96.0" text-anchor="end">0</text><text class="tick" x="40" y="112">2026-11-11</text><text class="tick" x="310" y="112" text-anchor="end">2026-11-11</text><text class="tick" x="44" y="14">ms</text><polyline class="series zed" points="40.0,10.4 310.0,10.0"/><circle class="dot zed" cx="40.0" cy="10.4" r="3"/><circle class="dot zed" cx="310.0" cy="10.0" r="3"/><polyline class="series alloy" points="40.0,39.3 310.0,39.8"/><circle class="dot alloy" cx="40.0" cy="39.3" r="3"/><circle class="dot alloy" cx="310.0" cy="39.8" r="3"/></svg></figure>
-<figure><figcaption>Idle CPU</figcaption><svg viewBox="0 0 320 120" role="img" aria-label="Idle CPU median over 2 runs, Zed and Alloy, in %"><line class="axis" x1="40" y1="96.0" x2="310" y2="96.0"/><line class="axis" x1="40" y1="10" x2="40" y2="96.0"/><text class="tick" x="36" y="14" text-anchor="end">0.4</text><text class="tick" x="36" y="96.0" text-anchor="end">0</text><text class="tick" x="40" y="112">2026-11-11</text><text class="tick" x="310" y="112" text-anchor="end">2026-11-11</text><text class="tick" x="44" y="14">%</text><polyline class="series zed" points="40.0,10.8 310.0,10.0"/><circle class="dot zed" cx="40.0" cy="10.8" r="3"/><circle class="dot zed" cx="310.0" cy="10.0" r="3"/><polyline class="series alloy" points="40.0,95.4 310.0,95.4"/><circle class="dot alloy" cx="40.0" cy="95.4" r="3"/><circle class="dot alloy" cx="310.0" cy="95.4" r="3"/></svg></figure>
+<header class="hero"><div class="wrap">
+<h1>Fast. Native. Yours.</h1>
+<p class="lead">The code editor for Claude Code — written in Swift, drawn on the GPU with Metal.</p>
+<p><span class="btn p soon" aria-disabled="true">Coming soon</span><a class="btn s" href="https://github.com/mburger89/Alloy">View on GitHub</a></p>
+<p class="meta">Coming soon for Apple-silicon Macs · macOS 14 or later · free, MIT</p>
+<figure class="app has-poster"><video autoplay muted loop playsinline poster="assets/hero-poster.png" aria-label="Alloy with three Claude Code sessions open on one folder, in the Dracula theme."><source src="assets/hero.mp4" type="video/mp4"></video><img class="poster" src="assets/hero-poster.png" alt="Alloy with three Claude Code sessions open on one folder, in the Dracula theme." fetchpriority="high"></figure>
+</div></header>
+<section class="strip" aria-label="Headline numbers"><div class="wrap"><div><b class="n">6 of 7</b><span>benchmarks ahead of Zed</span></div><div><b class="n">56 MiB</b><span>memory with a 2 MB file open</span></div><div><b class="n">0</b><span>web views</span></div></div></section>
+<section id="speed"><div class="wrap">
+<div class="tag">Speed</div><h2>Feel the difference.</h2><p class="sub">Replayed from the published benchmark. Only tests Alloy really wins are listed.</p>
+<div class="race">
+<input class="vh" type="radio" name="race" id="race-0" checked>
+<input class="vh" type="radio" name="race" id="race-1">
+<input class="vh" type="radio" name="race" id="race-2">
+<input class="vh" type="radio" name="race" id="race-3">
+<input class="vh" type="radio" name="race" id="race-4">
+<input class="vh" type="radio" name="race" id="race-5">
+<div class="tabs"><label for="race-0">Start up</label><label for="race-1">Type</label><label for="race-2">Memory, 2 MB file open</label><label for="race-3">Memory, idle</label><label for="race-4">Open a 2 MB file</label><label for="race-5">Idle CPU</label></div>
+<div class="panels">
+<div class="panel p0" role="group" aria-label="Start up">
+<div class="lane"><div class="n">Alloy</div><div class="t"><div class="f alloy" style="width:34%"></div></div><div class="v">135 ms</div></div>
+<div class="lane"><div class="n">Zed</div><div class="t"><div class="f" style="width:57.8%"></div></div><div class="v">231 ms</div></div>
+<div class="lane"><div class="n">Delta</div><div class="t"><div class="f" style="width:100%"></div></div><div class="v">399 ms</div></div>
+<p class="note">Shorter is better.</p>
 </div>
-<h2>Raw results</h2>
-<ul>
-<li><a href="data/2026-11-11-222649-Mac18,5.json">2026-11-11-222649-Mac18,5.json</a></li>
-<li><a href="data/2026-11-11-163850-Mac18,5.json">2026-11-11-163850-Mac18,5.json</a></li>
-</ul>
+<div class="panel p1" role="group" aria-label="Type">
+<div class="lane"><div class="n">Alloy</div><div class="t"><div class="f alloy" style="width:76.2%"></div></div><div class="v">38.0 ms</div></div>
+<div class="lane"><div class="n">Zed</div><div class="t"><div class="f" style="width:100%"></div></div><div class="v">49.9 ms</div></div>
+<p class="note">Shorter is better.</p>
+</div>
+<div class="panel p2" role="group" aria-label="Memory, 2 MB file open">
+<div class="lane"><div class="n">Alloy</div><div class="t"><div class="f alloy" style="width:30.1%"></div></div><div class="v">56 MiB</div></div>
+<div class="lane"><div class="n">Zed</div><div class="t"><div class="f" style="width:100%"></div></div><div class="v">186 MiB</div></div>
+<p class="note">Shorter is better.</p>
+</div>
+<div class="panel p3" role="group" aria-label="Memory, idle">
+<div class="lane"><div class="n">Alloy</div><div class="t"><div class="f alloy" style="width:21.2%"></div></div><div class="v">44 MiB</div></div>
+<div class="lane"><div class="n">Zed</div><div class="t"><div class="f" style="width:46.1%"></div></div><div class="v">95 MiB</div></div>
+<div class="lane"><div class="n">Delta</div><div class="t"><div class="f" style="width:100%"></div></div><div class="v">205 MiB</div></div>
+<p class="note">Shorter is better.</p>
+</div>
+<div class="panel p4" role="group" aria-label="Open a 2 MB file">
+<div class="lane"><div class="n">Alloy</div><div class="t"><div class="f alloy" style="width:65.4%"></div></div><div class="v">157 ms</div></div>
+<div class="lane"><div class="n">Zed</div><div class="t"><div class="f" style="width:100%"></div></div><div class="v">241 ms</div></div>
+<p class="note">Shorter is better.</p>
+</div>
+<div class="panel p5" role="group" aria-label="Idle CPU">
+<div class="lane"><div class="n">Alloy</div><div class="t"><div class="f alloy" style="width:1.5%"></div></div><div class="v">0.003 %</div></div>
+<div class="lane"><div class="n">Zed</div><div class="t"><div class="f" style="width:100%"></div></div><div class="v">0.36 %</div></div>
+<div class="lane"><div class="n">Delta</div><div class="t"><div class="f" style="width:62.6%"></div></div><div class="v">0.23 %</div></div>
+<p class="note">Shorter is better.</p>
+</div>
+</div></div>
+<p class="foot">Mac18,5 · macOS 27.2.0 · 60 Hz display · 2026-11-11, Zed 1.28.1, Delta 0.1.0. Medians of repeated runs, measured from outside the apps. <a href="benchmarks/">Every number and method →</a></p>
+</div></section>
+<section id="notes"><div class="wrap">
+<div class="tag">Shared notes</div><h2>Stop paying to read the same file twice.</h2><p class="sub">Your sessions share what they learn.</p>
+<ol class="flow">
+<li class="step s1"><b style="color:var(--pink)">● api-refactor</b>reads <code>auth.rs</code><br><small>and leaves a short note</small></li>
+<li class="arrow" aria-hidden="true">→</li>
+<li class="step mid s2"><b style="color:var(--accent)">Alloy's shared notes</b><code>auth.rs</code> · unchanged<br><small>summary + the exact lines</small></li>
+<li class="arrow" aria-hidden="true">→</li>
+<li class="step s3"><b style="color:var(--cyan)">● tests</b>asks the notes first<br><small>no second read</small></li>
+</ol>
+<div class="ben"><div><b>Less waiting</b><span>Fewer file reads before a session gets going.</span></div><div><b>Less usage</b><span>Fewer tokens counted against your plan.</span></div><div><b>More room</b><span>Context left for the actual work.</span></div></div>
+<p class="promise">Never stale: every note is tied to the exact state of the file it describes. Once the file changes, the old text is never served.</p>
+</div></section>
+<section id="features"><div class="wrap">
+<h2 class="sr">Features</h2>
+<div class="feat"><div class="txt"><h3>Many Claude sessions. One folder.</h3><p>Run several Claude Code sessions side by side, each with rich chat: plans, questions and permission requests you answer in place.</p></div><figure class="shot"><img src="assets/shot-sessions.png" alt="The session list beside a chat with a plan awaiting approval." loading="lazy"></figure></div>
+<div class="feat r"><div class="txt"><h3>Know who changed what.</h3><p>Every line is coloured by the session that wrote it. Per-session diffs; keep or revert an edit in one click.</p></div><figure class="shot"><img src="assets/shot-changes.png" alt="Code with each changed line coloured by the session that wrote it." loading="lazy"></figure></div>
+<div class="feat"><div class="txt"><h3>Sessions that don't collide.</h3><p>Alloy warns a session before it edits lines another session (or you) is changing, so work doesn't get overwritten.</p></div><figure class="shot"><img src="assets/shot-collisions.png" alt="An overlap warning on lines two sessions are both editing." loading="lazy"></figure></div>
+</div></section>
+<section id="themes"><div class="wrap"><div class="themes">
+<div class="tag">Themes</div><h2>Dracula by default. Make your own.</h2><p class="sub">Built-in themes, or describe one to Claude and Alloy builds it.</p>
+<input class="vh" type="radio" name="theme" id="th-0" checked>
+<input class="vh" type="radio" name="theme" id="th-1">
+<input class="vh" type="radio" name="theme" id="th-2">
+<input class="vh" type="radio" name="theme" id="th-3">
+<input class="vh" type="radio" name="theme" id="th-4">
+<input class="vh" type="radio" name="theme" id="th-5">
+<div class="sw"><label for="th-0" class="sw0" style="background:#20222B;color:#F8F8F2"><i style="background:#FF79C6"></i><i style="background:#F1FA8C"></i><i style="background:#50FA7B"></i>Dracula</label><label for="th-1" class="sw1" style="background:#0B1020;color:#E9EDF5"><i style="background:#FF8F88"></i><i style="background:#A5D6FF"></i><i style="background:#D2A8FF"></i>Alloy Dark</label><label for="th-2" class="sw2" style="background:#F5F5F7;color:#14181F"><i style="background:#BF1D29"></i><i style="background:#0A3069"></i><i style="background:#6F3FC9"></i>Alloy Light</label><label for="th-3" class="sw3" style="background:#002B36;color:#9EAAAA"><i style="background:#859900"></i><i style="background:#2AA198"></i><i style="background:#3194DA"></i>Solarized Dark</label><label for="th-4" class="sw4" style="background:#FDF6E3;color:#3E494D"><i style="background:#627000"></i><i style="background:#1F756F"></i><i style="background:#1E6EA7"></i>Solarized Light</label><label for="th-5" class="sw5" style="background:#20232A;color:#BCC2CC"><i style="background:#CC85E0"></i><i style="background:#98C379"></i><i style="background:#61AFEF"></i>One Dark</label><span class="mine">+ yours</span></div>
+<div class="preview" role="img" aria-label="A code sample drawn in the chosen theme"><div class="bar2"></div><pre><span class="c">// auth.rs</span>
+<span class="k">pub fn</span> <span class="f">login</span>(user: &amp;User, token: Token) {
+  <span class="k">let</span> claims = token.<span class="f">verify</span>()?;
+  <span class="f">log</span>(<span class="s">"signed in"</span>);
+}</pre></div>
+<p class="foot">Hover or pick a swatch to preview a theme.</p>
+</div></div></section>
+<section id="languages"><div class="wrap">
+<div class="tag">Languages</div><h2>Your languages, out of the box.</h2><p class="sub">15 built in with tree-sitter, and anything with a language server you already have installed.</p>
+<ul class="pills"><li>Swift</li><li>Python</li><li>JavaScript</li><li>TypeScript</li><li>TSX</li><li>JSON</li><li>Markdown</li><li>Bash</li><li>Rust</li><li>Go</li><li>C</li><li>C++</li><li>YAML</li><li>HTML</li><li>CSS</li></ul>
+</div></section>
+<section><div class="wrap">
+<div class="tag">How it's built</div><h2>Native all the way down.</h2><p class="sub">No Electron. No web view. Every pixel is drawn by Alloy's own UI framework on the GPU.</p>
+<div class="stack"><div>Alloy<small>Swift 6</small></div><span aria-hidden="true">→</span><div>MetalUI<small>its own GPU UI framework</small></div><span aria-hidden="true">→</span><div>Metal<small>Apple's GPU API</small></div></div>
+</div></section>
+<section><div class="wrap">
+<div class="tag">Privacy</div><h2>Your code stays yours.</h2>
+<ul class="plain"><li>No telemetry and no account. Alloy runs the Claude Code you already have.</li><li>It never changes your Claude Code settings — the optional theme skill is installed only when you click it.</li><li>The update check is the only network call Alloy itself makes.</li></ul>
+</div></section>
+<section class="faq" id="faq"><div class="wrap">
+<div class="tag">FAQ</div><h2>Questions</h2>
+<details open><summary>Is it free?</summary><p>Yes. Alloy is open source under the MIT licence.</p></details>
+<details><summary>Do I need a Claude subscription?</summary><p>Yes — Alloy runs your own Claude Code, so you need Claude Code installed and logged in (a Claude subscription or API account).</p></details>
+<details><summary>Does it run on Intel Macs?</summary><p>Not yet: Apple silicon only.</p></details>
+<details><summary>How do updates work?</summary><p>Alloy checks for updates once a day in the background. It installs when you quit or when you choose Restart to update — never mid-session.</p></details>
+<details><summary>How is it so fast?</summary><p>It's native Swift drawn straight to the GPU with Metal, and it only does work for what's on screen.</p></details>
+</div></section>
+<section class="end"><div class="wrap">
+<h2>Coming soon.</h2><p class="sub">Alloy is coming soon for Apple-silicon Macs. Star the repository on GitHub to hear when it ships.</p>
+<p><span class="btn p soon" aria-disabled="true">Coming soon</span></p>
+<p class="meta"><a href="https://github.com/mburger89/Alloy">Source on GitHub</a> · Needs the Claude Code CLI</p>
+</div></section>
 </main>
+<footer><div class="wrap"><span>Alloy · MIT</span><span><a href="benchmarks/">Benchmarks</a> · <a href="https://github.com/mburger89/Alloy">GitHub</a></span></div></footer>
 </body>
 </html>

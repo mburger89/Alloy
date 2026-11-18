@@ -1,6 +1,6 @@
 import Foundation
 
-/// Renders the static results page. Output is deterministic: no timestamps, fixed iteration order, no scripts and
+/// Renders the static results page, served at `/benchmarks/` (its data links go up to `/data/`). Output is deterministic: no timestamps, fixed iteration order, no scripts and
 /// no external resources.
 public enum SitePage {
     public enum LoadError: Error, CustomStringConvertible {
@@ -33,7 +33,7 @@ public enum SitePage {
 
     /// `runs` are the published results in index order (oldest first); the newest is the headline.
     public static func render(index: PublishedIndex, runs: [RunResult]) -> String {
-        var body = "<h1>Alloy benchmarks</h1>\n"
+        var body = "<p class=\"back\"><a href=\"../\">← Alloy</a></p>\n<h1>Alloy benchmarks</h1>\n"
         body += "<p class=\"lead\">Alloy (built on MetalUI) measured against \(lead(runs.last)) on the same Mac, from outside the apps.</p>\n"
         if let latest = runs.last, let entry = index.runs.last {
             body += headline(latest, partial: entry.partial)
@@ -171,7 +171,7 @@ public enum SitePage {
     private static func links(_ index: PublishedIndex) -> String {
         var s = "<h2>Raw results</h2>\n<ul>\n"
         for e in index.runs.reversed() {
-            s += "<li><a href=\"data/\(escape(e.stem)).json\">\(escape(e.stem)).json</a>\(e.partial ? " (partial run)" : "")</li>\n"
+            s += "<li><a href=\"../data/\(escape(e.stem)).json\">\(escape(e.stem)).json</a>\(e.partial ? " (partial run)" : "")</li>\n"
         }
         return s + "</ul>\n"
     }
@@ -240,6 +240,7 @@ public enum SitePage {
     .key { font-weight: 600; margin-right: 16px; } .key.zed { color: var(--zed); } .key.alloy { color: var(--alloy); }
     .key.vscode { color: var(--vscode); } .key.cursor { color: var(--cursor); } .key.sublime { color: var(--sublime); } .key.idea { color: var(--idea); }
     a { color: var(--zed); }
+    .back { margin: 0 0 12px; }
 
     """
 }

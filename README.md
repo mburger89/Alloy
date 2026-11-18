@@ -197,9 +197,66 @@ swift test
 - The absolute timing bounds of `OverlapIndexTests` (the relative ones always run) need `ALLOY_PERF=1`, on a quiet
   machine: `ALLOY_PERF=1 swift test --filter OverlapIndexTests`.
 
-- To package an app bundle: `scripts/bundle-macos.sh` produces `build/Alloy.app`, signed ad hoc (bundle id
-  `dev.alloy.Alloy`). Put a 1024 x 1024 `Packaging/icon-1024.png` in place first for an icon; set
-  `CODESIGN_IDENTITY` to sign for distribution.
+- To package an app bundle: `scripts/bundle-macos.sh [--version X.Y.Z --build N]` produces `build/Alloy.app` (bundle id
+  `com.unicornlabs.Alloy`), signed ad hoc by default. `--version` and `--build` set `CFBundleShortVersionString` and
+  `CFBundleVersion`. Set `ALLOY_SIGN_IDENTITY` (the older `CODESIGN_IDENTITY` still works) to sign for distribution
+  with the hardened runtime and `Packaging/macOS/Alloy.entitlements`. Put a 1024 x 1024 `Packaging/icon-1024.png` in
+  place first for an icon.
+
+## Releasing
+
+Releases are cut locally with `scripts/release-macos.sh`; nothing runs in CI. Alloy updates itself through Sparkle
+from `https://mburger89.github.io/Alloy/appcast.xml`.
+
+One-time setup:
+
+1. A **Developer ID Application** certificate in the login keychain. `ALLOY_SIGN_IDENTITY` is its name (for example
+   `Developer ID Application: Your Name (TEAMID)`).
+2. A notarisation profile: `xcrun notarytool store-credentials <profile>` (Apple ID app-specific password or an App
+   Store Connect API key). `ALLOY_NOTARY_PROFILE` is the profile name.
+3. A Sparkle EdDSA key: run `generate_keys` from Sparkle's tools (`.build/artifacts/sparkle/Sparkle/bin`, present after
+   `swift build`). The private key stays in the login keychain; `ALLOY_SPARKLE_PUBLIC_KEY` is the public key it
+   prints (`generate_keys -p`). The script refuses to run if it does not match the keychain's key.
+4. Release notes in `docs/releases/<version>.md` (Markdown, without the `<!-- PLACEHOLDER -->` marker), and a public
+   sync of the exact commit: `tools/publish-public.sh` on a clean `master` equal to `origin/main`.
+
+Environment: `ALLOY_SIGN_IDENTITY`, `ALLOY_NOTARY_PROFILE`, `ALLOY_SPARKLE_PUBLIC_KEY` (all required except for
+`--dry-run`); optional `ALLOY_SPARKLE_BIN` (directory with `generate_appcast` and `generate_keys`).
+
+```sh
+scripts/release-macos.sh 0.1.0 --dry-run        # ad hoc signing, no notarisation, nothing published
+scripts/release-macos.sh 0.1.0                  # the real run; asks "Publish v0.1.0? [y/N]" before uploading
+scripts/release-macos.sh 0.1.0 --appcast-only   # redo only the appcast of an already published release
+```
+
+The real run bundles and signs (hardened runtime), notarises and staples the app and `Alloy.dmg`, verifies the app
+inside the finished DMG, then creates the GitHub Release `v<version>` (stable `Alloy.dmg` plus `Alloy-<version>.dmg`)
+and updates `Bench/site/appcast.xml`. Afterwards commit the appcast, push, run `tools/publish-public.sh` and let the
+Pages workflow deploy. Every step before the upload fails closed and can simply be rerun. If a run is interrupted
+during `gh release create`, remove the partial release before rerunning:
+`gh release delete v<version> -R mburger89/Alloy --cleanup-tag`. If only the appcast step failed, use `--appcast-only`.
+
+Verify on the first real run:
+
+- `--dry-run` on `master`: Sparkle is embedded and signed, the Finder layout applies (approve the Automation prompt),
+  the detach works, and the DMG opens laid out.
+- `notarytool` prints pure JSON with `"status":"Accepted"` for both the app zip and the DMG; `spctl` reports
+  "Notarized Developer ID" for the DMG and the app inside it, and `stapler validate` passes.
+- The appcast item has `sparkle:version` equal to the commit count, an `edSignature`, the length of
+  `Alloy-<version>.dmg`, the `.../releases/download/v<version>/Alloy-<version>.dmg` URL, Markdown notes, minimum
+  macOS 14.0 and arm64.
+- `curl -IL` on the enclosure URL and on `/releases/latest/download/Alloy.dmg` both end in 200 with the same size.
+- After the Pages deploy, `curl` the live `appcast.xml`, `/`, `/benchmarks/` and a `/data/*.json`.
+- A fresh download on a clean account opens without a Gatekeeper warning, and "Check for Updates..." is in the app menu.
+- Update test (below): background download, banner, install on quit, a busy-session Restart asks first, and a resumed
+  downloaded update is held as ready rather than relaunching on its own.
+- Before 0.1.1: a `generate_appcast` run with a throwaway key over a seeded two-item feed keeps the 0.1.0 item.
+
+Testing an update by hand: build an older copy (for example `--version 0.0.9 --build 1`), serve an appcast that lists the newer build, and launch the copy with `ALLOY_UPDATE_FEED_URL=<feed url>`.
+The variable replaces `SUFeedURL` (http or https) only in builds that were not made for release: the bundler marks
+identity-signed builds with `AlloyReleaseBuild` in `Info.plist`, and those ignore the variable. For the older copy
+to be honoured, build it ad hoc (no `ALLOY_SIGN_IDENTITY`) with `ALLOY_SPARKLE_PUBLIC_KEY` set, so that it
+has a valid key but is not a release build. Sparkle still verifies the update's EdDSA signature.
 
 ## Benchmarks
 

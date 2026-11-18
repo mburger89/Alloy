@@ -145,9 +145,12 @@ At exit the harness lists, and only reports, any process matching a target app t
 1. `swift run --package-path Bench alloy-bench run` and check the generated `.md` report.
 2. `swift run --package-path Bench alloy-bench publish <result.json>` scrubs the result and adds it to `Bench/published`
    (partial runs are refused unless `--allow-partial`).
-3. `swift run --package-path Bench alloy-bench site` renders `Bench/site/index.html` and copies each published JSON to
-   `Bench/site/data/`. The page is static: inline CSS and SVG, no JavaScript, no external resources.
-4. Commit `Bench/published` and `Bench/site`. `SitePageTests.committedSiteIsCurrent` fails when the page is stale.
+3. `swift run --package-path Bench alloy-bench site` renders the landing page `Bench/site/index.html` (served at the Pages
+   root), the results page `Bench/site/benchmarks/index.html` (served at `/benchmarks/`), and copies each published JSON
+   to `Bench/site/data/`. Screenshots, the hero video and its poster live in `Bench/site/assets/`; the landing page uses
+   whichever of them exist. The pages are static: inline CSS and SVG, no JavaScript, no external resources. An existing
+   `Bench/site/appcast.xml` (written by the release script) is left alone.
+4. Commit `Bench/published` and `Bench/site`. `SitePageTests.committedSiteIsCurrent` fails when either page is stale.
 
 The page is hosted on GitHub Pages from the public repository: `.github/workflows/pages.yml` deploys `Bench/site` when
 it changes on `main` (or on a manual run), with no build step. It runs only in the public repository, whose Pages source

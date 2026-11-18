@@ -7,11 +7,13 @@ import MetalUI
 // compared, so the pane is evaluated again when the state it stands for is written from elsewhere.
 
 extension AlloyScreen: Equatable {
-    nonisolated static func == (a: Self, b: Self) -> Bool { a.workspace === b.workspace && a.themes === b.themes }
+    nonisolated static func == (a: Self, b: Self) -> Bool { a.workspace === b.workspace && a.themes === b.themes && a.updates === b.updates }
 }
 
 extension SidebarView: Equatable {
-    nonisolated static func == (a: Self, b: Self) -> Bool { a.workspace === b.workspace && a.keymap === b.keymap }
+    nonisolated static func == (a: Self, b: Self) -> Bool {
+        MainActor.assumeIsolated { a.workspace === b.workspace && a.keymap === b.keymap && a.updates === b.updates }
+    }
 }
 
 extension ChatView: Equatable {

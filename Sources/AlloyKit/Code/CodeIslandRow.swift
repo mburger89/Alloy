@@ -16,14 +16,15 @@ struct CodeIslandRow: Component, Equatable {
     let splitStore: UIStateSplitStore
     var themes: ThemeController?
     let style: AppearanceStyle
+    var updates: UpdateModel?
 
     nonisolated static func == (a: Self, b: Self) -> Bool {
         a.workspace === b.workspace && a.store === b.store && a.panel === b.panel && a.terminal === b.terminal && a.quickOpen === b.quickOpen
-            && a.splitStore === b.splitStore && a.themes === b.themes && a.style == b.style
+            && a.splitStore === b.splitStore && a.themes === b.themes && a.style == b.style && a.updates === b.updates
     }
 
     private func sidebarIsland() -> some ElementGroup {
-        CodeSidebarView(workspace: workspace).equatable()
+        CodeSidebarView(workspace: workspace, updates: updates).equatable()
             .island(style: style, identifier: "island-code-sidebar")
             .frame(minWidth: codeSidebarWidths.min, idealWidth: codeSidebarWidths.ideal, maxWidth: codeSidebarWidths.max)
     }

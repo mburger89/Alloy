@@ -7,13 +7,15 @@ public struct SettingsWindowRoot: Component {
     let workspace: Workspace
     var themes: ThemeController?
     var center: CommandCenter?
+    /// The updater's model; nil hides the updates section.
+    var updates: UpdateModel?
     let close: @MainActor () -> Void
     /// Runs when the window goes away (its `onDisappear`), so the opener forgets it.
     let gone: @MainActor () -> Void
 
-    init(workspace: Workspace, themes: ThemeController?, center: CommandCenter? = nil, close: @escaping @MainActor () -> Void,
+    init(workspace: Workspace, themes: ThemeController?, center: CommandCenter? = nil, updates: UpdateModel? = nil, close: @escaping @MainActor () -> Void,
          gone: @escaping @MainActor () -> Void) {
-        self.workspace = workspace; self.themes = themes; self.center = center; self.close = close; self.gone = gone
+        self.workspace = workspace; self.themes = themes; self.center = center; self.updates = updates; self.close = close; self.gone = gone
     }
 
     public var content: some ElementGroup {
@@ -24,7 +26,7 @@ public struct SettingsWindowRoot: Component {
             VStack(spacing: 0) {
                 SettingsTitleIsland(style: style).equatable()
                 VStack(spacing: 0) {
-                    SettingsView(workspace: workspace, themes: themes, close: close, center: center)
+                    SettingsView(workspace: workspace, themes: themes, updates: updates, close: close, center: center)
                         .island(style: style, identifier: "island-settings")
                 }
                 .padding(Edges(top: Pixels(0), right: gutter, bottom: gutter, left: gutter))
@@ -93,6 +95,8 @@ public final class SettingsWindowController {
     private let opener: Opener
     /// The open Settings window, nil once it closed.
     public private(set) var window: Window?
+    /// The updater's model, shown as the Settings updates section; nil in a build without an updater.
+    public var updates: UpdateModel?
 
     public init(opener: @escaping Opener) { self.opener = opener }
 
@@ -107,7 +111,7 @@ public final class SettingsWindowController {
         // `claude` is looked for when Settings opens, so the field can show what was found.
         Task { await workspace.detectClaude() }
         let box = WindowBox()
-        let root = SettingsWindowRoot(workspace: workspace, themes: themes, center: center,
+        let root = SettingsWindowRoot(workspace: workspace, themes: themes, center: center, updates: updates,
                                       close: { box.window?.close() },
                                       gone: { [weak self] in self?.window = nil })
         guard let opened = try? opener("Settings", Self.windowSize, Self.minimumSize, root) else { return }
