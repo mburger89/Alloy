@@ -75,13 +75,19 @@ public enum Launcher {
 
     /// Executes the app binary directly so the PID is the app and a new instance starts.
     /// Alloy gets its project dir as the working directory.
+    /// A fresh per-run profile path, kept short: Electron apps (VS Code, Cursor) put an IPC socket such as
+    /// `<dir>/1.147-main.sock` inside it, and a Unix socket path over 103 bytes makes them fail to start.
+    static func profileDirectoryPath() -> String {
+        NSTemporaryDirectory() + "bu-\(getpid())-" + UUID().uuidString.prefix(8)
+    }
+
     public static func launch(_ app: TargetApp, file: String?, extraEnvironment: [String: String] = [:]) throws -> LaunchedApp {
         guard FileManager.default.isExecutableFile(atPath: app.executablePath) else {
             throw LauncherError.missingExecutable(app.executablePath)
         }
         var userDataDir: String?
         if app.userDataDirFlag != nil || app.dataDirEnvironmentKey != nil {
-            let d = NSTemporaryDirectory() + "bench-userdata-\(getpid())-\(UUID().uuidString)"
+            let d = profileDirectoryPath()
             try FileManager.default.createDirectory(atPath: d, withIntermediateDirectories: true)
             userDataDir = d
             do { try seed(app.seededFiles, into: d) } catch {

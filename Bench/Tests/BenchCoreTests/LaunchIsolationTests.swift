@@ -6,6 +6,12 @@ import Foundation
 
 /// Non-live tests: no GUI app is ever launched.
 @Suite struct LaunchIsolationTests {
+    @Test func profilePathLeavesRoomForElectronSockets() {
+        let d = Launcher.profileDirectoryPath()
+        #expect((d + "/1.147-main.sock").utf8.count <= 103, "VS Code and Cursor refuse a socket path over 103 bytes")
+        #expect(d != Launcher.profileDirectoryPath())
+    }
+
     @Test func zedDoesNotPassNewWindowFlag() {
         #expect(!TargetApp.zed.launchArguments("/tmp/a.swift").contains("-n"))
         #expect(TargetApp.zed.launchArguments("/tmp/a.swift") == ["/tmp/a.swift"])
