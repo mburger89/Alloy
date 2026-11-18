@@ -84,9 +84,35 @@ struct MarkRig {
         if save { try await workspace.save(path) }
     }
 
-    /// The 3 pt gutter bars the code view draws, top to bottom (as the diff tests find them).
-    func bars() -> [MUIRect] {
-        window.allRects.filter { $0.bounds.size.width == 3 && $0.bounds.origin.x > 150 && $0.bounds.size.height <= 40 }
+    /// The 3 pt bars the code view draws beside the rows, top to bottom (the change lane's and the author bar's column
+    /// alike; deletion triangles are one-pixel strips and left out).
+    func allBars() -> [MUIRect] {
+        window.allRects.filter { $0.bounds.size.width == 3 && $0.bounds.origin.x > 150 && $0.bounds.size.height > 4 && $0.bounds.size.height <= 40 }
             .sorted { $0.bounds.origin.y < $1.bounds.origin.y }
+    }
+
+    /// The change lane's bars (git's added and modified marks): the leftmost bar column. The author bar's column is
+    /// right of the lane, so with two columns the left one is the lane.
+    func changeBars() -> [MUIRect] {
+        let all = allBars()
+        guard let left = all.map({ $0.bounds.origin.x }).min() else { return [] }
+        return all.filter { $0.bounds.origin.x == left }
+    }
+
+    /// The author bars (gutter bars of the default owner): the rightmost column, when the lane's column is also drawn.
+    func gutterBars() -> [MUIRect] {
+        let all = allBars()
+        guard let left = all.map({ $0.bounds.origin.x }).min(), let right = all.map({ $0.bounds.origin.x }).max(), right > left else { return [] }
+        return all.filter { $0.bounds.origin.x == right }
+    }
+
+    /// Where the code text starts: the second column (after the line numbers) that at least six code rows share, the
+    /// sample file's rows all beginning with "l"; nil while it is not drawn. A deliberate shift of the text changes
+    /// it; typing must not.
+    func codeTextX() -> Float? {
+        var counts: [Float: Int] = [:]
+        for g in window.allGlyphs where g.bounds.origin.x > 150 && g.bounds.origin.y > 100 { counts[g.bounds.origin.x, default: 0] += 1 }
+        let columns = counts.filter { $0.value >= 6 }.keys.sorted()
+        return columns.count >= 2 ? columns[1] : nil
     }
 }

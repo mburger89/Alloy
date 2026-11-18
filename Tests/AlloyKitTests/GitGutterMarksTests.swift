@@ -21,14 +21,40 @@ import Testing
         #expect(m.marks.isShowing)
         let built = GitGutterMarks.build(m.marks.hunks, rowCount: m.doc.buffer.snapshot().lineCount)
         #expect(built.lines.count == 3)
-        #expect(built.lines[0].gutterBar != nil && built.lines[0].gutterMarker == nil)
-        #expect(built.lines[2].gutterMarker?.text == "\u{25B8}" && built.lines[2].gutterBar == nil)
-        // The wedge is on the row after the deletion (l8 is row 7 of the new text).
+        #expect(built.lines[0].changeBar != nil && built.lines[2].changeBar != nil)
+        // The deletion's triangle is on the row after it (l8 is row 7 of the new text).
         #expect(built.lines[2].lines == 7..<8)
         #expect(Set(built.tags.keys) == Set(built.lines.compactMap(\.tag)))
-        // Two bars are drawn (the wedge is a marker, not a bar).
+        // Two bars are drawn in the change lane (the deletion is a triangle, not a bar).
         m.window.tick()
-        #expect(m.bars().count >= 2)
+        #expect(m.changeBars().count >= 2)
+    }
+
+    @Test func buildEmitsChangeBarsOnly() {
+        let red = Color(red: 1, green: 0, blue: 0)
+        _ = red
+        // l2 modified, "new" added after l4, l7 deleted.
+        let hunks = GitHunks.compute(base: MarkRig.base, buffer: "l1\nL2\nl3\nl4\nnew\nl5\nl6\nl8\n")
+        #expect(hunks.map(\.kind) == [.modified, .added, .deleted])
+        let built = GitGutterMarks.build(hunks, rowCount: 8)
+        #expect(built.lines.count == 3)
+        #expect(built.lines.map(\.changeBar) == [.modified(.gitBarModified), .added(.gitBarAdded), .deletedAbove(.gitBarDeleted)])
+        #expect(built.lines.allSatisfy { $0.gutterBar == nil && $0.gutterMarker == nil })
+        #expect(built.lines[2].lines.count == 1)
+    }
+
+    @Test func deletionAtFirstAndLastRowAnchorsDeletedAbove() {
+        // Deleted first line: the mark sits on row 0, which exists.
+        let first = GitGutterMarks.build(GitHunks.compute(base: "a\nb\nc\n", buffer: "b\nc\n"), rowCount: 3)
+        #expect(first.lines.map(\.lines) == [0..<1])
+        #expect(first.lines.map(\.changeBar) == [.deletedAbove(.gitBarDeleted)])
+        // Deleted last line: no row follows, so the mark clamps to the last row.
+        let last = GitGutterMarks.build(GitHunks.compute(base: "a\nb\nc\n", buffer: "a\nb\n"), rowCount: 3)
+        #expect(last.lines.map(\.lines) == [2..<3])
+        #expect(last.lines.map(\.changeBar) == [.deletedAbove(.gitBarDeleted)])
+        // Everything deleted: one empty row.
+        let all = GitGutterMarks.build(GitHunks.compute(base: "a\nb\n", buffer: ""), rowCount: 1)
+        #expect(all.lines.map(\.lines) == [0..<1])
     }
 
     @Test func deletionAtTheEndAndFirstLineHunks() async throws {
@@ -143,22 +169,24 @@ import Testing
         #expect(m.marks.hunks[0].newStart == 3)
     }
 
-    @Test func gitOwnerNeverHidesAuthorBar() async throws {
+    @Test func gitAndAuthorBarsShareARow() async throws {
         // The window settles first, then the marks arrive with a save.
         let m = try await MarkRig.make()
         await m.quiesce(30)
         try await m.edit(to: "l1\nL2\nl3\nl4\nl5\nL6\nl7\nl8\n")
         await m.settle("two hunks") { m.marks.hunks.count == 2 }
-        await m.settle("bars drawn", advance: 0) { m.bars().count >= 2 }
-        let before = m.bars().map { [$0.background.h, $0.background.s, $0.background.l] }
+        await m.settle("change bars drawn", advance: 0) { m.changeBars().count >= 2 }
+        let before = m.changeBars().map { [$0.bounds.origin.y, $0.bounds.size.height] }
         let red = Color(red: 1, green: 0, blue: 0)
         // A default-owner bar on the first hunk's row (an author's, a diagnostic's).
         m.view.decorations.setLineDecorations([CodeLineDecoration(lines: 1..<2, gutterBar: red)], asOf: m.doc.buffer.version)
-        for _ in 0..<5 { m.window.tick(); await Task.yield() }
-        let colours = m.bars().map { [$0.background.h, $0.background.s, $0.background.l] }
-        try #require(colours.count == before.count && colours.count >= 2)
-        #expect(colours[0] != before[0], "the default owner's bar wins its row")
-        #expect(colours[1] == before[1], "the git bar shows on the other rows")
+        await m.settle("both drawn", advance: 0) { !m.gutterBars().isEmpty }
+        let after = m.changeBars().map { [$0.bounds.origin.y, $0.bounds.size.height] }
+        #expect(after == before, "the git bar still shows on every row")
+        let authorBar = try #require(m.gutterBars().first)
+        let gitBar = try #require(m.changeBars().first)
+        #expect(authorBar.bounds.origin.y == gitBar.bounds.origin.y, "both marks are on the same row")
+        #expect(authorBar.bounds.origin.x > gitBar.bounds.origin.x)
     }
 
     @Test func settingGutterMarksOffRemovesAndStops() async throws {
@@ -214,5 +242,84 @@ import Testing
         let m = try await MarkRig.make(worktree: ["a.txt": Self.modified])
         await m.settle("shown") { m.marks.isShowing }
         #expect(m.marks.lastDiffOffMain == true)
+    }
+}
+
+/// The change lane is reserved while git marks can show, and clicks on its bars reach git's popover.
+@MainActor
+@Suite struct GitChangeLaneTests {
+    static let modified = "l1\nL2\nl3\nl4\nl5\nl6\nl7\nl8\n"
+
+    @Test func laneReservedForTrackedCleanFileBeforeAnyHunk() async throws {
+        let m = try await MarkRig.make()
+        await m.settle("lane reserved") { m.marks.laneReserved }
+        #expect(m.view.gitLaneReserved)
+        #expect(m.marks.hunks.isEmpty)
+        await m.quiesce(30)
+        let before = try #require(m.codeTextX())
+        try await m.edit(to: Self.modified)
+        await m.settle("hunk") { m.marks.hunks.count == 1 }
+        await m.settle("bar drawn", advance: 0) { !m.changeBars().isEmpty }
+        m.window.tick()
+        #expect(m.codeTextX() == before, "the first hunk after a save moves no text")
+        #expect(m.marks.laneReserved)
+    }
+
+    @Test func noLaneForUntrackedChatInlineAndSideBySide() async throws {
+        let u = try await MarkRig.make(files: ["a.txt": "x\n"], worktree: ["b.txt": "one\ntwo\n"], open: "b.txt")
+        await u.quiesce()
+        #expect(!u.marks.laneReserved && !u.view.gitLaneReserved)
+        let c = try await MarkRig.make(worktree: ["a.txt": Self.modified], mode: .chat)
+        await c.quiesce()
+        #expect(!c.marks.laneReserved && !c.view.gitLaneReserved)
+        let m = try await MarkRig.make(worktree: ["a.txt": Self.modified])
+        await m.settle("reserved") { m.marks.laneReserved }
+        for mode in [Presentation.inline, .sideBySide] {
+            m.workspace.setPresentation(mode, of: m.path, in: m.pane)
+            await m.settle("lane released in \(mode)") { !m.marks.laneReserved && !m.view.gitLaneReserved }
+        }
+        m.workspace.setPresentation(.plain, of: m.path, in: m.pane)
+        await m.settle("lane back") { m.marks.laneReserved && m.view.gitLaneReserved }
+    }
+
+    @Test func changeBarClickOpensHunkPopover() async throws {
+        let m = try await MarkRig.make()
+        await m.quiesce(30)
+        // l2 modified and an author bar on the same row.
+        try await m.edit(to: Self.modified)
+        await m.settle("hunk") { m.marks.hunks.count == 1 }
+        let red = Color(red: 1, green: 0, blue: 0)
+        m.view.decorations.setLineDecorations([CodeLineDecoration(lines: 1..<2, gutterBar: red)], asOf: m.doc.buffer.version)
+        await m.settle("both bars drawn", advance: 0) { !m.changeBars().isEmpty && !m.gutterBars().isEmpty }
+        let git = try #require(m.changeBars().first)
+        m.window.click(at: Point(x: Pixels(git.bounds.origin.x + 1.5), y: Pixels(git.bounds.origin.y + git.bounds.size.height / 2)))
+        try await m.window.runUntil { m.view.selectedGitHunk != nil }
+        #expect(m.view.selectedEdit == nil, "the git bar click does not select an author edit")
+    }
+
+    @Test func changeBarContextMenuDoesNotCrash() async throws {
+        let m = try await MarkRig.make()
+        await m.quiesce(30)
+        try await m.edit(to: Self.modified)
+        await m.settle("hunk bar", advance: 0) { m.marks.hunks.count == 1 && !m.changeBars().isEmpty }
+        let git = try #require(m.changeBars().first)
+        m.window.rightClick(at: Point(x: Pixels(git.bounds.origin.x + 1.5), y: Pixels(git.bounds.origin.y + git.bounds.size.height / 2)))
+        await m.quiesce(10)
+        #expect(m.view.selectedEdit == nil)
+    }
+
+    @Test func deletionTriangleClickOpensHunkPopover() async throws {
+        let m = try await MarkRig.make()
+        await m.quiesce(30)
+        // l2 modified (its bar tells the lane's x) and l7 deleted: the triangle is on the row of l8.
+        try await m.edit(to: "l1\nL2\nl3\nl4\nl5\nl6\nl8\n")
+        await m.settle("two hunks", advance: 0) { m.marks.hunks.count == 2 && !m.changeBars().isEmpty }
+        let bar = try #require(m.changeBars().first)
+        let textX = try #require(m.codeTextX())
+        let code = m.window.allGlyphs.filter { $0.bounds.origin.x == textX && $0.bounds.origin.y > 100 }.sorted { $0.bounds.origin.y < $1.bounds.origin.y }
+        let row = try #require(code.count > 6 ? code[6] : nil)
+        m.window.click(at: Point(x: Pixels(bar.bounds.origin.x + 1.5), y: Pixels(row.bounds.origin.y + row.bounds.size.height / 2)))
+        try await m.window.runUntil { m.view.selectedGitHunk != nil }
+        #expect(m.view.selectedGitHunk?.hunk.kind == .deleted)
     }
 }

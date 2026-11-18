@@ -43,6 +43,36 @@ import Testing
         #expect(!m.marks.isShowing)
     }
 
+    @Test func rightPaneMarksAreChangeBars() async throws {
+        let m = try await MarkRig.make(files: ["a.txt": Self.base], worktree: ["a.txt": Self.threeHunks])
+        await open(m, .head)
+        let built = GitCompareDecorations.build(try #require(m.view.compare), leftRowCount: 20, rightRowCount: 21)
+        let bars = built.rightLines.compactMap(\.changeBar)
+        #expect(built.rightLines.count == 3 && bars.count == 3)
+        #expect(built.rightLines.allSatisfy { $0.gutterBar == nil && $0.gutterMarker == nil })
+        if case .modified = bars[0] {} else { Issue.record("first is modified") }
+        if case .added = bars[1] {} else { Issue.record("second is added") }
+        // The left pane keeps gutter bars: HEAD-side rows are not changes to the file.
+        #expect(built.leftLines.allSatisfy { $0.gutterBar != nil && $0.changeBar == nil })
+    }
+
+    @Test func deletionIsDeletedAboveOnRightPane() async throws {
+        let m = try await MarkRig.make(files: ["a.txt": Self.base], worktree: ["a.txt": Self.threeHunks])
+        await open(m, .head)
+        let built = GitCompareDecorations.build(try #require(m.view.compare), leftRowCount: 20, rightRowCount: 20)
+        let last = try #require(built.rightLines.last)
+        if case .deletedAbove = last.changeBar {} else { Issue.record("deletion is deletedAbove") }
+        #expect(last.lines.count == 1 && last.lines.upperBound <= 20)
+    }
+
+    @Test func clickingRightChangeBarFocusesHunk() async throws {
+        let m = try await MarkRig.make(files: ["a.txt": Self.base], worktree: ["a.txt": Self.threeHunks])
+        await open(m, .head)
+        let tag = try #require(m.view.compareTags.first { $0.value == 2 }?.key)
+        m.view.focusCompareHunk(tag: tag)
+        #expect(m.view.compareFocus == 2)
+    }
+
     @Test func compareIndexUsesIndexText() async throws {
         let m = try await MarkRig.make(files: ["a.txt": Self.base], worktree: ["a.txt": Self.threeHunks])
         try git(m.rig.root, "add", "a.txt")

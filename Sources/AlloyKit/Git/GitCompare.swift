@@ -55,8 +55,8 @@ struct GitCompareDecorations {
     var leftLines: [CodeLineDecoration] = []
     var leftRows: [CodeVirtualRow] = []
 
-    /// Bars and tints on the changed rows of both panes, a wedge where only the left has rows, and filler rows that
-    /// keep the two panes level.
+    /// Change bars and tints on the changed rows of the right pane (a `deletedAbove` triangle where only the left has
+    /// rows), gutter bars and tints on the base rows of the left, and filler rows that keep the two panes level.
     static func build(_ compare: GitCompare, leftRowCount: Int, rightRowCount: Int) -> GitCompareDecorations {
         var out = GitCompareDecorations()
         var tag: UInt64 = 1
@@ -72,13 +72,12 @@ struct GitCompareDecorations {
                     let rows = part.bufferRows
                     let clipped = min(rows.lowerBound, rightLast)..<min(rows.upperBound, rightRowCount)
                     if !clipped.isEmpty {
-                        out.rightLines.append(CodeLineDecoration(lines: clipped, gutterBar: part.kind == .added ? .gitBarAdded : .gitBarModified,
-                                                                 background: .addedRowTint, tag: tag))
+                        out.rightLines.append(CodeLineDecoration(lines: clipped, background: .addedRowTint, tag: tag,
+                                                                 changeBar: part.kind == .added ? .added(.gitBarAdded) : .modified(.gitBarModified)))
                     }
                 case .deleted:
                     let row = min(part.markRow, rightLast)
-                    out.rightLines.append(CodeLineDecoration(lines: row..<(row + 1),
-                                                             gutterMarker: CodeGutterMarker("\u{25B8}", color: .gitBarDeleted), tag: tag))
+                    out.rightLines.append(CodeLineDecoration(lines: row..<(row + 1), tag: tag, changeBar: .deletedAbove(.gitBarDeleted)))
                 }
                 if part.oldCount > 0 {
                     let clipped = max(0, oldRows.lowerBound)..<min(oldRows.upperBound, max(leftRowCount, oldRows.upperBound))

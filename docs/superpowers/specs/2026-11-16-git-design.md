@@ -34,7 +34,7 @@ git marks say what differs from HEAD.** They are two separate facts and are show
 
 1. **Gutter change marks vs HEAD.** In Code mode, in the `.plain` presentation only (our call: inline and side-by-side
    already show the ledger diff, compare views show git hunks themselves), each open document shows added (bar),
-   modified (bar) and deleted (`CodeGutterMarker` wedge on the row after the deletion) marks against `HEAD`, computed
+   modified (bar) and deleted (`CodeChangeBar.deletedAbove`, a triangle at the top edge of the row after the deletion) marks against `HEAD`, computed
    in AlloyCore from the cached HEAD blob and the current buffer text with `TextDiff.hunks(old:new:context: 0)`.
    Marks are set with `asOf` the buffer version they were computed from, so MetalUI maps them through later edits
    (as `DiffDecorations` already does). They live in their own decoration owner `CodeDecorationOwner("git",
@@ -67,8 +67,9 @@ git marks say what differs from HEAD.** They are two separate facts and are show
    forces (our call).
 8. **Blame on demand.** Git > Blame Line (`git-blame-line`) and Toggle File Blame (`git-blame-file`). Line blame shows
    a popover (anchored at the line with the text-anchored popover) with author, date, short hash and summary. File
-   blame shows a two-character marker (author initials) at the first row of each blame run in the gutter marker
-   lane; full info on hover once gap (b) lands, and in the line popover until then. Blame runs once per request
+   blame shows initials and age (e.g. `MB 3d`) at the first row of each blame run in the gutter marker
+   lane (`gutterMarkerLane(width: 6)`); full info (author, date, short hash, summary) on hover via `gutterHelp`,
+   computed only on hover. Blame runs once per request
    and is cached until the file is saved or HEAD changes. Never computed while not requested.
 9. **Git menu.** `CommandMenu("Git")` in `AppCommands`: Compare with HEAD, Stage File, Unstage File, Commit...,
    Switch Branch..., Blame Line, Toggle File Blame, Next Change / Previous Change (`git-next-change`,
@@ -113,8 +114,9 @@ git marks say what differs from HEAD.** They are two separate facts and are show
   non-goals.
 - **Two marks per row.** Author bars are drawn by the default owner (name `""`, priority 0). MetalUI gives each
   field to the higher priority, and a tie to the later name (`"git"` would beat `""`), so the git owner uses priority
-  **-1** (our call). Until gap (a) lands, the author bar wins on a shared row and the git bar is hidden there; the
-  git bar shows on every other row. This is an interim state, not a workaround: no custom drawing.
+  **-1** (our call). Git marks live in MetalUI's independent change lane (`CodeLineDecoration.changeBar`), so the git bar
+  and the author bar show on the same row. The owner keeps priority **-1**. Clicks and context menus on a git bar
+  arrive as `CodeGutterHit.Source.changeBar`; hovering one shows the hunk summary (e.g. `+3 −1`).
 - **Commits and Claude review stay as today.** A commit that makes a ledger file equal HEAD still clears that
   review (`keepAllEdits`). Staging does not touch the ledger.
 - **Persistence without a version bump (our call).** `UIState` decodes every field tolerantly
@@ -138,7 +140,7 @@ git marks say what differs from HEAD.** They are two separate facts and are show
   HEAD-vs-index hunk and applies it with `--cached -R`.
 - **Revert hunk** is a buffer edit: it replaces the hunk's rows with HEAD's lines through the normal edit path, so
   it is undoable with ⌘Z and reaches disk and the ledger (as a user edit) on the next save. Before applying, it
-  tests overlap with pending Claude edits: the hunk's buffer row range (deletion = the row after the wedge) against
+  tests overlap with pending Claude edits: the hunk's buffer row range (deletion = the row after the deleted-above triangle) against
   the rows of every pending ledger edit for the file, both in the current buffer version. Any shared row asks
   "This also reverts Claude's unreviewed change" (Decisions Q2).
 - **Paths and repo root.** On project open (and on a `.git` event at the root), `git rev-parse --show-toplevel
@@ -266,9 +268,8 @@ Code sidebar:  [ Files | Git ]
                     Old.swift → New.swift    R  [+]
   Untracked (1)     notes.txt                ?  [+] [🗑]
 
-Editor gutter:  12 ┃ (author bar wins; git bar hidden on this row until the change lane lands)
-                13 ▌ (git bar)
-                14 ▸ deleted wedge (gutter marker)
+Editor gutter:  12 ┃ ▌ (author bar, git change bar)
+                14 ▸ deleted-above triangle at the row's top edge
 ```
 
 ### Persistence and settings
@@ -326,9 +327,9 @@ Editor gutter:  12 ┃ (author bar wins; git bar hidden on this row until the ch
   `GitPanelModel` is read only by the Git tab; the title reads the existing `branchName`; no Code body reads
   `AlloySettings.git`.
 - **Spawn caps:** one status in flight plus one follow-up; at most 2 concurrent `cat-file`; blame only on request.
-- **Gutter lane:** with blame off, git adds no gutter marker except deletion wedges, which use the lane diff
-  decorations already use. Toggling file blame reserves the marker lane with `gutterMarkerLane(true)` while it is on
-  and releases it when off: one deliberate text shift per toggle, never while typing (our call).
+- **Gutter lane:** git reserves `changeLane(true)` while marks can show for the document (repo open, file
+  tracked). File blame uses `gutterMarkerLane(width: 6)` while it is on and releases it when off: one deliberate
+  text shift per toggle, never while typing (our call). Hover text is computed only on hover.
 - **New guards:** `GitIdleTests` (no git spawn and 0 element requests across N idle frames with a repo open, using
   `gitSpawnCount`), `GitTypingFrameTests` (Code layouts keep 91/107/117 with marks and status colours on and the Git
   tab shown), a `BodyProbe` per new view (Git tab rows, tree rows under status change, branch menu, commit box)
@@ -336,7 +337,9 @@ Editor gutter:  12 ┃ (author bar wins; git bar hidden on this row until the ch
   events → at most 2 status runs), and a read-invariant test (status leaves `.git/index` untouched).
 - **Memory:** blobs cached only for open documents; blame cache dropped when the file closes.
 
-## Known MetalUI gaps (to forward)
+## Known MetalUI gaps (landed)
+
+Gaps (a), (b) and (c) have landed in MetalUI (#377, #374, #375) and are adopted (task 11). Gap (d) remains conditional.
 
 Verified present in MetalUI: `TextEditor`, `TextField`, `Menu`, `popover(isPresented:)` / `popover(item:)` with
 `attachmentAnchor`, the `CodeView` text-anchored `popover(item:attachmentAnchor: CodeTextAnchor)` (`.caret`,
@@ -345,14 +348,14 @@ Verified present in MetalUI: `TextEditor`, `TextField`, `Menu`, `popover(isPrese
 `gutterMarkerLane(_:)`, `CodeGutterMarker(text, color:)`, `CodeVirtualRow`. `CodeGutterHit.Source` has only
 `lineDecoration`, `virtualRow` and `gutterMarker`. The marker lane is two space advances wide.
 
-- **(a) Independent change lane.** Wanted: `CodeLineDecoration.changeBar: CodeChangeBar?` (enum `.added(Color)`,
+- **(a) Independent change lane (landed, MetalUI #377).** Wanted: `CodeLineDecoration.changeBar: CodeChangeBar?` (enum `.added(Color)`,
   `.modified(Color)`, `.deletedAbove(Color)`) drawn in its own narrow lane beside `gutterBar`, enabled by
   `CodeView.changeLane(_ reserved: Bool)`, with `CodeGutterHit.Source.changeBar`. SwiftUI has no equivalent
   (closest: NSRulerView custom drawing). Needed so git and author bars show on the same row.
-- **(b) Gutter hover text.** Wanted: `CodeView.gutterHelp(_ text: @MainActor (CodeGutterHit) -> String?)`, so blame
+- **(b) Gutter hover text (landed, MetalUI #374).** Wanted: `CodeView.gutterHelp(_ text: @MainActor (CodeGutterHit) -> String?)`, so blame
   and hunk summaries show on hover of a marker or bar. The location-closure `help` gives a point but no way to map
   it to a gutter hit. SwiftUI equivalent: `.help` per view.
-- **(c) Wider marker lane (optional).** Wanted: `CodeView.gutterMarkerLane(width: Int)` in characters, so file blame
+- **(c) Wider marker lane (landed, MetalUI #375).** Wanted: `CodeView.gutterMarkerLane(width: Int)` in characters, so file blame
   can show initials and age (e.g. `MB 3d`). Without it v1 shows two-character initials only.
 - **(d) End-of-line annotation (only if the user picks inline blame, Decisions Q3).** Wanted:
   `CodeLineDecoration.trailingText: (String, CodeStyleID)?` drawn after the line's last glyph, not selectable, no
@@ -407,7 +410,7 @@ independent); 10 last.
 3. **Blame display.** (a) Gutter initials at each run, details in the line popover now and on hover after gap (b)
    (recommended, no layout shift while on); (b) inline end-of-line text like GitLens (needs gap d); (c) virtual
    rows above each run (works today, shifts layout).
-4. **Ship order vs MetalUI change lane.** (a) Ship gutter marks now with the interim rule (git bar hidden on rows
+4. **Ship order vs MetalUI change lane (superseded by task 11).** (a) Ship gutter marks now with the interim rule (git bar hidden on rows
    with an author bar), adopt the lane later (recommended); (b) wait for gap (a) before shipping gutter marks.
 5. **Scope of v1.** (a) Everything in Goals (recommended); (b) leave blame and branch creation for a v1.1.
 
@@ -419,3 +422,4 @@ The user approved every recommendation above ("Approved build it"). Binding:
 - 2(a) confirm, then revert as an undoable user edit. 3(a) gutter initials, details in the popover.
 - 4(a) ship before the MetalUI change lane with the interim rule. 5(a) full v1 scope.
 - Ledger edits use `Author.user` plus edit-group id (code-intelligence.md decision 1).
+- Task 11 (2026-11-16): gaps a, b, c adopted; interim rule removed.

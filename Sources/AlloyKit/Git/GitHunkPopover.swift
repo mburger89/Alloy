@@ -115,7 +115,7 @@ struct GitHunkPopover: Component {
 }
 
 extension OpenDocumentView {
-    /// A press on a git bar or wedge: opens that hunk's popover, pointing at the row the press hit now.
+    /// A press on a git change bar: opens that hunk's popover, pointing at the row the press hit now.
     func openGitHunk(_ hit: CodeGutterHit) {
         guard let tag = hit.tag, let hunk = gitMarks?.tags[tag] else { return }
         let snapshot = document.buffer.snapshot()

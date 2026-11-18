@@ -9,11 +9,16 @@ import Observation
 enum GitBlameMarks {
     static let owner = CodeDecorationOwner("git-blame", priority: -1)
 
-    /// The marker of each run (tag = its index in `runs` plus one), over the run's first row.
-    static func build(_ runs: [GitBlameRun], rowCount: Int) -> [CodeLineDecoration] {
+    /// The width of the file-blame marker lane in characters: two initials, a space, up to three of age.
+    static let laneWidth = 6
+
+    /// The marker of each run (tag = its index in `runs` plus one), over the run's first row: initials and age
+    /// (`AL 3d`), never wider than the lane.
+    static func build(_ runs: [GitBlameRun], rowCount: Int, now: Date = Date()) -> [CodeLineDecoration] {
         var lines: [CodeLineDecoration] = []
         for (i, run) in runs.enumerated() where run.startLine < rowCount {
-            let text = run.isUncommitted ? "\u{00B7}\u{00B7}" : run.initials
+            let text = run.isUncommitted ? "\u{00B7}\u{00B7}"
+                : String("\(run.initials.prefix(2)) \(GitGutterHelp.age(from: run.authorTime, now: now))".prefix(laneWidth))
             let color: Color = run.isUncommitted ? .mutedInk : .primary
             lines.append(CodeLineDecoration(lines: run.startLine..<(run.startLine + 1),
                                             gutterMarker: CodeGutterMarker(text, color: color), tag: UInt64(i + 1)))

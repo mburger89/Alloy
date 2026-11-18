@@ -114,6 +114,7 @@ struct SideBySideView: Component {
                     .codeViewEditable(editable)
                     .scrollState(view.scroll)
                     .geometry(view.rightGeometry)
+                    .changeLane(git)
                     .onScroll { position in view.syncScroll(from: view.rightGeometry, to: view.leftGeometry, row: position.row, into: view.leftScroll) }
                     .onGutterBarClick { hit in
                         if git { view.focusCompareHunk(tag: hit.tag) } else { view.selectedEdit = hit.tag.flatMap { view.tags[$0] } }
@@ -138,6 +139,7 @@ struct SideBySideView: Component {
                     .codeViewEditable(editable)
                     .scrollState(view.scroll)
                     .geometry(view.rightGeometry)
+                    .changeLane(git)
                     .onScroll { position in view.syncScroll(from: view.rightGeometry, to: view.leftGeometry, row: position.row, into: view.leftScroll) }
                     .onGutterBarClick { hit in
                         if git { view.focusCompareHunk(tag: hit.tag) } else { view.selectedEdit = hit.tag.flatMap { view.tags[$0] } }

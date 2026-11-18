@@ -79,7 +79,7 @@ extension GitDocumentMarks {
         return (range, text)
     }
 
-    /// Whether `hunk`'s rows (a deletion's: the row after the wedge) share a row with an unreviewed edit by a session,
+    /// Whether `hunk`'s rows (a deletion's: the row below its marker) share a row with an unreviewed edit by a session,
     /// both in the current buffer. Unsure counts as shared.
     private func overlapsPendingClaudeEdit(_ hunk: GitHunk, snapshot: CodeSnapshot) -> Bool {
         guard let view, let workspace = coordinator?.host, let file = workspace.ledger.files[path] else { return false }

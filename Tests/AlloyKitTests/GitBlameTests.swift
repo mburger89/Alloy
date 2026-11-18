@@ -74,9 +74,56 @@ import Testing
         await m.settle("runs") { m.view.blame.runs.count == 3 }
         #expect(m.view.blame.fileOn)
         #expect(m.view.blame.runs.map(\.initials) == ["AL", "BR", "AL"])
-        let built = GitBlameMarks.build(m.view.blame.runs, rowCount: 8)
+        let now = m.view.blame.runs[0].authorTime.addingTimeInterval(3 * 86400 + 60)
+        let built = GitBlameMarks.build(m.view.blame.runs, rowCount: 8, now: now)
         #expect(built.map(\.lines) == [0..<1, 4..<5, 6..<7])
-        #expect(built.map { $0.gutterMarker?.text } == ["AL", "BR", "AL"])
+        #expect(built.map { $0.gutterMarker.map { String($0.text.prefix(2)) } } == ["AL", "BR", "AL"])
+        #expect(built.allSatisfy { $0.gutterMarker?.text.contains(" ") == true })
+    }
+
+    @Test func ageUnits() {
+        let now = Date(timeIntervalSince1970: 2_000_000_000)
+        func age(_ s: Double) -> String { GitGutterHelp.age(from: now.addingTimeInterval(-s), now: now) }
+        #expect(age(59) == "now")
+        #expect(age(5 * 60) == "5m")
+        #expect(age(3 * 3600) == "3h")
+        #expect(age(3 * 86400) == "3d")
+        #expect(age(14 * 86400) == "2w")
+        #expect(age(60 * 86400) == "2mo")
+        #expect(age(11 * 365 * 86400) == "11y")
+        #expect(age(150 * 365 * 86400) == "99y")
+    }
+
+    @Test func markerNeverExceedsLaneWidth() {
+        let now = Date(timeIntervalSince1970: 2_000_000_000)
+        let old = now.addingTimeInterval(-150 * 365 * 86400)
+        for name in ["Ab", "Ab Cd Ef", "A", "Extraordinarily Long-Name"] {
+            let run = GitBlameRun(startLine: 0, count: 1, hash: "abc1234", author: name, authorTime: old, summary: "s")
+            let text = GitBlameMarks.build([run], rowCount: 1, now: now).first?.gutterMarker?.text ?? ""
+            #expect(text.count <= GitBlameMarks.laneWidth, "\(name): \(text)")
+        }
+    }
+
+    @Test func fileBlameLaneWidensOnceAndNeverWhileTyping() async throws {
+        let m = try await twoAuthors()
+        await m.quiesce(30)
+        let off = try #require(m.codeTextX())
+        m.coordinator.toggleFileBlame(in: m.view)
+        await m.settle("runs") { m.view.blame.runs.count == 3 }
+        await m.quiesce(30)
+        let on = try #require(m.codeTextX())
+        #expect(on > off, "the lane widens once on toggle")
+        try await m.edit(to: Self.second + "typed\n")
+        await m.quiesce(30)
+        #expect(m.codeTextX() == on, "no shift while typing or saving")
+        m.coordinator.toggleFileBlame(in: m.view)
+        await m.quiesce(30)
+        let after = try #require(m.codeTextX())
+        // MetalUI keeps the default two-advance lane once any marker was shown, so the text settles between the two.
+        #expect(after < on && after >= off, "the lane narrows on toggle off")
+        try await m.edit(to: Self.second + "typed again\n")
+        await m.quiesce(30)
+        #expect(m.codeTextX() == after, "no shift while typing after toggle off")
     }
 
     @Test func uncommittedLinesGetMutedDots() {
@@ -171,7 +218,7 @@ import Testing
         m.coordinator.toggleFileBlame(in: m.view)
         #expect(m.marks.isShowing, "removing blame left the git marks alone")
         m.window.tick()
-        #expect(m.bars().count >= 1)
+        #expect(m.changeBars().count >= 1)
     }
 
     @Test func closingViewDropsCache() async throws {

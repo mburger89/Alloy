@@ -90,8 +90,8 @@ import Testing
         await m.quiesce(30)
         try await m.edit(to: Self.modified)
         await m.settle("hunk") { m.marks.hunks.count == 1 }
-        await m.settle("bar drawn", advance: 0) { !m.bars().isEmpty }
-        let bar = try #require(m.bars().first)
+        await m.settle("bar drawn", advance: 0) { !m.changeBars().isEmpty }
+        let bar = try #require(m.changeBars().first)
         m.window.click(at: Point(x: Pixels(bar.bounds.origin.x + 1.5), y: Pixels(bar.bounds.origin.y + bar.bounds.size.height / 2)))
         try await m.window.runUntil { (try? m.window.element(identifier: "code-git-hunk-popover")) != nil }
         let selection = try #require(m.view.selectedGitHunk)
@@ -104,8 +104,8 @@ import Testing
         await m.quiesce(30)
         try await m.edit(to: Self.modified)
         await m.settle("hunk") { m.marks.hunks.count == 1 }
-        await m.settle("bar drawn", advance: 0) { !m.bars().isEmpty }
-        let bar = try #require(m.bars().first)
+        await m.settle("bar drawn", advance: 0) { !m.changeBars().isEmpty }
+        let bar = try #require(m.changeBars().first)
         m.window.click(at: Point(x: Pixels(bar.bounds.origin.x + 1.5), y: Pixels(bar.bounds.origin.y + bar.bounds.size.height / 2)))
         try await m.window.runUntil { (try? m.window.element(identifier: "git-hunk-revert")) != nil }
         try m.window.click(m.window.element(identifier: "git-hunk-revert"))

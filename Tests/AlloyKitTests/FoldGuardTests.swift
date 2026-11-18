@@ -163,6 +163,15 @@ import Testing
         let gutterMove = await cost { window.hover(at: at(a, 2, 2)) }
         #expect(zip(gutterMove, textMove).allSatisfy { $0 <= $1 } && gutterMove.count <= textMove.count,
                 "gutter move \(gutterMove) vs text move \(textMove)")
+        // Leaving the gutter ends its hover work over a few frames: wait until the window has drained it (a frame that
+        // asks for no elements) instead of trusting one tick, then measure the leave move itself.
+        func drained() async {
+            for _ in 0..<20 {
+                window.resetFrameWork(); window.tick(); await Task.yield()
+                if window.frameWork.allSatisfy({ $0.elementRequests == 0 }) { return }
+            }
+        }
+        await drained()
         let leave = await cost { window.hover(at: at(t, 300, 100)) }
         #expect(leave.allSatisfy { $0 <= CodeModePerformanceTests.steadyCode1 + 2 }, "leave \(leave)")
         withExtendedLifetime(rig) {}

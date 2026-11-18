@@ -55,11 +55,16 @@ final class OpenDocumentView {
     @ObservationIgnored private var searchGeneration = 0
     /// The git coordinator's marks for this view (it owns them); nil without a repository or coordinator.
     @ObservationIgnored weak var gitMarks: GitDocumentMarks?
+    /// Whether the code view reserves the change lane (git marks can show for this document). Set by
+    /// `GitDocumentMarks.laneReserved`; read in the panel body, changes only when a recompute finishes.
+    var gitLaneReserved = false
     /// The hunk whose popover is open.
     var selectedGitHunk: GitHunkSelection?
     /// On-demand blame: the file-blame switch, its runs and the open blame popover. Nothing here is read per frame
     /// except `blame.fileOn` in the panel body.
     @ObservationIgnored let blame = GitBlameState()
+    /// How often the gutter hover text was asked for (a test seam: it must stay 0 without a hover).
+    @ObservationIgnored var gutterHelpCalls = 0
     /// The git compare this view shows (`.compareHead` / `.compareIndex`), or nil while it loads or when there is none.
     private(set) var compare: GitCompare?
     /// Why a compare has nothing to show (an untracked file, no repository).
@@ -1187,24 +1192,38 @@ extension CodePanel {
             .codeViewEditable(editable)
             .scrollState(view.scroll)
         // A code action server reserves the marker lane from the first frame, so the lightbulb never moves the text.
-        // File blame reserves the lane for as long as it is on: one deliberate shift per toggle.
-        if (view.scheduler != nil && view.features.codeAction) || view.blame.fileOn { base = base.gutterMarkerLane(true) }
+        // File blame widens the lane to initials and age for as long as it is on: one deliberate shift per toggle.
+        if view.blame.fileOn {
+            base = base.gutterMarkerLane(width: GitBlameMarks.laneWidth)
+        } else if view.scheduler != nil && view.features.codeAction {
+            base = base.gutterMarkerLane(true)
+        }
+        // Git marks live in the change lane, reserved from the first frame of a tracked file so the first hunk never
+        // shifts the text. Untracked files, chat panels and the diff presentations reserve nothing.
+        if view.gitLaneReserved { base = base.changeLane(true) }
         if let fold {
             base = base.foldState(fold).foldGutter(showsOnHover: true, onToggle: { [weak workspace] _ in workspace?.noteFoldsChanged() })
         }
         return base
             .onGutterBarClick { hit in
-                if hit.source == .gutterMarker, hit.tag == OpenDocumentView.lightbulbTag {
+                switch hit.source {
+                case .changeBar where hit.owner == GitGutterMarks.owner:
+                    view.openGitHunk(hit)
+                case .gutterMarker where hit.tag == OpenDocumentView.lightbulbTag:
                     view.scheduler?.showActions()
-                } else if hit.owner == GitGutterMarks.owner { view.openGitHunk(hit) }
-                else if hit.owner == GitBlameMarks.owner { view.openBlameRun(hit) }
-                else { view.selectedEdit = hit.tag.flatMap { view.tags[$0] } }
+                default:
+                    if hit.owner == GitBlameMarks.owner { view.openBlameRun(hit) }
+                    else { view.selectedEdit = hit.tag.flatMap { view.tags[$0] } }
+                }
             }
             .gutterBarContextMenu { hit in
-                if let edit = hit.tag.flatMap({ view.tags[$0] }) {
+                // Git's change bars and blame runs have their own tag spaces; only author bars name an edit.
+                if hit.source != .changeBar, hit.owner != GitBlameMarks.owner, hit.owner != GitGutterMarks.owner,
+                   let edit = hit.tag.flatMap({ view.tags[$0] }) {
                     editMenu(edit: edit, workspace: workspace, store: store, document: document, pane: view.pane)
                 }
             }
+            .gutterHelp { hit in view.gutterHelpText(for: hit) }
             .focused($codeFocused)
     }
 

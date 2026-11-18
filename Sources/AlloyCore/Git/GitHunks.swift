@@ -25,13 +25,13 @@ public struct GitHunk: Equatable, Sendable {
         self.leadingContext = leadingContext
     }
 
-    /// The buffer rows (0-based) the hunk covers; for a deletion the empty range at the row after the wedge.
+    /// The buffer rows (0-based) the hunk covers; for a deletion the empty range at the row after the deletion.
     public var bufferRows: Range<Int> {
         if newCount == 0 { return newStart..<newStart }
         return (newStart - 1)..<(newStart - 1 + newCount)
     }
 
-    /// The row a gutter mark or "go to change" lands on: the first changed row, or for a deletion the row below the wedge.
+    /// The row a gutter mark or "go to change" lands on: the first changed row, or for a deletion the row below the deletion.
     public var markRow: Int {
         newCount == 0 ? newStart : newStart - 1 + leadingContext
     }

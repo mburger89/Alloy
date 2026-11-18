@@ -23,6 +23,12 @@ final class GitDocumentMarks {
     private(set) var baseText: String?
     private var baseOID: String?
     private var showing = false
+    /// Whether git marks can show for this document: a HEAD blob was found while marks are on and the view is plain.
+    /// The code view reserves its change lane for as long as this holds, so the first hunk never shifts the text.
+    /// It changes only when a recompute finishes or the marks clear, never on typing.
+    private(set) var laneReserved = false {
+        didSet { if laneReserved != oldValue { view?.gitLaneReserved = laneReserved } }
+    }
     /// Whether git decorations are in the view's gutter now.
     var isShowing: Bool { showing }
     private var generation = 0
@@ -72,6 +78,7 @@ final class GitDocumentMarks {
         liveTask?.cancel(); liveTask = nil
         if let view, showing { GitGutterMarks.clear(view.decorations) }
         showing = false
+        laneReserved = false
         hunks = []; tags = [:]
     }
 
@@ -109,6 +116,7 @@ final class GitDocumentMarks {
         guard let result else { clearMarks(); return }
         lastDiffOffMain = result.offMain
         baseText = result.base
+        laneReserved = true
         if showing, result.oid == baseOID, result.hunks == hunks { return }
         baseOID = result.oid
         hunks = result.hunks
@@ -127,6 +135,7 @@ final class GitDocumentMarks {
     private func clearMarks() {
         if let view, showing { GitGutterMarks.clear(view.decorations) }
         showing = false
+        laneReserved = false
         hunks = []; tags = [:]; baseText = nil; baseOID = nil
     }
 
