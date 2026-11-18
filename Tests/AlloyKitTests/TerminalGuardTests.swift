@@ -376,3 +376,49 @@ import Testing
         #expect(BodyProbe.count("TerminalPanel") == panel)
     }
 }
+
+/// The paste confirm costs nothing while closed, and nothing per idle frame while open.
+@MainActor
+@Suite struct TerminalPasteGuardTests {
+    private func setup() async throws -> (Rig, TestWindow, TerminalPanelStore, UUID) {
+        let rig = Rig()
+        await rig.workspace.restoreUIState()
+        rig.workspace.setMode(.code)
+        let store = TerminalPanelStore(workspace: rig.workspace, spawner: ScriptedPtySpawner(), environment: ["SHELL": "/bin/sh"])
+        rig.workspace.toggleTerminal()
+        let window = try alloyWindow(rig.workspace, terminal: store)
+        for _ in 0..<10 { window.tick() }
+        let pane = try #require(rig.workspace.terminalLayout.active?.focusedPane)
+        return (rig, window, store, pane)
+    }
+
+    private func exists(_ window: TestWindow, _ id: String) -> Bool { (try? window.element(identifier: id)) != nil }
+
+    private func idleRequests(_ window: TestWindow) -> [Int] {
+        window.resetFrameWork()
+        for _ in 0..<10 { window.tick() }
+        return window.frameWork.map(\.elementRequests)
+    }
+
+    @Test func pasteConfirmClosedCostsNothing() async throws {
+        let (rig, window, _, _) = try await setup()
+        let confirm = BodyProbe.count("TerminalPasteConfirm")
+        #expect(idleRequests(window).allSatisfy { $0 == 0 })
+        #expect(BodyProbe.count("TerminalPasteConfirm") == confirm)
+        #expect(!exists(window, "terminal-paste-confirm"))
+        withExtendedLifetime(rig) {}
+    }
+
+    @Test func pasteConfirmOpenIdleCostsNothingAndClosesBack() async throws {
+        let (rig, window, store, pane) = try await setup()
+        #expect(store.pasteFromClipboard(pane, "a\nb", modes: TerminalModes()))
+        for _ in 0..<10 { window.tick() }
+        #expect(exists(window, "terminal-paste-confirm"))
+        #expect(idleRequests(window).allSatisfy { $0 == 0 })
+        store.cancelPaste()
+        for _ in 0..<10 { window.tick() }
+        #expect(!exists(window, "terminal-paste-confirm"))
+        #expect(idleRequests(window).allSatisfy { $0 == 0 })
+        withExtendedLifetime(rig) {}
+    }
+}

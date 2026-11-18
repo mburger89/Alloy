@@ -5,6 +5,14 @@ import MetalUI
 import MetalUITerminal
 import MetalUITerminalUI
 
+/// A multi-line paste waiting for the user's answer in one pane.
+struct PendingPaste: Equatable {
+    let pane: UUID
+    let text: String
+    let lines: Int
+    let modes: TerminalModes
+}
+
 /// The terminal panel's shell state. The layout itself lives in `Workspace.terminalLayout`; this holds what is not persisted
 /// (focus) and the actions the panel and the menu share. `visible` reads a flag of its own on the workspace, so the island
 /// row reruns when the panel appears or disappears, never when a tab changes.
@@ -89,6 +97,44 @@ final class TerminalPanelStore {
     func sendInput(_ pane: UUID, _ bytes: [UInt8]) {
         guard !bytes.isEmpty, paneState(pane) == .running else { return }
         manager?.write(pane, bytes)
+    }
+
+    // MARK: Paste confirm
+
+    /// The multi-line paste awaiting an answer; one at a time.
+    private(set) var pendingPaste: PendingPaste?
+
+    /// `TerminalView`'s paste hook. False: MetalUI pastes as usual. True: handled, nothing is sent now (a confirm is pending,
+    /// the first one stays if another paste arrives meanwhile).
+    func pasteFromClipboard(_ pane: UUID, _ text: String, modes: TerminalModes) -> Bool {
+        guard TerminalPasteGuard.needsConfirm(text, modes: modes, enabled: workspace.settings.terminal.confirmMultilinePaste)
+        else { return false }
+        if pendingPaste == nil {
+            pendingPaste = PendingPaste(pane: pane, text: text, lines: TerminalPasteGuard.lineCount(text), modes: modes)
+        }
+        return true
+    }
+
+    func confirmPaste(dontAskAgain: Bool) {
+        guard let pending = pendingPaste else { return }
+        pendingPaste = nil
+        terminalFocusToken &+= 1
+        sendInput(pending.pane, TerminalEncoder.encodePaste(pending.text, modes: pending.modes))
+        if dontAskAgain {
+            var s = workspace.settings
+            s.terminal.confirmMultilinePaste = false
+            try? workspace.updateSettings(s)
+        }
+    }
+
+    func cancelPaste() {
+        guard pendingPaste != nil else { return }
+        pendingPaste = nil
+        terminalFocusToken &+= 1
+    }
+
+    private func dropPendingPaste(of pane: UUID) {
+        if pendingPaste?.pane == pane { pendingPaste = nil }
     }
 
     /// Opens a URL in the browser; `main.swift` sets `TerminalLinkHooks.openURL`, so tests never launch one.
@@ -246,6 +292,7 @@ final class TerminalPanelStore {
     func markExited(_ pane: UUID, status: Int32) {
         guard states[pane] != .exited(status) else { return }
         states[pane] = .exited(status)
+        dropPendingPaste(of: pane)
         if findPane == pane { findPane = nil; findStatus = .idle }
         revision &+= 1
     }
@@ -253,6 +300,7 @@ final class TerminalPanelStore {
     func restart(_ pane: UUID) {
         guard case .exited = paneState(pane) else { return }
         states[pane] = nil
+        dropPendingPaste(of: pane)
         revision &+= 1
         onRestart?(pane)
     }
@@ -313,6 +361,7 @@ final class TerminalPanelStore {
         notices = notices.filter { live.contains($0.key) }
         manager?.retain(only: live)
         if let pane = findPane, !live.contains(pane) { findPane = nil; findStatus = .idle }
+        if let pending = pendingPaste, !live.contains(pending.pane) { pendingPaste = nil }
         if titles.count + states.count + notices.count != before { revision &+= 1 }
     }
 

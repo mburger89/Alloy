@@ -35,10 +35,11 @@ struct TerminalPaneView: Component, Equatable {
         return TerminalView(
             snapshotSource: source, theme: appearance.palette, keyCaptureExceptions: TerminalKeys.exceptions(),
             optionAsMeta: appearance.optionAsMeta, cursorBlink: appearance.cursorBlink, blinkStopsAfterIdle: true,
-            boldIsBright: false, cursorStyle: appearance.cursorStyle,
+            boldIsBright: false, cursorStyle: appearance.cursorStyle, accessibilityLabel: title,
             onInput: { bytes in store?.sendInput(paneID, bytes) },
             onResize: { size in store?.resizePane(paneID, cols: size.cols, rows: size.rows) },
-            onLink: { query in store?.linkQuery(paneID, query) })
+            onLink: { query in store?.linkQuery(paneID, query) },
+            onPaste: { text, modes in store?.pasteFromClipboard(paneID, text, modes: modes) ?? false })
             .font(appearance.font)
             // A restart builds a new session with a new source: a new identity, so the view is rebuilt, never rebound.
             .id(ObjectIdentifier(source).hashValue.description)
@@ -64,6 +65,8 @@ struct TerminalPaneView: Component, Equatable {
     var content: some ElementGroup {
         let _ = BodyProbe.hit("TerminalPaneView")
         let paneID = paneID, store = store, clipboard = clipboard
+        // The confirm is a child of the existing VStack, not a ZStack overlay: a wrapping ZStack adds one element request
+        // to every key frame (findBarElements would rise 13 -> 14).
         VStack(spacing: 0) {
             if let notice {
                 Text(verbatim: notice).font(size: 11).foregroundColor(.mutedInk).lineLimit(2)
@@ -72,6 +75,9 @@ struct TerminalPaneView: Component, Equatable {
                     .accessibilityIdentifier("terminal-notice-\(paneID.uuidString)")
             }
             if let store, store.findPane == paneID { TerminalFindBar(paneID: paneID, store: store) }
+            if let store, let p = store.pendingPaste, p.pane == paneID {
+                TerminalPasteConfirm(paneID: paneID, store: store)
+            }
             if let source {
                 terminal(source)
             } else {
