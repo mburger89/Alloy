@@ -234,7 +234,7 @@ import Foundation
         let html = LandingPage.render(index: PublishedIndex(), runs: [], content: c)
         #expect(html.contains("language server you already have installed"))
         c.hasLanguageServers = false
-        #expect(!LandingPage.render(index: PublishedIndex(), runs: [], content: c).contains("language server"))
+        #expect(!LandingPage.render(index: PublishedIndex(), runs: [], content: c).contains("language server you already have installed"))
     }
 
     @Test func faqAnswersAreAsRuled() {
@@ -242,6 +242,32 @@ import Foundation
         #expect(html.contains("Yes — Alloy runs your own Claude Code, so you need Claude Code installed and logged in (a Claude subscription or API account)."))
         #expect(html.contains("when you choose Restart to update — never mid-session"))
         #expect(html.contains("<h2 class=\"sr\">Features</h2>"))
+    }
+
+    @Test func editorSectionAndFeature() {
+        let c = LandingContent()
+        #expect(c.features.count == 4)
+        let html = Self.page(Self.run())
+        #expect(html.contains("A real code editor, too."))
+        #expect(html.contains("aria-label=\"Alloy&#39;s Code mode: the file tree") || html.contains("aria-label=\"Alloy's Code mode: the file tree"))
+        #expect(!html.contains("assets/shot-code.png"))
+        #expect(Self.page(Self.run(), assets: ["shot-code.png"]).contains("src=\"assets/shot-code.png\""))
+        #expect(html.contains("<section id=\"editor\">") && html.contains("Everything you need when you take the wheel."))
+        #expect(html.contains("href=\"#editor\">Editor</a>"))
+        var pos = html.range(of: "<div class=\"caps\">")!.upperBound
+        for (t, l) in c.editorCapabilities {
+            let item = "<b>\(SitePage.escape(t))</b><span>\(SitePage.escape(l))</span>"
+            let r = html.range(of: item, range: pos..<html.endIndex)
+            #expect(r != nil, "missing \(t)")
+            if let r { pos = r.upperBound }
+        }
+        // Escaping: a hostile capability is escaped.
+        var h = LandingContent(); h.editorCapabilities = [("<i>&", "\"x\"")]
+        let out = LandingPage.render(index: PublishedIndex(), runs: [], content: h)
+        #expect(out.contains("<b>&lt;i&gt;&amp;</b><span>&quot;x&quot;</span>"))
+        // Order: features, then editor, then themes.
+        let a = html.range(of: "id=\"features\"")!.lowerBound, b = html.range(of: "id=\"editor\"")!.lowerBound, d = html.range(of: "id=\"themes\"")!.lowerBound
+        #expect(a < b && b < d)
     }
 
     // MARK: contrast of the CSS tokens
@@ -274,7 +300,7 @@ import Foundation
         let lightBlock = String(css.components(separatedBy: "(prefers-color-scheme:light){:root{")[1].components(separatedBy: "}")[0])
         let light = dark.merging(Self.tokens(lightBlock)) { $1 }
         for (name, t) in [("dark", dark), ("light", light)] {
-            for (fg, bg) in [("--ink", "--bg"), ("--mute", "--bg"), ("--mute", "--card"), ("--mute", "--panel"), ("--accent", "--bg"), ("--btn", "--accent"),
+            for (fg, bg) in [("--ink", "--bg"), ("--mute", "--bg"), ("--mute", "--card"), ("--ink", "--card"), ("--mute", "--panel"), ("--accent", "--bg"), ("--btn", "--accent"),
                              ("--green", "--card"), ("--pink", "--card"), ("--cyan", "--card")] {
                 #expect(Self.ratio(t[fg]!, t[bg]!) >= 4.5, "\(name) \(fg) on \(bg) = \(Self.ratio(t[fg]!, t[bg]!))")
             }

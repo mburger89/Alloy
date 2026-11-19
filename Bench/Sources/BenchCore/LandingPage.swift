@@ -86,7 +86,7 @@ public enum LandingPage {
         var body = nav(c) + hero(c)
         if let latest { body += proofStrip(latest, wins: wins, c) }
         if let latest, !wins.isEmpty { body += race(latest, wins: wins, c, partial: partial) }
-        body += notes(c) + features(c) + themes(c) + languages(c) + built(c) + privacy(c) + faq(c) + closing(c) + footer(c)
+        body += notes(c) + features(c) + editor(c) + themes(c) + languages(c) + built(c) + privacy(c) + faq(c) + closing(c) + footer(c)
         return "<!doctype html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n"
             + "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n"
             + "<title>Alloy — the code editor for Claude Code</title>\n"
@@ -104,7 +104,7 @@ public enum LandingPage {
         """
         <nav aria-label="Main"><div class="wrap">
         <a class="brand" href="./"><img src="assets/icon-64.png" alt="" width="26" height="26"><b>Alloy</b></a>
-        <div class="links"><a class="opt" href="#features">Features</a><a class="opt" href="#notes">Shared notes</a><a class="opt" href="#themes">Themes</a><a class="opt" href="benchmarks/">Benchmarks</a><a class="opt" href="#faq">FAQ</a><a class="opt" href="\(esc(c.repoURL))">GitHub</a>\(download(c, cls: "dl", label: "Download", soon: "Coming soon"))</div>
+        <div class="links"><a class="opt" href="#features">Features</a><a class="opt" href="#editor">Editor</a><a class="opt" href="#notes">Shared notes</a><a class="opt" href="#themes">Themes</a><a class="opt" href="benchmarks/">Benchmarks</a><a class="opt" href="#faq">FAQ</a><a class="opt" href="\(esc(c.repoURL))">GitHub</a>\(download(c, cls: "dl", label: "Download", soon: "Coming soon"))</div>
         </div></nav>
         <main>
 
@@ -218,6 +218,16 @@ public enum LandingPage {
             s += "<div class=\"feat\(i % 2 == 1 ? " r" : "")\"><div class=\"txt\"><h3>\(esc(f.title))</h3><p>\(esc(f.text))</p></div><figure class=\"shot\">\(shot)</figure></div>\n"
         }
         return s + "</div></section>\n"
+    }
+
+    private static func editor(_ c: LandingContent) -> String {
+        """
+        <section id="editor"><div class="wrap">
+        <div class="tag">Code mode</div><h2>\(esc(c.editorTitle))</h2><p class="sub">\(esc(c.editorSub))</p>
+        <div class="caps">\(c.editorCapabilities.map { "<div><b>\(esc($0.0))</b><span>\(esc($0.1))</span></div>" }.joined())</div>
+        </div></section>
+
+        """
     }
 
     private static func themes(_ c: LandingContent) -> String {
@@ -367,6 +377,7 @@ public enum LandingPage {
     @keyframes glow{0%,33%{box-shadow:0 0 0 2px var(--accent)}34%,100%{box-shadow:0 0 0 0 transparent}}
     .arrow{align-self:center;color:var(--mute);font-size:22px}.step b{display:block;margin-bottom:6px}.step small{color:var(--mute)}
     .ben{display:flex;gap:14px;margin-top:22px}.ben div{flex:1;background:var(--card);border-radius:12px;padding:18px}.ben b{display:block;font-size:17px}.ben span{color:var(--mute);font-size:14px}
+    .caps{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px;margin-top:22px}.caps div{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px}.caps b{display:block;font-size:17px;margin-bottom:4px}.caps span{color:var(--mute);font-size:14px}
     .promise{margin-top:18px;font-size:15px;color:var(--mute)}
     .feat{display:flex;gap:40px;align-items:center;margin:54px 0}.feat.r{flex-direction:row-reverse}.feat .txt{flex:1}.feat h3{font-size:26px;margin:0 0 8px}.feat p{color:var(--mute);margin:0}
     .shot{flex:1.2;margin:0;border-radius:12px;overflow:hidden;border:1px solid #44475a;background:#282a36}.shot img{display:block;width:100%;height:auto}.shot .ph{aspect-ratio:3/2}

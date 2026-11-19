@@ -53,6 +53,19 @@ public struct LandingContent: Sendable {
         Feature(title: "Sessions that don't collide.",
                 text: "Alloy warns a session before it edits lines another session (or you) is changing, so work doesn't get overwritten.",
                 image: "shot-collisions.png", alt: "An overlap warning on lines two sessions are both editing."),
+        Feature(title: "A real code editor, too.",
+                text: "Code mode puts a full editor beside your sessions: language servers, split panes, Git and a built-in terminal, all drawn on the GPU.",
+                image: "shot-code.png", alt: "Alloy's Code mode: the file tree, a Swift file with Git change bars, a second file in a split pane and the terminal below."),
+    ]
+
+    public var editorTitle = "Everything you need when you take the wheel."
+    public var editorSub = "When you want to write the code yourself, Alloy is a complete editor."
+    public var editorCapabilities: [(String, String)] = [
+        ("Code mode", "File tree, tabs and split panes. Switch between chat and code in one click."),
+        ("Language servers", "Completion with snippets, hover, go to definition and references, rename, quick fixes and formatting, with errors and linter warnings as you type."),
+        ("Editing", "Multiple cursors, folding, find, and search and replace across the project. Command palette, Quick Open and your own shortcuts."),
+        ("Git", "Change bars in the gutter, blame with author and age, compare with the last commit, stage, commit and switch branches."),
+        ("Terminal", "A built-in terminal with clickable links, find, and a check before multi-line pastes."),
     ]
 
     public var themesTitle = "Dracula by default. Make your own."

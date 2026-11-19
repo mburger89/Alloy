@@ -44,6 +44,7 @@ section{padding:84px 0;border-bottom:1px solid var(--line)}h2{font-size:clamp(28
 @keyframes glow{0%,33%{box-shadow:0 0 0 2px var(--accent)}34%,100%{box-shadow:0 0 0 0 transparent}}
 .arrow{align-self:center;color:var(--mute);font-size:22px}.step b{display:block;margin-bottom:6px}.step small{color:var(--mute)}
 .ben{display:flex;gap:14px;margin-top:22px}.ben div{flex:1;background:var(--card);border-radius:12px;padding:18px}.ben b{display:block;font-size:17px}.ben span{color:var(--mute);font-size:14px}
+.caps{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px;margin-top:22px}.caps div{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px}.caps b{display:block;font-size:17px;margin-bottom:4px}.caps span{color:var(--mute);font-size:14px}
 .promise{margin-top:18px;font-size:15px;color:var(--mute)}
 .feat{display:flex;gap:40px;align-items:center;margin:54px 0}.feat.r{flex-direction:row-reverse}.feat .txt{flex:1}.feat h3{font-size:26px;margin:0 0 8px}.feat p{color:var(--mute);margin:0}
 .shot{flex:1.2;margin:0;border-radius:12px;overflow:hidden;border:1px solid #44475a;background:#282a36}.shot img{display:block;width:100%;height:auto}.shot .ph{aspect-ratio:3/2}
@@ -107,7 +108,7 @@ footer{padding:26px 0;color:var(--mute);font-size:13px}footer .wrap{display:flex
 <body>
 <nav aria-label="Main"><div class="wrap">
 <a class="brand" href="./"><img src="assets/icon-64.png" alt="" width="26" height="26"><b>Alloy</b></a>
-<div class="links"><a class="opt" href="#features">Features</a><a class="opt" href="#notes">Shared notes</a><a class="opt" href="#themes">Themes</a><a class="opt" href="benchmarks/">Benchmarks</a><a class="opt" href="#faq">FAQ</a><a class="opt" href="https://github.com/mburger89/Alloy">GitHub</a><span class="dl soon" aria-disabled="true">Coming soon</span></div>
+<div class="links"><a class="opt" href="#features">Features</a><a class="opt" href="#editor">Editor</a><a class="opt" href="#notes">Shared notes</a><a class="opt" href="#themes">Themes</a><a class="opt" href="benchmarks/">Benchmarks</a><a class="opt" href="#faq">FAQ</a><a class="opt" href="https://github.com/mburger89/Alloy">GitHub</a><span class="dl soon" aria-disabled="true">Coming soon</span></div>
 </div></nav>
 <main>
 <header class="hero"><div class="wrap">
@@ -206,6 +207,11 @@ footer{padding:26px 0;color:var(--mute);font-size:13px}footer .wrap{display:flex
 <div class="feat"><div class="txt"><h3>Many Claude sessions. One folder.</h3><p>Run several Claude Code sessions side by side, each with rich chat: plans, questions and permission requests you answer in place.</p></div><figure class="shot"><img src="assets/shot-sessions.png" alt="The session list beside a chat with a plan awaiting approval." loading="lazy"></figure></div>
 <div class="feat r"><div class="txt"><h3>Know who changed what.</h3><p>Every line is coloured by the session that wrote it. Per-session diffs; keep or revert an edit in one click.</p></div><figure class="shot"><img src="assets/shot-changes.png" alt="Code with each changed line coloured by the session that wrote it." loading="lazy"></figure></div>
 <div class="feat"><div class="txt"><h3>Sessions that don't collide.</h3><p>Alloy warns a session before it edits lines another session (or you) is changing, so work doesn't get overwritten.</p></div><figure class="shot"><img src="assets/shot-collisions.png" alt="An overlap warning on lines two sessions are both editing." loading="lazy"></figure></div>
+<div class="feat r"><div class="txt"><h3>A real code editor, too.</h3><p>Code mode puts a full editor beside your sessions: language servers, split panes, Git and a built-in terminal, all drawn on the GPU.</p></div><figure class="shot"><img src="assets/shot-code.png" alt="Alloy's Code mode: the file tree, a Swift file with Git change bars, a second file in a split pane and the terminal below." loading="lazy"></figure></div>
+</div></section>
+<section id="editor"><div class="wrap">
+<div class="tag">Code mode</div><h2>Everything you need when you take the wheel.</h2><p class="sub">When you want to write the code yourself, Alloy is a complete editor.</p>
+<div class="caps"><div><b>Code mode</b><span>File tree, tabs and split panes. Switch between chat and code in one click.</span></div><div><b>Language servers</b><span>Completion with snippets, hover, go to definition and references, rename, quick fixes and formatting, with errors and linter warnings as you type.</span></div><div><b>Editing</b><span>Multiple cursors, folding, find, and search and replace across the project. Command palette, Quick Open and your own shortcuts.</span></div><div><b>Git</b><span>Change bars in the gutter, blame with author and age, compare with the last commit, stage, commit and switch branches.</span></div><div><b>Terminal</b><span>A built-in terminal with clickable links, find, and a check before multi-line pastes.</span></div></div>
 </div></section>
 <section id="themes"><div class="wrap"><div class="themes">
 <div class="tag">Themes</div><h2>Dracula by default. Make your own.</h2><p class="sub">Built-in themes, or describe one to Claude and Alloy builds it.</p>
