@@ -10,7 +10,8 @@ public struct RaceLane: Sendable, Equatable {
     public var isAlloy: Bool
 }
 
-/// One test the landing page may race: Alloy against Zed, plus Delta where it was measured.
+/// One test the landing page may race: Alloy against every editor measured for it, listed only where
+/// Alloy is ahead of Zed by the parity bar and strictly the fastest (lowest median) of all of them.
 public struct RaceTest: Sendable, Equatable {
     public var metric: Metric
     public var tab: String
@@ -40,16 +41,21 @@ public enum RaceData {
         }
     }
 
-    /// The tests where Alloy is ahead of Zed by the benchmark's own parity bar (median and p95, beyond tolerance).
-    /// A tie or a loss is never offered. Delta is included only where it has a measured value.
+    /// The tests where Alloy is ahead of Zed by the benchmark's own parity bar (median and p95, beyond tolerance)
+    /// and its median is strictly the lowest of every measured editor; a tie or a loss to any editor is never offered.
+    /// Each test has one lane per editor measured with Alloy's unit: Alloy first, then the others by median ascending.
     public static func wins(from run: RunResult) -> [RaceTest] {
         var out: [RaceTest] = []
         for m in Metric.allCases {
             guard Parity.judge(run, metric: m) == .ahead,
-                  case .measured(let a, _, _, _)? = run.outcomes["alloy"]?[m],
-                  case .measured(let z, _, _, _)? = run.outcomes["zed"]?[m] else { continue }
-            var rows: [(String, Summary, Bool)] = [("Alloy", a, true), ("Zed", z, false)]
-            if case .measured(let d, _, _, _)? = run.outcomes["delta"]?[m], d.unit == a.unit { rows.append(("Delta", d, false)) }
+                  case .measured(let a, _, _, _)? = run.outcomes["alloy"]?[m] else { continue }
+            var others: [(String, Summary)] = []
+            for (id, name) in EditorCatalog.all where id != "alloy" {
+                if case .measured(let s, _, _, _)? = run.outcomes[id]?[m], s.unit == a.unit { others.append((name, s)) }
+            }
+            guard others.allSatisfy({ a.median < $0.1.median }) else { continue }
+            others.sort { $0.1.median < $1.1.median }   // stable, so equal medians keep catalogue order
+            let rows: [(String, Summary, Bool)] = [("Alloy", a, true)] + others.map { ($0.0, $0.1, false) }
             let top = max(rows.map { $0.1.median }.max() ?? 1, 0.000_001)
             let lanes = rows.map { name, s, alloy in
                 RaceLane(name: name, value: s.median, text: format(s.median, unit: s.unit),
@@ -178,7 +184,7 @@ public enum LandingPage {
         }
         let e = r.environment
         var versions = ""
-        for (id, name) in [("zed", "Zed"), ("delta", "Delta")] {
+        for (id, name) in EditorCatalog.present(in: r) where id != "alloy" {
             if let v = r.apps[id] { versions += ", \(name) \(v)" }
         }
         s += "</div></div>\n<p class=\"foot\">\(esc(e.machine)) · macOS \(esc(e.macOS)) · \(String(format: "%g", e.refreshHz)) Hz display · \(esc(e.date))\(esc(versions))\(partial ? " (partial run)" : ""). Medians of repeated runs, measured from outside the apps. <a href=\"benchmarks/\">Every number and method →</a></p>\n</div></section>\n"
@@ -223,10 +229,10 @@ public enum LandingPage {
         }
         s += "<span class=\"mine\">+ yours</span></div>\n"
         s += """
-        <div class="preview" role="img" aria-label="A code sample drawn in the chosen theme"><div class="bar2"></div><pre><span class="c">// auth.rs</span>
-        <span class="k">pub fn</span> <span class="f">login</span>(user: &amp;User, token: Token) {
-          <span class="k">let</span> claims = token.<span class="f">verify</span>()?;
-          <span class="f">log</span>(<span class="s">"signed in"</span>);
+        <div class="preview" role="img" aria-label="A code sample drawn in the chosen theme"><div class="bar2"></div><pre><span class="c">// Auth.swift</span>
+        <span class="k">func</span> <span class="f">login</span>(_ user: User, token: Token) <span class="k">throws</span> {
+          <span class="k">let</span> claims = <span class="k">try</span> token.<span class="f">verify</span>()
+          <span class="f">log</span>(<span class="s">"signed in as \\(claims.subject)"</span>)
         }</pre></div>
         <p class="foot">Hover or pick a swatch to preview a theme.</p>
         </div></div></section>

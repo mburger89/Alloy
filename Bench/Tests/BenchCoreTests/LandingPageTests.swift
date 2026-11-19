@@ -41,6 +41,32 @@ import Foundation
         #expect(wins.first { $0.metric == .memory }?.lanes.map(\.name) == ["Alloy", "Zed"])
     }
 
+    @Test func raceListsEveryMeasuredEditorFastestFirst() {
+        var r = Self.run()
+        r.outcomes["vscode"] = [.startup: ParityTests.m(333, 350), .memory: ParityTests.m(500, 520)]
+        r.outcomes["cursor"] = [.startup: ParityTests.m(150, 170), .memory: .notMeasured("no")]
+        r.outcomes["sublime"] = [.startup: .notApplicable("no"), .memory: ParityTests.m(80, 90)]
+        r.outcomes["idea"] = [.startup: ParityTests.m(900, 950, unit: "s")]
+        let wins = RaceData.wins(from: r)
+        #expect(wins.first { $0.metric == .startup }?.lanes.map(\.name) == ["Alloy", "Cursor", "Zed", "VS Code", "Delta"])
+        #expect(wins.first { $0.metric == .memory }?.lanes.map(\.name) == ["Alloy", "Sublime Text", "Zed", "VS Code"])
+        #expect(wins.first { $0.metric == .startup }?.lanes.first?.isAlloy == true)
+    }
+
+    @Test func raceSkipsTestsAnotherEditorBeatsOrTiesAlloy() {
+        var r = Self.run()
+        r.outcomes["sublime"] = [.startup: ParityTests.m(50, 60), .memory: ParityTests.m(57, 60)]
+        #expect(RaceData.wins(from: r).isEmpty)
+    }
+
+    @Test func footerListsEveryPresentEditorVersion() {
+        var r = Self.run()
+        r.apps["delta"] = "2.0"; r.apps["vscode"] = "1.99"; r.apps["sublime"] = "4200"
+        r.outcomes["vscode"] = [:]; r.outcomes["sublime"] = [:]
+        let html = Self.page(r)
+        #expect(html.contains(", Zed 1.0, Delta 2.0, VS Code 1.99, Sublime Text 4200"))
+    }
+
     @Test func everyNumberComesFromData() throws {
         let html = Self.page(Self.run())
         func slots(_ pattern: String) throws -> [String] {
