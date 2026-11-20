@@ -41,7 +41,7 @@ private func toolNames(_ url: URL, token: String) async throws -> [String] {
 }
 
 private func token(_ c: LaunchConfiguration) throws -> String {
-    let json = try #require(c.mcpConfigJSON)
+    let json = try #require(launchFileText(c.mcpConfigArgument))
     return String(try #require(json.components(separatedBy: "Bearer ").dropFirst().first?.prefix(while: { $0 != "\"" })))
 }
 
@@ -121,7 +121,7 @@ private func userTexts(_ t: ScriptedTransport) async -> [String] {
         let c = try #require(h.configs.first)
         #expect(c.appendSystemPrompt == Guidance.text(shareKnowledge: true, shareAcrossProjects: true) + "\n\n" + ThemeGuidance.text)
         #expect(c.allowedTools == Guidance.alloyToolNames + Guidance.themeToolNames)
-        #expect(c.extraSettingsJSON != nil)
+        #expect(c.settingsArgument != nil)
         let url = try #require(ws.serverURL), tok = try token(c)
         let names = try await toolNames(url, token: tok)
         #expect(names.contains("theme_save"))
@@ -149,8 +149,8 @@ private func userTexts(_ t: ScriptedTransport) async -> [String] {
         _ = await ws.newThemeSession(description: "x")
         await ws.settle()
         let c = try #require(h.configs.first)
-        #expect(c.mcpConfigJSON != nil)
-        #expect(c.extraSettingsJSON == nil)
+        #expect(c.mcpConfigArgument != nil)
+        #expect(c.settingsArgument == nil)
         #expect(c.appendSystemPrompt == ThemeGuidance.text)
         #expect(c.allowedTools == Guidance.themeToolNames)
         let url = try #require(ws.serverURL), tok = try token(c)

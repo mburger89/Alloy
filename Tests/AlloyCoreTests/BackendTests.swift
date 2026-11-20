@@ -173,4 +173,108 @@ private let fakeAgent = AgentDefinition(id: "fake", name: "Fake", command: "/abs
         await waitUntil("commands") { !s.slashCommands.isEmpty }
         #expect(s.slashCommands.map(\.name) == ["review"])
     }
+
+    // MARK: launch failures are visible and retried by the next message
+
+    /// A Claude workspace whose locator fails until `found.value` is set.
+    private final class Switch: @unchecked Sendable {
+        private let lock = NSLock()
+        private var _found = false
+        private var _attempts = 0
+        var found: Bool { get { lock.withLock { _found } } set { lock.withLock { _found = newValue } } }
+        var attempts: Int { lock.withLock { _attempts } }
+        func locate() throws -> URL {
+            lock.withLock { _attempts += 1 }
+            if found { return URL(fileURLWithPath: "/fake/claude") }
+            throw ClaudeNotFound(tried: ["/a/claude", "/b/claude"])
+        }
+    }
+
+    @MainActor private func switchable(_ h: BHarness, _ sw: Switch) -> Workspace {
+        Workspace(projectRoot: tempDir(), appSupport: tempDir(), settings: AlloySettings(),
+                  locate: { _ in try sw.locate() }, makeTransport: h.claudeFactory, now: Date.init, home: tempDir())
+    }
+
+    @MainActor private func errorNotices(_ s: Session) -> [String] {
+        s.transcript.blocks.compactMap { if case .notice(_, .error, let text) = $0 { text } else { nil } }
+    }
+
+    @MainActor @Test func failedClaudeLaunchLeavesAnErrorNoticeWithTheTriedPathsAndTheHint() async {
+        let h = BHarness(), sw = Switch()
+        let ws = switchable(h, sw)
+        let s = await ws.newSession(name: "A")
+        guard case .failedToLaunch(let why) = s.status else { Issue.record("status \(s.status)"); return }
+        #expect(why.contains("Tried:") && why.contains(Workspace.claudeInstallHint))
+        let notices = errorNotices(s)
+        #expect(notices.count == 1)
+        #expect(notices.first?.contains("Tried:") == true && notices.first?.contains(Workspace.claudeInstallHint) == true)
+    }
+
+    @MainActor @Test func failedACPLaunchShowsThePresetInstallHint() async {
+        let h = BHarness()
+        let ws = workspace(h, installed: false)
+        let s = await ws.newSession(name: "A", backend: .acp(agentID: "fake"))
+        #expect(errorNotices(s).contains { $0.contains("brew install fake") })
+    }
+
+    @MainActor @Test func failLaunchWithEmptyOrHugeMessageStillShowsHint() async {
+        let ws = switchable(BHarness(), Switch())
+        let a = await ws.newSession(name: "A")
+        let b = await ws.newSession(name: "B")
+        ws.failLaunch(a, "", hint: Workspace.claudeInstallHint)
+        ws.failLaunch(b, String(repeating: "x", count: 5000), hint: Workspace.claudeInstallHint)
+        guard case .failedToLaunch(let ea) = a.status, case .failedToLaunch(let eb) = b.status else { Issue.record("not failed"); return }
+        #expect(ea == Workspace.claudeInstallHint)
+        #expect(eb.hasSuffix(Workspace.claudeInstallHint) && eb.count > 5000)
+        #expect(errorNotices(a).last == ea)
+    }
+
+    @MainActor @Test func sendingOnAFailedSessionLaunchesAgain() async {
+        let h = BHarness(), sw = Switch()
+        let ws = switchable(h, sw)
+        let s = await ws.newSession(name: "A")
+        #expect(sw.attempts == 1)
+        sw.found = true
+        await ws.send("hi", to: s.id)
+        #expect(sw.attempts == 2)
+        #expect(h.claude.count == 1)
+        if case .failedToLaunch = s.status { Issue.record("still failed") }
+        let sent = await h.claude[0].sentAfterInitialize
+        #expect(sent.contains { if case .user = $0 { true } else { false } })
+    }
+
+    @MainActor @Test func sendingTwiceWhileRelaunchingStartsOneLaunch() async {
+        let h = BHarness(), sw = Switch()
+        let ws = switchable(h, sw)
+        let s = await ws.newSession(name: "A")
+        sw.found = true
+        async let first: Void = ws.send("one", to: s.id)
+        async let second: Void = ws.send("two", to: s.id)
+        _ = await (first, second)
+        await ws.settle()
+        #expect(sw.attempts == 2)
+        #expect(h.claude.count == 1)
+        #expect(errorNotices(s).count == 1)
+    }
+
+    @MainActor @Test func sendingDuringShutdownDoesNotRelaunch() async {
+        let h = BHarness(), sw = Switch()
+        let ws = switchable(h, sw)
+        let s = await ws.newSession(name: "A")
+        await ws.stopAll()
+        sw.found = true
+        await ws.send("hi", to: s.id)
+        #expect(sw.attempts == 1)
+        #expect(h.claude.isEmpty)
+    }
+
+    @MainActor @Test func aRelaunchThatFailsAgainSaysTheMessageWasNotSent() async {
+        let h = BHarness(), sw = Switch()
+        let ws = switchable(h, sw)
+        let s = await ws.newSession(name: "A")
+        await ws.send("hi", to: s.id)
+        #expect(sw.attempts == 2)
+        #expect(errorNotices(s).contains { $0.hasPrefix("Message not sent") })
+        guard case .failedToLaunch = s.status else { Issue.record("status \(s.status)"); return }
+    }
 }

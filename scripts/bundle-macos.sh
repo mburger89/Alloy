@@ -50,6 +50,29 @@ APP="build/$NAME.app"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN/$NAME" "$APP/Contents/MacOS/"
+
+# The linker leaves absolute build-machine paths (the Xcode toolchain, the build directory) as LC_RPATH entries.
+# They are useless in a shipped app and leak local paths, so they are deleted; @executable_path and @loader_path
+# entries stay. Idempotent: with nothing to delete it does nothing and succeeds.
+# BEGIN strip_build_rpaths
+strip_build_rpaths() {
+    rpath_list=$(otool -l "$1" | awk '$1 == "cmd" && $2 == "LC_RPATH" { want = 1 } want && $1 == "path" { print $2; want = 0 }')
+    while IFS= read -r rp; do
+        case "$rp" in
+            /Applications/*|/Library/Developer/*|/var/run/*|/Users/*) install_name_tool -delete_rpath "$rp" "$1" ;;
+        esac
+    done <<RPATHS
+$rpath_list
+RPATHS
+}
+# END strip_build_rpaths
+strip_build_rpaths "$APP/Contents/MacOS/$NAME"
+
+# Licence of Alloy itself and the third-party notices (the Acknowledgements menu item opens the latter).
+for f in LICENSE THIRD-PARTY-NOTICES.md; do
+    [ -f "$f" ] || { echo "bundle-macos: $f is missing" >&2; exit 1; }
+    cp "$f" "$APP/Contents/Resources/"
+done
 # Every SwiftPM resource bundle the app links (MetalUI's shaders, the tree-sitter highlight queries), not the test bundles.
 for b in "$BIN"/*.bundle; do
     case "$(basename "$b")" in *Tests.bundle) continue ;; esac

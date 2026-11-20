@@ -22,7 +22,9 @@ public enum UpdateStartPolicy {
         guard bundleURL.pathExtension == "app" else { return false }
         // A test runner is not a `.app` either; this also covers a bundled app launched under XCTest.
         if environment["XCTestConfigurationFilePath"] != nil || environment["XCTestBundlePath"] != nil { return false }
-        guard let feed = info["SUFeedURL"] as? String, URL(string: feed)?.scheme?.hasPrefix("http") == true else { return false }
+        // https only: an update feed over plain http (or any other scheme) could be tampered with in transit.
+        guard let feed = info["SUFeedURL"] as? String, let url = URL(string: feed),
+              url.scheme == "https", url.host?.isEmpty == false else { return false }
         // An EdDSA public key is 32 bytes in base64; a placeholder or a blank is no key.
         guard let key = info["SUPublicEDKey"] as? String,
               Data(base64Encoded: key.trimmingCharacters(in: .whitespacesAndNewlines))?.count == 32 else { return false }

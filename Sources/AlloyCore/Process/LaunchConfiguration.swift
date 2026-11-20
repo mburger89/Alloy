@@ -7,8 +7,10 @@ public struct LaunchConfiguration: Sendable, Equatable {
     public var resume: Bool
     /// With `resume`, the CLI conversation to resume (it differs from `sessionID` after `/clear`).
     public var resumeID: String?
-    public var extraSettingsJSON: String?
-    public var mcpConfigJSON: String?
+    /// Path of the hook settings file passed to `--settings` (the token lives in the file, not the arguments).
+    public var settingsArgument: String?
+    /// Path of the MCP config file passed to `--mcp-config`.
+    public var mcpConfigArgument: String?
     /// The login shell's PATH, merged in front of the child's own PATH (a GUI launch has a minimal one).
     public var loginPATH: String?
     /// Guidance appended to the CLI's system prompt (`--append-system-prompt`, with the snapshot turned off).
@@ -24,7 +26,7 @@ public struct LaunchConfiguration: Sendable, Equatable {
     public var effort: String?
 
     public init(executable: URL, projectDirectory: URL, sessionID: UUID, resume: Bool, resumeID: String? = nil,
-                extraSettingsJSON: String? = nil, mcpConfigJSON: String? = nil, loginPATH: String? = nil,
+                settingsArgument: String? = nil, mcpConfigArgument: String? = nil, loginPATH: String? = nil,
                 appendSystemPrompt: String? = nil, allowedTools: [String] = [], forkSession: Bool = false) {
         self.appendSystemPrompt = appendSystemPrompt
         self.allowedTools = allowedTools
@@ -35,8 +37,8 @@ public struct LaunchConfiguration: Sendable, Equatable {
         self.sessionID = sessionID
         self.resume = resume
         self.resumeID = resumeID
-        self.extraSettingsJSON = extraSettingsJSON
-        self.mcpConfigJSON = mcpConfigJSON
+        self.settingsArgument = settingsArgument
+        self.mcpConfigArgument = mcpConfigArgument
     }
 
     public func arguments() -> [String] {
@@ -49,8 +51,8 @@ public struct LaunchConfiguration: Sendable, Equatable {
             args.append("--fork-session")
             if let resumeSessionAt { args += ["--resume-session-at", resumeSessionAt] }
         }
-        if let extraSettingsJSON { args += ["--settings", extraSettingsJSON] }
-        if let mcpConfigJSON { args += ["--mcp-config", mcpConfigJSON] }
+        if let settingsArgument { args += ["--settings", settingsArgument] }
+        if let mcpConfigArgument { args += ["--mcp-config", mcpConfigArgument] }
         if let appendSystemPrompt { args += ["--append-system-prompt", appendSystemPrompt, "--system-prompt-snapshot", "off"] }
         if let effort { args += ["--effort", effort] }
         if !allowedTools.isEmpty { args += ["--allowedTools", allowedTools.joined(separator: ",")] }

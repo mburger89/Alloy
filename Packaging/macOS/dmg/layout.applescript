@@ -12,7 +12,7 @@ on run argv
             set opts to the icon view options of container window
             set arrangement of opts to not arranged
             set icon size of opts to 112
-            set background picture of opts to file ".background:background.png"
+            set background picture of opts to file ".background:background.tiff"
             set position of item "Alloy.app" of container window to {150, 200}
             set position of item "Applications" of container window to {450, 200}
             close

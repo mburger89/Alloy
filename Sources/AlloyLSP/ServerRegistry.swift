@@ -186,17 +186,20 @@ public struct ServerLocator: Sendable {
     private let loginPATH: @Sendable () -> String?
     private let xcrunFind: @Sendable (String) -> String?
     private let resetLoginPATH: @Sendable () -> Void
+    private let developerDirectorySelected: @Sendable () -> Bool
     private let processPATH: String
     private let home: String
     private let cache = Cache()
 
     public init(loginPATH: @escaping @Sendable () -> String?, xcrunFind: @escaping @Sendable (String) -> String?,
                 resetLoginPATH: @escaping @Sendable () -> Void = {},
+                developerDirectorySelected: @escaping @Sendable () -> Bool = { DeveloperDirectory.isSelected() },
                 processPATH: String = ProcessInfo.processInfo.environment["PATH"] ?? "",
                 home: String = NSHomeDirectory()) {
         self.loginPATH = loginPATH
         self.xcrunFind = xcrunFind
         self.resetLoginPATH = resetLoginPATH
+        self.developerDirectorySelected = developerDirectorySelected
         self.processPATH = processPATH
         self.home = home
     }
@@ -246,7 +249,8 @@ public struct ServerLocator: Sendable {
             let candidate = "\(dir)/\(command)"
             if executable(candidate) { return (candidate, loginAvailable) }
         }
-        if command == "sourcekit-lsp", let p = xcrunFind(command), executable(p) { return (p, loginAvailable) }
+        // `/usr/bin/xcrun` without a selected toolchain shows the install-developer-tools dialog, so it is never run then.
+        if command == "sourcekit-lsp", developerDirectorySelected(), let p = xcrunFind(command), executable(p) { return (p, loginAvailable) }
         return (nil, loginAvailable)
     }
 

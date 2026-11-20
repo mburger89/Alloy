@@ -169,9 +169,16 @@ struct ReadmeScreenshotTests {
                                    // image. `disableAllHooks` goes into the one settings JSON the launch builds (merged
                                    // into any that is already there), so there is a single `--settings` flag.
                                    var cfg = cfg
-                                   var settings = (cfg.extraSettingsJSON.flatMap { try? JSONSerialization.jsonObject(with: Data($0.utf8)) } as? [String: Any]) ?? [:]
+                                   // The settings document is a 0600 file the launch wrote; the flag is merged into it in place.
+                                   var settings = (cfg.settingsArgument.flatMap { try? Data(contentsOf: URL(fileURLWithPath: $0)) }
+                                       .flatMap { try? JSONSerialization.jsonObject(with: $0) } as? [String: Any]) ?? [:]
                                    settings["disableAllHooks"] = true
-                                   cfg.extraSettingsJSON = (try? JSONSerialization.data(withJSONObject: settings, options: [.sortedKeys])).map { String(decoding: $0, as: UTF8.self) } ?? #"{"disableAllHooks":true}"#
+                                   let merged = (try? JSONSerialization.data(withJSONObject: settings, options: [.sortedKeys])) ?? Data(#"{"disableAllHooks":true}"#.utf8)
+                                   if let path = cfg.settingsArgument, FileManager.default.isWritableFile(atPath: path) {
+                                       try? merged.write(to: URL(fileURLWithPath: path))
+                                   } else {
+                                       cfg.settingsArgument = String(decoding: merged, as: UTF8.self)
+                                   }
                                    cfg.appendSystemPrompt = (cfg.appendSystemPrompt.map { $0 + "\n\n" } ?? "") + """
                                    Work directly in this small project yourself. Do not delegate to subagents, do not schedule wakeups or \
                                    background tasks, and do not consult memory tools. Use only paths relative to the project root in commands \

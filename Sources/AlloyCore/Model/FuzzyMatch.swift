@@ -39,7 +39,8 @@ public enum FuzzyMatch {
     public static func scoreWords(_ query: String, in candidate: String) -> (score: Int, matched: [Range<Int>])? {
         let q = queryUnits(query)
         if q.isEmpty { return (0, []) }
-        return scoreWords(q, Array(candidate.utf8))
+        var work = Work()
+        return scoreWords(q, Array(candidate.utf8), &work)
     }
 
     /// The best `limit` candidates by `scoreWords`, best first; ties go to the shorter candidate, then the lower index.
@@ -47,16 +48,32 @@ public enum FuzzyMatch {
     public static func topIndices(
         query: String, in candidates: [String], limit: Int, bonus: ((Int) -> Int)? = nil
     ) -> [(index: Int, score: Int, matched: [Range<Int>])] {
-        guard limit > 0 else { return [] }
+        topIndicesCounting(query: query, in: candidates, limit: limit, bonus: bonus).results
+    }
+
+    /// What one ranking did, for tests that bound work instead of time.
+    package struct Work: Equatable {
+        /// Candidates handed to the scorer.
+        package var candidatesScored: Int = 0
+        /// Dynamic-programming cells visited (query unit x candidate unit).
+        package var cellsEvaluated: Int = 0
+    }
+
+    /// `topIndices` plus a count of the work it did. Same results.
+    package static func topIndicesCounting(
+        query: String, in candidates: [String], limit: Int, bonus: ((Int) -> Int)? = nil
+    ) -> (results: [(index: Int, score: Int, matched: [Range<Int>])], work: Work) {
+        var work = Work()
+        guard limit > 0 else { return ([], work) }
         let q = queryUnits(query)
         if q.isEmpty {
-            return candidates.indices.prefix(limit).map { (index: $0, score: bonus?($0) ?? 0, matched: []) }
+            return (candidates.indices.prefix(limit).map { (index: $0, score: bonus?($0) ?? 0, matched: []) }, work)
         }
         var out: [(index: Int, score: Int, matched: [Range<Int>], len: Int)] = []
         for (i, cand) in candidates.enumerated() {
-            if i & 4095 == 0, Task.isCancelled { return [] }
+            if i & 4095 == 0, Task.isCancelled { return ([], work) }
             let bytes = Array(cand.utf8)
-            if let r = scoreWords(q, bytes) {
+            if let r = scoreWords(q, bytes, &work) {
                 out.append((i, r.score + (bonus?(i) ?? 0), r.matched, bytes.count))
             }
         }
@@ -65,7 +82,7 @@ public enum FuzzyMatch {
             if $0.len != $1.len { return $0.len < $1.len }
             return $0.index < $1.index
         }
-        return out.prefix(limit).map { (index: $0.index, score: $0.score, matched: $0.matched) }
+        return (out.prefix(limit).map { (index: $0.index, score: $0.score, matched: $0.matched) }, work)
     }
 
     /// Query split into scalar units (UTF-8 bytes, ASCII lowered), whitespace dropped.
@@ -76,7 +93,8 @@ public enum FuzzyMatch {
         }
     }
 
-    private static func scoreWords(_ q: [[UInt8]], _ raw: [UInt8]) -> (score: Int, matched: [Range<Int>])? {
+    private static func scoreWords(_ q: [[UInt8]], _ raw: [UInt8], _ work: inout Work) -> (score: Int, matched: [Range<Int>])? {
+        work.candidatesScored += 1
         // Candidate units: byte offset and length of each UTF-8 scalar.
         var starts: [Int] = []
         var lens: [Int] = []
@@ -114,6 +132,7 @@ public enum FuzzyMatch {
         var back = [[Int]](repeating: [Int](repeating: -1, count: n), count: q.count)
         for i in 0..<q.count {
             var bestBefore = none, bestBeforeAt = -1   // best dp[i-1][k] for k < j - 1
+            work.cellsEvaluated += n
             for j in 0..<n {
                 if i > 0, j >= 2, dp[i - 1][j - 2] != none, dp[i - 1][j - 2] > bestBefore {
                     bestBefore = dp[i - 1][j - 2]; bestBeforeAt = j - 2

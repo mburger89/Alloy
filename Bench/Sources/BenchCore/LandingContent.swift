@@ -21,9 +21,10 @@ public struct LandingContent: Sendable {
     public var downloadURL = "https://github.com/mburger89/Alloy/releases/latest/download/Alloy.dmg"
     public var repoURL = "https://github.com/mburger89/Alloy"
     public var releasesURL = "https://github.com/mburger89/Alloy/releases"
+    public var issuesURL = "https://github.com/mburger89/Alloy/issues"
 
     public var heroTitle = "Fast. Native. Yours."
-    public var heroLead = "The code editor for Claude Code — written in Swift, drawn on the GPU with Metal."
+    public var heroLead = "The code editor for Claude Code and other AI coding agents — written in Swift, drawn on the GPU with Metal."
     public var heroMeta = "macOS 14 or later · Apple silicon · signed & notarised · updates itself · free, MIT"
     /// Shown instead of `heroMeta` while `downloadAvailable` is false (no release exists to be signed or to update itself).
     public var heroMetaSoon = "Coming soon for Apple-silicon Macs · macOS 14 or later · free, MIT"
@@ -44,8 +45,8 @@ public struct LandingContent: Sendable {
     public var notesPromise = "Never stale: every note is tied to the exact state of the file it describes. Once the file changes, the old text is never served."
 
     public var features: [Feature] = [
-        Feature(title: "Many Claude sessions. One folder.",
-                text: "Run several Claude Code sessions side by side, each with rich chat: plans, questions and permission requests you answer in place.",
+        Feature(title: "Many agent sessions. One folder.",
+                text: "Run several Claude Code sessions side by side, or bring Codex, Gemini CLI, OpenCode and Goose. Plans, questions and permission requests are answered in place.",
                 image: "shot-sessions.png", alt: "The session list beside a chat with a plan awaiting approval."),
         Feature(title: "Know who changed what.",
                 text: "Every line is coloured by the session that wrote it. Per-session diffs; keep or revert an edit in one click.",
@@ -69,7 +70,7 @@ public struct LandingContent: Sendable {
     ]
 
     public var themesTitle = "Dracula by default. Make your own."
-    public var themesSub = "Built-in themes, or describe one to Claude and Alloy builds it."
+    public var themesSub = "Built-in themes, or describe one to Claude Code and Alloy builds it."
     /// The built-in themes, in registry order (Sources/AlloyCore/Themes/BuiltIn/BuiltInThemes.swift).
     public var themes: [Theme] = [
         Theme(name: "Dracula", dark: true, background: "#20222B", surface: "#282A36", text: "#F8F8F2", keyword: "#FF79C6", string: "#F1FA8C", comment: "#97A2C3", function: "#50FA7B"),
@@ -83,7 +84,7 @@ public struct LandingContent: Sendable {
     public var languagesTitle = "Your languages, out of the box."
     /// The grammars in Sources/AlloyHighlight/Languages.swift.
     public var languages = ["Swift", "Python", "JavaScript", "TypeScript", "TSX", "JSON", "Markdown", "Bash", "Rust", "Go", "C", "C++", "YAML", "HTML", "CSS"]
-    /// Language servers shipped in LSP phase 1 (merge d4815aa); false claims highlighting only.
+    /// False claims highlighting only.
     public var hasLanguageServers = true
 
     public var builtTitle = "Native all the way down."
@@ -92,14 +93,15 @@ public struct LandingContent: Sendable {
 
     public var privacyTitle = "Your code stays yours."
     public var privacyLines = [
-        "No telemetry and no account. Alloy runs the Claude Code you already have.",
+        "No telemetry and no account. Alloy runs the agents you already have installed.",
         "It never changes your Claude Code settings — the optional theme skill is installed only when you click it.",
-        "The update check is the only network call Alloy itself makes.",
+        "The only requests Alloy itself makes are update checks. Agents and language servers you run make their own connections.",
     ]
 
     public var faq: [Question] = [
         Question(q: "Is it free?", a: "Yes. Alloy is open source under the MIT licence."),
-        Question(q: "Do I need a Claude subscription?", a: "Yes — Alloy runs your own Claude Code, so you need Claude Code installed and logged in (a Claude subscription or API account)."),
+        Question(q: "Does it work with other agents?", a: "Yes. Claude Code is supported directly. Codex, Gemini CLI, OpenCode, Goose and other agents that speak the Agent Client Protocol work too."),
+        Question(q: "What do I need to run it?", a: "A Mac with Apple silicon on macOS 14 or later, and at least one supported agent installed and signed in."),
         Question(q: "Does it run on Intel Macs?", a: "Not yet: Apple silicon only."),
         Question(q: "How do updates work?", a: "Alloy checks for updates once a day in the background. It installs when you quit or when you choose Restart to update — never mid-session."),
         Question(q: "How is it so fast?", a: "It's native Swift drawn straight to the GPU with Metal, and it only does work for what's on screen."),

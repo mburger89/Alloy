@@ -175,10 +175,30 @@ import Testing
         let dir = try tempDir()
         defer { try? FileManager.default.removeItem(at: dir) }
         let exe = try makeExecutable("sourcekit-lsp", in: dir)
-        let loc = ServerLocator(loginPATH: { "/nonexistent" }, xcrunFind: { $0 == "sourcekit-lsp" ? exe : nil })
+        let loc = ServerLocator(loginPATH: { "/nonexistent" }, xcrunFind: { $0 == "sourcekit-lsp" ? exe : nil },
+                             developerDirectorySelected: { true })
         #expect(loc.resolve("sourcekit-lsp") == exe)
-        let other = ServerLocator(loginPATH: { "/nonexistent" }, xcrunFind: { _ in exe })
+        let other = ServerLocator(loginPATH: { "/nonexistent" }, xcrunFind: { _ in exe }, developerDirectorySelected: { true })
         #expect(other.resolve("gopls") == nil)
+    }
+
+    @Test func sourcekitLspLookupSkipsXcrunWithoutDeveloperDirectory() {
+        let calls = Counter()
+        let loc = ServerLocator(loginPATH: { "/nonexistent" }, xcrunFind: { _ in calls.bump(); return "/x" },
+                                developerDirectorySelected: { false })
+        #expect(loc.resolve("sourcekit-lsp") == nil)
+        #expect(calls.value == 0)
+    }
+
+    @Test func sourcekitLspLookupCallsXcrunWhenSelected() throws {
+        let dir = try tempDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let exe = try makeExecutable("sourcekit-lsp", in: dir)
+        let calls = Counter()
+        let loc = ServerLocator(loginPATH: { "/nonexistent" }, xcrunFind: { _ in calls.bump(); return exe },
+                                developerDirectorySelected: { true })
+        #expect(loc.resolve("sourcekit-lsp") == exe)
+        #expect(calls.value == 1)
     }
 
     @Test func languageIDsPerExtension() {

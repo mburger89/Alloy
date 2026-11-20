@@ -28,15 +28,15 @@ public actor FileIndex {
 
     nonisolated static func scan(_ root: URL) -> [String] { scanAll(root).paths }
 
-    nonisolated static func scanAll(_ root: URL) -> (paths: [String], truncated: Bool) {
-        let all = gitFiles(root) ?? walk(root)
+    nonisolated static func scanAll(_ root: URL, git: GitExecutable.Resolution = GitExecutable.current) -> (paths: [String], truncated: Bool) {
+        let all = gitFiles(root, git: git) ?? walk(root)
         return (Array(all.prefix(maxPaths)), all.count > maxPaths)
     }
 
-    private static func git(_ root: URL, _ args: [String]) -> Data? {
+    private static func git(_ root: URL, _ args: [String], path: String) -> Data? {
         let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-        process.arguments = ["git", "-C", root.path] + args
+        process.executableURL = URL(fileURLWithPath: path)
+        process.arguments = ["-C", root.path] + args
         let out = Pipe()
         process.standardOutput = out
         process.standardError = FileHandle.nullDevice
@@ -48,9 +48,11 @@ public actor FileIndex {
         return process.terminationStatus == 0 ? data : nil
     }
 
-    /// nil when `root` is not in a git work tree (or git is missing).
-    private static func gitFiles(_ root: URL) -> [String]? {
-        guard let data = git(root, ["ls-files", "--cached", "--others", "--exclude-standard", "-z"]) else { return nil }
+    /// nil when `root` is not in a git work tree, or git is missing or unusable (the `/usr/bin/git` shim without a developer
+    /// toolchain is never run: it would show a system dialog).
+    static func gitFiles(_ root: URL, git resolution: GitExecutable.Resolution) -> [String]? {
+        guard case .usable(let gitPath, _) = resolution,
+              let data = git(root, ["ls-files", "--cached", "--others", "--exclude-standard", "-z"], path: gitPath) else { return nil }
         // A tracked file removed from disk is still in the index; it is not a file the tree can open. One lstat per path
         // (this runs off the main actor) replaces a second `git ls-files --deleted` process.
         let base = root.path.hasSuffix("/") ? root.path : root.path + "/"

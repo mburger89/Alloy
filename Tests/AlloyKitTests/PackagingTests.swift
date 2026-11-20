@@ -34,6 +34,9 @@ import Testing
         try fm.createDirectory(at: repo.appendingPathComponent("Packaging"), withIntermediateDirectories: true)
         try fm.copyItem(at: Self.root.appendingPathComponent("scripts/bundle-macos.sh"),
                         to: repo.appendingPathComponent("scripts/bundle-macos.sh"))
+        for f in ["LICENSE", "THIRD-PARTY-NOTICES.md"] {
+            try fm.copyItem(at: Self.root.appendingPathComponent(f), to: repo.appendingPathComponent(f))
+        }
         try fm.copyItem(at: Self.root.appendingPathComponent("Packaging/macOS"),
                         to: repo.appendingPathComponent("Packaging/macOS"))
 
@@ -93,6 +96,9 @@ import Testing
             try fm.createDirectory(at: repo.appendingPathComponent("Packaging"), withIntermediateDirectories: true)
             try fm.copyItem(at: PackagingTests.root.appendingPathComponent("scripts/bundle-macos.sh"),
                             to: repo.appendingPathComponent("scripts/bundle-macos.sh"))
+            for f in ["LICENSE", "THIRD-PARTY-NOTICES.md"] {
+                try fm.copyItem(at: PackagingTests.root.appendingPathComponent(f), to: repo.appendingPathComponent(f))
+            }
             try fm.copyItem(at: PackagingTests.root.appendingPathComponent("Packaging/macOS"),
                             to: repo.appendingPathComponent("Packaging/macOS"))
 
@@ -223,6 +229,9 @@ import Testing
             try fm.createDirectory(at: repo.appendingPathComponent("scripts"), withIntermediateDirectories: true)
             try fm.createDirectory(at: repo.appendingPathComponent("Packaging"), withIntermediateDirectories: true)
             try fm.copyItem(at: PackagingTests.root.appendingPathComponent("scripts/bundle-macos.sh"), to: repo.appendingPathComponent("scripts/bundle-macos.sh"))
+            for f in ["LICENSE", "THIRD-PARTY-NOTICES.md"] {
+                try fm.copyItem(at: PackagingTests.root.appendingPathComponent(f), to: repo.appendingPathComponent(f))
+            }
             try fm.copyItem(at: PackagingTests.root.appendingPathComponent("Packaging/macOS"), to: repo.appendingPathComponent("Packaging/macOS"))
             try fm.createDirectory(at: bin.appendingPathComponent("MetalUI_MetalUIRender.bundle"), withIntermediateDirectories: true)
             try fm.createDirectory(at: bin.appendingPathComponent("TreeSitterRust_TreeSitterRust.bundle/Contents/Resources/queries"), withIntermediateDirectories: true)

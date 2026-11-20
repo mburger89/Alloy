@@ -162,7 +162,14 @@ import Testing
         let scrollA = s.viewA.scroll.position
         let headA = s.stateA.primarySelection
         await s.rig.workspace.open("big.swift", revealLine: 300, in: s.b)
-        try await s.window.runUntil { s.viewB.scroll.position.row > 250 }
+        // Frame-bounded wait (no wall clock): tick until the reveal scrolls pane B, up to a frame cap. The pane's
+        // view is looked up afresh each frame: a view the store rebuilt would leave a handle taken earlier stale.
+        var gid = ""; if case .group(let g) = s.b { gid = g.uuidString }
+        func liveB() -> OpenDocumentView? { CodePanelStore.existingView(for: s.doc, in: s.b) }
+        var frames = 0
+        while (liveB()?.scroll.position.row ?? 0) <= 250 && frames < 600 { await s.settle(1); frames += 1 }
+        let row = liveB()?.scroll.position.row ?? -1
+        #expect(row > 250, "pane B scrolled to row \(row) after \(frames) frames; same view as setup: \(liveB() === s.viewB), setup view row \(s.viewB.scroll.position.row), serial \(s.stateB.revealSerial); B frame \((try? s.window.element(identifier: "code-view-\(gid)").frame) as Any); window \(s.window.platformWindow)")
         #expect(s.stateB.primarySelection.range == s.doc.buffer.snapshot().lineRange(299))
         #expect(s.viewA.scroll.position == scrollA && s.stateA.primarySelection == headA)
     }

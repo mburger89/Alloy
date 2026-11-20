@@ -1,0 +1,16 @@
+name: Feature request
+description: Suggest an improvement to Alloy.
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem are you trying to solve?
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would you like Alloy to do?
+    validations:
+      required: true

@@ -89,7 +89,7 @@ public enum LandingPage {
         body += notes(c) + features(c) + editor(c) + themes(c) + languages(c) + built(c) + privacy(c) + faq(c) + closing(c) + footer(c)
         return "<!doctype html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n"
             + "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n"
-            + "<title>Alloy — the code editor for Claude Code</title>\n"
+            + "<title>Alloy — the code editor for Claude Code and other AI coding agents</title>\n"
             + "<meta name=\"description\" content=\"\(esc(c.heroLead))\">\n"
             + "<meta name=\"color-scheme\" content=\"dark light\">\n"
             + "<link rel=\"icon\" href=\"assets/icon.svg\" type=\"image/svg+xml\">\n"
@@ -298,7 +298,7 @@ public enum LandingPage {
         <section class="end"><div class="wrap">
         <h2>\(esc(c.downloadAvailable ? c.closingTitle : c.closingTitleSoon))</h2><p class="sub">\(esc(c.downloadAvailable ? c.closingSub : c.closingSubSoon))</p>
         <p>\(download(c, cls: "btn p", label: "Download for Mac", soon: "Coming soon"))</p>
-        <p class="meta">\(c.downloadAvailable ? "<a href=\"\(esc(c.releasesURL))\">Release notes</a> · " : "")<a href="\(esc(c.repoURL))">Source on GitHub</a> · Needs the Claude Code CLI</p>
+        <p class="meta">\(c.downloadAvailable ? "<a href=\"\(esc(c.releasesURL))\">Release notes</a> · " : "")<a href="\(esc(c.repoURL))">Source on GitHub</a> · <a href="\(esc(c.issuesURL))">Issues</a> · Needs a supported coding agent</p>
         </div></section>
         </main>
 
@@ -318,7 +318,7 @@ public enum LandingPage {
     }
 
     private static func footer(_ c: LandingContent) -> String {
-        "<footer><div class=\"wrap\"><span>Alloy · MIT</span><span><a href=\"benchmarks/\">Benchmarks</a> · <a href=\"\(esc(c.repoURL))\">GitHub</a>\(releasesLink(c))</span></div></footer>\n"
+        "<footer><div class=\"wrap\"><span>Alloy · MIT</span><span><a href=\"benchmarks/\">Benchmarks</a> · <a href=\"\(esc(c.repoURL))\">GitHub</a> · <a href=\"\(esc(c.issuesURL))\">Issues</a>\(releasesLink(c))</span></div></footer>\n"
     }
 
     // MARK: style

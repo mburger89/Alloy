@@ -73,21 +73,10 @@ public enum GitExecutable {
             if let r = state.resolved { return r }
             let r = resolve(gitPath: state.gitPath, environment: ProcessInfo.processInfo.environment,
                             isExecutable: { FileManager.default.isExecutableFile(atPath: $0) },
-                            xcodeSelectOK: liveXcodeSelect, versionOf: liveVersion)
+                            xcodeSelectOK: DeveloperDirectory.liveSelected, versionOf: liveVersion)
             state.resolved = r
             return r
         }
-    }
-
-    /// `xcode-select -p` never shows a dialog, unlike running the `/usr/bin/git` shim without a toolchain.
-    private static func liveXcodeSelect() -> Bool {
-        let p = Process()
-        p.executableURL = URL(fileURLWithPath: "/usr/bin/xcode-select")
-        p.arguments = ["-p"]
-        p.standardOutput = FileHandle.nullDevice; p.standardError = FileHandle.nullDevice; p.standardInput = FileHandle.nullDevice
-        guard (try? p.run()) != nil else { return false }
-        p.waitUntilExit()
-        return p.terminationStatus == 0
     }
 
     private static func liveVersion(_ path: String) -> String? {
@@ -100,5 +89,24 @@ public enum GitExecutable {
         let data = out.fileHandleForReading.readDataToEndOfFile()
         p.waitUntilExit()
         return p.terminationStatus == 0 ? String(decoding: data, as: UTF8.self) : nil
+    }
+}
+
+/// Whether a developer toolchain is selected. Running a `/usr/bin` shim (git, xcrun) without one shows a system dialog.
+public enum DeveloperDirectory {
+    /// `DEVELOPER_DIR` set, or `xcode-select -p` succeeds (it never shows a dialog).
+    public static func isSelected(environment: [String: String] = ProcessInfo.processInfo.environment) -> Bool {
+        if let d = environment["DEVELOPER_DIR"], !d.isEmpty { return true }
+        return liveSelected()
+    }
+
+    static func liveSelected() -> Bool {
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/usr/bin/xcode-select")
+        p.arguments = ["-p"]
+        p.standardOutput = FileHandle.nullDevice; p.standardError = FileHandle.nullDevice; p.standardInput = FileHandle.nullDevice
+        guard (try? p.run()) != nil else { return false }
+        p.waitUntilExit()
+        return p.terminationStatus == 0
     }
 }

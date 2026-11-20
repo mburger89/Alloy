@@ -11,7 +11,11 @@ StartupTrace.mark("main-entered")
 // else an open-folder panel asks. "/" and the home directory are never a project root.
 // ALLOY_DATA_DIR (set by the benchmark) replaces Application Support for settings, ledgers and sessions.
 let appSupport = AlloySettings.appSupportDirectory(default: FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0])
-var settings = AlloySettings.load(appSupport: appSupport)
+try? AlloySettings.ensureSupportDirectory(appSupport: appSupport)
+let settingsLoad = AlloySettings.loadReportingCorruption(appSupport: appSupport)
+var settings = settingsLoad.settings
+/// Shown by the first workspace only.
+var startupNotice: String? = settingsLoad.movedAside.map { AlloySettings.corruptNotice(movedTo: $0) }
 StartupTrace.mark("settings-loaded")
 GitExecutable.configure(gitPath: settings.git.gitPath)
 let home = NSHomeDirectory()
@@ -43,6 +47,7 @@ func makeWorkspace(root: URL) -> Workspace? {
     let workspace = Workspace(projectRoot: checked, appSupport: appSupport, settings: current,
                               makeACPTransport: { ACPTransport(configuration: $0) },
                               loginPATH: { ClaudeLocator.loginShell().path })
+    if let notice = startupNotice { workspace.reportStartupProblem(notice); startupNotice = nil }
     themeController.bind(workspace)
     StartupTrace.mark("makeWorkspace-workspace-init-and-theme-bind")
     // Language servers start lazily, on the first open of a file one handles; they stop with the sessions on quit.
@@ -143,7 +148,15 @@ FrameTimingRecorder.installStartupTrace(on: window)
 BuiltinCommands.register(into: center, launcher: model, settings: { settingsWindow }, themes: { themeController })
 StartupTrace.mark("builtin-commands-registered")
 app.commands {
-    alloyCommands(center: center, updates: updatesEnabled ? updateModel : nil, checkForUpdates: { updateController.checkForUpdates() })
+    alloyCommands(center: center, updates: updatesEnabled ? updateModel : nil, checkForUpdates: { updateController.checkForUpdates() },
+                  openAcknowledgements: {
+                      // The notices ship in Contents/Resources; a development build run from .build has none.
+                      guard let url = Bundle.main.url(forResource: "THIRD-PARTY-NOTICES", withExtension: "md") else {
+                          NSSound.beep()
+                          return
+                      }
+                      NSWorkspace.shared.open(url)
+                  })
 }
 StartupTrace.mark("app-commands-set")
 

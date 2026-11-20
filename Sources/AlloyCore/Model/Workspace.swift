@@ -1,6 +1,7 @@
 import Foundation
 import MetalUICodeBuffer
 import Observation
+import os
 
 private enum PendingControlKind { case initialize, setModel(String), setMode(String), setEffort(String?) }
 
@@ -563,6 +564,12 @@ public final class Workspace {
     public private(set) var isShuttingDown = false
     /// Launches between their start and end; `stopAll()` waits for them to drain.
     @ObservationIgnored private var launchesInFlight = 0
+    @ObservationIgnored var sessionLaunchFiles: SessionLaunchFiles { SessionLaunchFiles(supportDirectory: appSupport) }
+    private static let sweptLaunchRoots = OSAllocatedUnfairLock(initialState: Set<String>())
+    /// Clears a crashed run's leftovers once per process and support directory, before this process writes any.
+    static func sweepLaunchFilesOnce(_ files: SessionLaunchFiles) {
+        if sweptLaunchRoots.withLock({ $0.insert(files.root.path).inserted }) { files.removeAll() }
+    }
     @ObservationIgnored private var launchWaiters: [CheckedContinuation<Void, Never>] = []
     @ObservationIgnored private var restored = false
     @ObservationIgnored private let home: URL
@@ -1003,10 +1010,10 @@ public final class Workspace {
         }
         let exe: URL
         do { exe = try await resolveExecutable() } catch let e as ClaudeNotFound {
-            failLaunch(s, "claude not found. Tried: \(e.tried.joined(separator: ", ")). Set a path in Alloy settings or ALLOY_CLAUDE_PATH.")
+            failLaunch(s, "claude not found. Tried: \(e.tried.joined(separator: ", ")). Set a path in Alloy settings or ALLOY_CLAUDE_PATH.", hint: Self.claudeInstallHint)
             return
         } catch {
-            failLaunch(s, "Could not locate claude: \(error.localizedDescription)")
+            failLaunch(s, "Could not locate claude: \(error.localizedDescription)", hint: Self.claudeInstallHint)
             return
         }
         // Sharing needs the server and this session's token; without either the session launches as if sharing were off.
@@ -1031,8 +1038,19 @@ public final class Workspace {
         configuration.resumeSessionAt = forkFrom != nil ? forkAt : nil
         if configuration.resumeSessionAt != nil { launchedAtForkPoint.insert(s.id) } else { launchedAtForkPoint.remove(s.id) }
         if let token, let url = serverURL {
-            configuration.mcpConfigJSON = MCPServer.config(url: url, token: token)
-            if shared { configuration.extraSettingsJSON = Hooks.settingsJSON(url: url, token: token) }
+            // The token goes to the CLI in 0600 files, never in the arguments. A write failure fails the launch
+            // visibly: falling back to inline JSON would put the token in `ps`.
+            do {
+                let files = sessionLaunchFiles
+                Self.sweepLaunchFilesOnce(files)
+                let paths = try files.write(sessionID: s.id, mcpConfig: MCPServer.config(url: url, token: token),
+                                            settings: shared ? Hooks.settingsJSON(url: url, token: token) : nil)
+                configuration.mcpConfigArgument = paths.mcpConfigPath
+                configuration.settingsArgument = paths.settingsPath
+            } catch {
+                failLaunch(s, "Could not prepare claude's launch files: \(error.localizedDescription)")
+                return
+            }
             var prompts: [String] = []
             if shared { prompts.append(Guidance.text(shareKnowledge: settings.shareKnowledge, shareAcrossProjects: settings.shareAcrossProjects)) }
             if theme { prompts.append(ThemeGuidance.text) }
@@ -1046,7 +1064,7 @@ public final class Workspace {
         let transport = makeTransport(configuration)
         let stream: AsyncStream<ProcessEvent>
         do { stream = try await transport.start() } catch {
-            failLaunch(s, "Could not start claude: \(error.localizedDescription)")
+            failLaunch(s, "Could not start claude: \(error.localizedDescription)", hint: Self.claudeInstallHint)
             return
         }
         if stoppedDuringLaunch.contains(s.id) || isShuttingDown {
@@ -1124,12 +1142,20 @@ public final class Workspace {
         if !ended { s.transcript.appendNotice(kind: .error, text: "Session has ended") }
     }
 
-    func failLaunch(_ s: Session, _ message: String) {
+    /// What to do when Claude cannot be found or started; shown with every Claude launch failure.
+    public static let claudeInstallHint = "Install Claude Code and run `claude` once to sign in, or set its path in Settings"
+
+    /// Marks the launch failed. The reason (with `hint`, when given) is the session's status text, an error notice in
+    /// its transcript, and the chat's failure row, whether or not a message was waiting.
+    func failLaunch(_ s: Session, _ message: String, hint: String? = nil) {
         revokeToken(for: s.id)
+        sessionLaunchFiles.remove(sessionID: s.id)
         if stoppedDuringLaunch.contains(s.id) { markStopped(s); return }
         noteThemeSessionEnded(s.id)
-        s.status = .failedToLaunch(message)
+        let full = [message, hint].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " ")
+        s.status = .failedToLaunch(full)
         deferredControls.removeValue(forKey: s.id)
+        s.transcript.appendNotice(kind: .error, text: full)
         if discardQueue(for: s.id) {
             s.transcript.appendNotice(kind: .error,
                                       text: "Message not sent: \(s.backend.isACP ? s.agentName : "Claude") could not start")
@@ -1147,6 +1173,7 @@ public final class Workspace {
         pendingRelaunch.remove(s.id)
         turnPending.remove(s.id)
         revokeToken(for: s.id)
+        sessionLaunchFiles.remove(sessionID: s.id)
         forgetPending(for: s.id)
         dropClaims(session: s.id)
         releaseAwaitingEcho(for: s.id)
@@ -1193,6 +1220,7 @@ public final class Workspace {
             noteThemeSessionEnded(s.id)
             releaseIdleWaiters(s.id, reachedIdle: false)
             revokeToken(for: s.id)
+            sessionLaunchFiles.remove(sessionID: s.id)
             forgetPending(for: s.id)
             dropClaims(session: s.id)
             releaseAwaitingEcho(for: s.id)
@@ -1272,6 +1300,17 @@ public final class Workspace {
         case .localHelp:
             s.transcript.appendNotice(kind: .commandOutput, text: SlashCommands.helpText(s.slashCommands))
             return
+        }
+        // A launch that failed is retried by the next message. `.starting` is set before the first suspension, so a
+        // second send meanwhile queues behind this launch instead of starting another.
+        if case .failedToLaunch = s.status {
+            s.status = .starting
+            await checkForkPoint(s)
+            await launch(s, resume: s.hasConversation || s.forkSource != nil, forkFrom: s.forkSource, forkAt: s.forkPoint)
+            if case .failedToLaunch = s.status {
+                s.transcript.appendNotice(kind: .error, text: "Message not sent: \(s.backend.isACP ? s.agentName : "Claude") could not start")
+                return
+            }
         }
         // A process that is gone (and not coming back) takes no message: say so without building anything.
         guard s.status == .dormant || s.status == .starting || live[id] != nil else {
@@ -1588,6 +1627,7 @@ public final class Workspace {
         shellWindows.removeValue(forKey: id)
         noteThemeSessionEnded(id)
         await entry.transport.terminate()
+        sessionLaunchFiles.remove(sessionID: id)
         if let s = session(id) {
             s.transcript.finalizeStreaming()
             s.transcript.interruptRunningTools()
@@ -1640,6 +1680,7 @@ public final class Workspace {
             }
         }
         for id in Array(entries.keys) + Array(late.keys) {
+            sessionLaunchFiles.remove(sessionID: id)
             noteThemeSessionEnded(id)
             forgetPending(for: id)
             releaseAwaitingEcho(for: id)
@@ -2363,6 +2404,9 @@ public final class Workspace {
     private var sessionsURL: URL { storeDirectory.appendingPathComponent("sessions.json") }
 
     func report(_ message: String) { errors.append(message) }
+
+    /// A problem found before the workspace existed (for example an unreadable settings file moved aside at launch).
+    public func reportStartupProblem(_ message: String) { report(message) }
 
     /// Loads persisted state once, on first use. A corrupt file is moved aside and reported, never overwritten.
     func ensureLoaded() {

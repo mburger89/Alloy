@@ -255,11 +255,20 @@ make_dmg() {
     mkdir -p "$stage/.background" || return 1
     cp -R "$APP" "$stage/Alloy.app" || return 1
     ln -s /Applications "$stage/Applications" || return 1
-    cp Packaging/macOS/dmg/background.png "$stage/.background/background.png" || return 1
+    cp Packaging/macOS/dmg/background.tiff "$stage/.background/background.tiff" || return 1
+    # Volume icon: the app icon, flagged as custom on the mounted volume below.
+    if [ -f "$APP/Contents/Resources/Alloy.icns" ]; then
+        cp "$APP/Contents/Resources/Alloy.icns" "$stage/.VolumeIcon.icns" || return 1
+    else
+        echo "warning: $APP has no Alloy.icns; the volume keeps the default icon" >&2
+    fi
     hdiutil create -volname Alloy -srcfolder "$stage" -fs HFS+ -format UDRW -ov "$rw" || return 1
     # Mounted visibly (no -nobrowse): Finder must see the volume to apply the layout.
     attach "$mnt" "$rw" || return 1
     osascript Packaging/macOS/dmg/layout.applescript Alloy || echo "warning: DMG window layout was not applied" >&2
+    if [ -f "$mnt/.VolumeIcon.icns" ]; then
+        SetFile -a C "$mnt" || echo "warning: volume icon flag was not set" >&2
+    fi
     # The app and the Applications link are required; the window cosmetics are not.
     [ -d "$mnt/Alloy.app" ] || { echo "image has no Alloy.app" >&2; return 1; }
     [ "$(readlink "$mnt/Applications")" = "/Applications" ] || { echo "image has no Applications link" >&2; return 1; }

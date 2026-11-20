@@ -131,7 +131,7 @@ import Foundation
         for t in ["Fast. Native. Yours.", "Feel the difference.", "Stop paying to read the same file twice.",
                   "Your sessions share what they learn.",
                   "never changes your Claude Code settings — the optional theme skill is installed only when you click it",
-                  "The update check is the only network call Alloy itself makes."] {
+                  "The only requests Alloy itself makes are update checks"] {
             #expect(html.contains(t), "missing \(t)")
         }
         for t in ["Dracula", "Alloy Dark", "Alloy Light", "Solarized Dark", "Solarized Light", "One Dark"] { #expect(html.contains(t)) }
@@ -239,9 +239,45 @@ import Foundation
 
     @Test func faqAnswersAreAsRuled() {
         let html = Self.page(Self.run())
-        #expect(html.contains("Yes — Alloy runs your own Claude Code, so you need Claude Code installed and logged in (a Claude subscription or API account)."))
         #expect(html.contains("when you choose Restart to update — never mid-session"))
         #expect(html.contains("<h2 class=\"sr\">Features</h2>"))
+    }
+
+    @Test func copyIsForAgentsNotOnlyClaude() {
+        let html = Self.page(Self.run())
+        #expect(html.contains("<title>Alloy — the code editor for Claude Code and other AI coding agents</title>"))
+        #expect(html.contains("<p class=\"lead\">The code editor for Claude Code and other AI coding agents"))
+        #expect(!html.contains("Needs the Claude Code CLI"))
+        #expect(html.contains("Needs a supported coding agent"))
+    }
+
+    @Test func otherAgentsFaqNamesEveryAgent() throws {
+        let q = try #require(LandingContent().faq.first { $0.q == "Does it work with other agents?" })
+        for t in ["Claude Code", "Codex", "Gemini CLI", "OpenCode", "Goose", "Agent Client Protocol", "Claude Code is supported directly"] {
+            #expect(q.a.contains(t), "missing \(t)")
+        }
+    }
+
+    @Test func requirementFaqIsAgentNeutral() throws {
+        let faq = LandingContent().faq
+        #expect(!faq.contains { $0.q == "Do I need a Claude subscription?" })
+        let q = try #require(faq.first { $0.q == "What do I need to run it?" })
+        for t in ["at least one supported agent installed and signed in", "Apple silicon", "macOS 14 or later"] { #expect(q.a.contains(t)) }
+    }
+
+    @Test func privacyLinesFollowTheRule() {
+        let html = Self.page(Self.run())
+        #expect(html.contains("No telemetry and no account."))
+        #expect(html.contains("The only requests Alloy itself makes are update checks"))
+        #expect(html.contains("agents and language servers you run make their own connections") || html.contains("Agents and language servers you run make their own connections"))
+        #expect(!html.contains("The update check is the only network call"))
+    }
+
+    @Test func issuesLinkAndDownloadStaysOff() {
+        let html = Self.page(Self.run())
+        #expect(html.contains("https://github.com/mburger89/Alloy/issues"))
+        #expect(LandingContent().downloadAvailable == false)
+        #expect(html.contains("Coming soon"))
     }
 
     @Test func editorSectionAndFeature() {

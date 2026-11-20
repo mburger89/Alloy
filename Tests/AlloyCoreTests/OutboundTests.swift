@@ -44,7 +44,7 @@ private func json(_ s: String) throws -> JSONValue {
 
     private func config(resume: Bool = false, settings: String? = nil, mcp: String? = nil) -> LaunchConfiguration {
         LaunchConfiguration(executable: URL(fileURLWithPath: "/x/claude"), projectDirectory: URL(fileURLWithPath: "/p"),
-                            sessionID: u, resume: resume, extraSettingsJSON: settings, mcpConfigJSON: mcp)
+                            sessionID: u, resume: resume, settingsArgument: settings, mcpConfigArgument: mcp)
     }
 
     static let base = ["-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose",

@@ -132,12 +132,23 @@ import Testing
         #expect(exists(window, "command-palette-field"))
     }
 
-    /// A loose debug-build smoke check; the release number is in the Benchmarks package ("CommandPalette ranking").
-    @Test func rankingTwoThousandCommandsIsQuick() {
+    /// Ranking does bounded work, counted rather than timed; the release timing is in the Benchmarks package
+    /// ("CommandPalette ranking").
+    @Test func rankingTwoThousandCommandsDoesBoundedWork() {
         let titles = (0..<2_000).map { "Category \($0 % 17): Do Something Number \($0) With Words" }
-        let start = ContinuousClock.now
-        for query in ["do so", "num 19", "cat 3 words", "xyz"] { _ = FuzzyMatch.topIndices(query: query, in: titles, limit: 50) }
-        let elapsed = ContinuousClock.now - start
-        #expect(elapsed < .milliseconds(200), "four rankings took \(elapsed)")
+        let expectedTop: [String: [Int]] = ["do so": [0, 1, 2], "num 19": [19, 190, 191], "cat 3 words": [3, 20, 34], "xyz": []]
+        for (query, top) in expectedTop.sorted(by: { $0.key < $1.key }) {
+            let (results, work) = FuzzyMatch.topIndicesCounting(query: query, in: titles, limit: 50)
+            let units = query.unicodeScalars.filter { !$0.properties.isWhitespace }.count
+            let bound = titles.reduce(0) { $0 + units * $1.utf8.count }
+            #expect(work.candidatesScored == titles.count, "\(query): every candidate is considered")
+            #expect(work.cellsEvaluated <= bound, "\(query): \(work.cellsEvaluated) cells beyond the bound \(bound)")
+            #expect(results.count <= 50)
+            // Same results as the plain call.
+            let plain = FuzzyMatch.topIndices(query: query, in: titles, limit: 50)
+            #expect(plain.map(\.index) == results.map(\.index))
+            if query == "xyz" { #expect(results.isEmpty && work.cellsEvaluated == 0) }
+            #expect(results.prefix(3).map(\.index) == top, "\(query): top three")
+        }
     }
 }

@@ -1,6 +1,7 @@
 @testable import AlloyCore
 @testable import AlloyKit
 import AlloyHighlight
+import Darwin
 import Foundation
 import MetalUI
 import MetalUICodeBuffer
@@ -17,13 +18,27 @@ private let corpus = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
 @Suite(.serialized)
 struct ByteCopiesTests {
     @Test func readHoldsOneCopy() throws {
-        let size = try #require(FileManager.default.attributesOfItem(atPath: corpus.path)[.size] as? Int)
-        guard case .text(let bytes, _, let truncated) = Workspace.readForEditing(url: corpus) else { Issue.record("unreadable"); return }
-        #expect(bytes.count == size && !truncated)
-        // The result is one array sized from the file (plus the hint's spare byte), not a grown or doubled one. A
-        // second, leaked `Data` copy is not visible from here; it is what the process-wide heap delta used to catch,
-        // but that raced with parallel suites, and the read(2)-into-one-array path no longer creates a `Data`.
-        #expect(bytes.capacity < size + size / 10, "readForEditing holds \(bytes.capacity) bytes of capacity for a \(size) byte file")
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let copy = dir.appendingPathComponent("large.rs")
+        try FileManager.default.copyItem(at: corpus, to: copy)
+        let size = try #require(FileManager.default.attributesOfItem(atPath: copy.path)[.size] as? Int, "size attribute")
+        guard case .text(let bytes, _, let truncated) = Workspace.readForEditing(url: copy) else {
+            let fd = open(copy.path, O_RDONLY)
+            let why = fd < 0 ? "open failed: errno \(errno) \(String(cString: strerror(errno)))" : "open succeeded; the read or binary check failed"
+            if fd >= 0 { close(fd) }
+            Issue.record("read result is .text: got something else for \(size) bytes (\(why))")
+            return
+        }
+        #expect(bytes.count == size, "byte count \(bytes.count) for a \(size) byte file")
+        #expect(!truncated, "read result truncated a \(size) byte file")
+        // One array read straight from the file, not a grown (doubled) one. malloc may hand a large request a bigger
+        // cached block, so slack above the file size depends on heap state (3.2 MB for 2.2 MB seen after other suites);
+        // doubling growth always reaches twice the size, so that is the deterministic line. A leaked `Data` copy is not
+        // visible from here, and the read(2)-into-one-array path no longer creates a `Data`.
+        #expect(bytes.capacity < 2 * size,
+                "capacity: readForEditing holds \(bytes.capacity) bytes of capacity for \(bytes.count) bytes")
     }
 
     @Test func readMatchesFile() throws {

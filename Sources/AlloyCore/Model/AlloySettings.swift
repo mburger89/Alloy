@@ -196,9 +196,48 @@ public struct AlloySettings: Codable, Equatable, Sendable {
 
     static func url(appSupport: URL) -> URL { appSupport.appendingPathComponent("Alloy/settings.json") }
 
+    public struct LoadResult: Sendable {
+        public var settings: AlloySettings
+        /// Where an unreadable file was moved to; nil when the file was missing or fine.
+        public var movedAside: URL?
+    }
+
     /// Missing or unreadable files give defaults. `claudePath` is exactly what was stored.
-    public static func load(appSupport: URL) -> AlloySettings {
-        (try? JSONDecoder().decode(AlloySettings.self, from: Data(contentsOf: url(appSupport: appSupport)))) ?? AlloySettings()
+    public static func load(appSupport: URL) -> AlloySettings { loadReportingCorruption(appSupport: appSupport).settings }
+
+    /// Like ``load(appSupport:)``, but a file that exists and does not decode is moved to
+    /// `settings.json.corrupt-<unix seconds>` (never over an existing file) so a later save cannot destroy it.
+    public static func loadReportingCorruption(appSupport: URL, now: () -> Date = Date.init) -> LoadResult {
+        let file = url(appSupport: appSupport)
+        guard let data = try? Data(contentsOf: file) else { return LoadResult(settings: AlloySettings(), movedAside: nil) }
+        if let s = try? JSONDecoder().decode(AlloySettings.self, from: data) { return LoadResult(settings: s, movedAside: nil) }
+        let fm = FileManager.default
+        var stamp = Int(now().timeIntervalSince1970)
+        var target = file.deletingLastPathComponent().appendingPathComponent("settings.json.corrupt-\(stamp)")
+        while fm.fileExists(atPath: target.path) || (try? fm.destinationOfSymbolicLink(atPath: target.path)) != nil {
+            stamp += 1
+            target = file.deletingLastPathComponent().appendingPathComponent("settings.json.corrupt-\(stamp)")
+        }
+        let moved = (try? fm.moveItem(at: file, to: target)) != nil
+        return LoadResult(settings: AlloySettings(), movedAside: moved ? target : nil)
+    }
+
+    /// The notice shown when ``loadReportingCorruption(appSupport:now:)`` moved a file aside.
+    public static func corruptNotice(movedTo url: URL) -> String {
+        "settings.json was unreadable; moved aside as \(url.lastPathComponent). Defaults are in use."
+    }
+
+    /// Creates `<appSupport>/Alloy` with mode 0700 and tightens an existing one. A symlink is replaced by nothing: it is
+    /// refused rather than followed.
+    public static func ensureSupportDirectory(appSupport: URL) throws {
+        let dir = appSupport.appendingPathComponent("Alloy")
+        var info = stat()
+        if lstat(dir.path, &info) == 0, (info.st_mode & S_IFMT) == S_IFLNK {
+            throw CocoaError(.fileWriteInvalidFileName)
+        }
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true,
+                                                attributes: [.posixPermissions: 0o700])
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: dir.path)
     }
 
     /// A non-empty `ALLOY_CLAUDE_PATH` wins over the stored `claudePath`. Never written back by `save`.
@@ -209,7 +248,7 @@ public struct AlloySettings: Codable, Equatable, Sendable {
 
     public func save(appSupport: URL) throws {
         let u = Self.url(appSupport: appSupport)
-        try FileManager.default.createDirectory(at: u.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Self.ensureSupportDirectory(appSupport: appSupport)
         try JSONEncoder().encode(self).write(to: u, options: .atomic)
     }
 }

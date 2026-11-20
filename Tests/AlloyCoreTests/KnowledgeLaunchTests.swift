@@ -58,14 +58,14 @@ private final class KHarness: @unchecked Sendable {
         _ = await ws.newSession(name: "a")
         await ws.settle()
         let c = try #require(h.configs.first)
-        let json = try #require(c.mcpConfigJSON)
+        let json = try #require(launchFileText(c.mcpConfigArgument))
         #expect(json.contains("\"alloy\""))
         #expect(json.contains("\"Authorization\":\"Bearer "))
         #expect(json.contains(try #require(ws.serverURL).absoluteString))
         #expect(c.appendSystemPrompt == Guidance.text())
         #expect(c.allowedTools == tools)
         #expect(c.arguments().contains("--allowedTools"))
-        let settings = try #require(c.extraSettingsJSON)
+        let settings = try #require(launchFileText(c.settingsArgument))
         let token = try #require(json.components(separatedBy: "Bearer ").dropFirst().first?.prefix(while: { $0 != "\"" }))
         #expect(settings == Hooks.settingsJSON(url: try #require(ws.serverURL), token: String(token)))
         #expect(c.arguments().contains("--settings"))
@@ -77,7 +77,7 @@ private final class KHarness: @unchecked Sendable {
         let wsOff = workspace(AlloySettings(shareKnowledge: false), off)
         _ = await wsOff.newSession(name: "a")
         await wsOff.settle()
-        #expect(off.configs.first?.extraSettingsJSON == nil)
+        #expect(off.configs.first?.settingsArgument == nil)
         #expect(off.configs.first?.arguments().contains("--settings") == false)
         await wsOff.stopAll()
 
@@ -86,14 +86,14 @@ private final class KHarness: @unchecked Sendable {
         wsFail.failServerStartForTesting = true
         _ = await wsFail.newSession(name: "a")
         await wsFail.settle()
-        #expect(failed.configs.first?.extraSettingsJSON == nil)
+        #expect(failed.configs.first?.settingsArgument == nil)
         await wsFail.stopAll()
 
         let on = KHarness()
         let wsOn = workspace(AlloySettings(askBeforeSharedNotes: true), on)
         _ = await wsOn.newSession(name: "a")
         await wsOn.settle()
-        #expect(on.configs.first?.extraSettingsJSON?.contains("\"hooks\"") == true)
+        #expect(launchFileText(on.configs.first?.settingsArgument)?.contains("\"hooks\"") == true)
         await wsOn.stopAll()
     }
 
@@ -109,7 +109,7 @@ private final class KHarness: @unchecked Sendable {
         await ws.settle()
         let last = try #require(h.configs.last)
         #expect(h.configs.count == 2 && last.resume, "configs \(h.configs.count) resume \(last.resume) status \(s.status)")
-        #expect(last.extraSettingsJSON == nil && !last.arguments().contains("--settings"))
+        #expect(last.settingsArgument == nil && !last.arguments().contains("--settings"))
         await ws.stopAll()
     }
 
@@ -120,7 +120,7 @@ private final class KHarness: @unchecked Sendable {
         await ws.settle()
         let c = try #require(h.configs.first)
         #expect(c.allowedTools.isEmpty)
-        #expect(c.mcpConfigJSON != nil)
+        #expect(c.mcpConfigArgument != nil)
         #expect(c.appendSystemPrompt == Guidance.text())
         #expect(!c.arguments().contains("--allowedTools"))
         await ws.stopAll()
@@ -132,10 +132,10 @@ private final class KHarness: @unchecked Sendable {
         _ = await ws.newSession(name: "a")
         await ws.settle()
         let c = try #require(h.configs.first)
-        #expect(c.mcpConfigJSON == nil)
+        #expect(c.mcpConfigArgument == nil)
         #expect(c.appendSystemPrompt == nil)
         #expect(c.allowedTools.isEmpty)
-        #expect(c.extraSettingsJSON == nil)
+        #expect(c.settingsArgument == nil)
         await ws.stopAll()
     }
 
@@ -229,7 +229,7 @@ private final class KHarness: @unchecked Sendable {
         await ws.settle()
         #expect(ws.serverURL == nil)
         let c = try #require(h.configs.first)
-        #expect(c.mcpConfigJSON == nil && c.appendSystemPrompt == nil && c.allowedTools.isEmpty)
+        #expect(c.mcpConfigArgument == nil && c.appendSystemPrompt == nil && c.allowedTools.isEmpty)
         #expect(s.status == .idle)
         await ws.stopAll()
     }
@@ -239,7 +239,7 @@ private final class KHarness: @unchecked Sendable {
         let ws = workspace(AlloySettings(), h)
         _ = await ws.newSession(name: "a")
         await ws.settle()
-        #expect(h.configs[0].mcpConfigJSON != nil && ws.serverURL != nil)
+        #expect(h.configs[0].mcpConfigArgument != nil && ws.serverURL != nil)
         // The listener dies after it was ready: its port could be taken by anything else on loopback.
         await ws.listenerFailed(CocoaError(.fileWriteUnknown))
         #expect(ws.serverURL == nil)
@@ -247,7 +247,7 @@ private final class KHarness: @unchecked Sendable {
         let b = await ws.newSession(name: "b")
         await ws.settle()
         let c = try #require(h.configs.last)
-        #expect(c.mcpConfigJSON == nil && c.appendSystemPrompt == nil && c.allowedTools.isEmpty)
+        #expect(c.mcpConfigArgument == nil && c.appendSystemPrompt == nil && c.allowedTools.isEmpty)
         #expect(b.status == .idle)
         await ws.stopAll()
     }

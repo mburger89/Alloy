@@ -971,7 +971,7 @@ private let original = "import Foundation\n\nfunc login(user: String, password: 
         #expect(await h.transports[0].sentAfterInitialize == [.user(text: "early", uuid: uuid, priority: nil)])
     }
 
-    @Test func queuedSendWhenLaunchFailsAddsOneNotice() async {
+    @Test func queuedSendWhenLaunchFailsAddsOneMessageNotSentNotice() async {
         let h = Harness()
         let gate = DispatchSemaphore(value: 0)
         let ws = makeWorkspace(root: dirs.make(), appSupport: dirs.make(), harness: h,
@@ -984,8 +984,10 @@ private let original = "import Foundation\n\nfunc login(user: String, password: 
         gate.signal()
         _ = await launching.value
         guard case .failedToLaunch = a.status else { Issue.record("status \(a.status)"); return }
-        let n = a.transcript.blocks.filter { if case .notice(_, .error, _) = $0 { return true } else { return false } }.count
-        #expect(n == 1)
+        // The reason, then one "Message not sent" for the whole discarded queue (not one per message).
+        let notices = a.transcript.blocks.compactMap { b -> String? in if case .notice(_, .error, let text) = b { text } else { nil } }
+        #expect(notices.count == 2)
+        #expect(notices.filter { $0.hasPrefix("Message not sent") }.count == 1)
         #expect(h.transports.isEmpty)
     }
 

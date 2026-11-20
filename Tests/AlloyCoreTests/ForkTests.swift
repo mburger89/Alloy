@@ -578,7 +578,7 @@ private func userTexts(_ t: ScriptedTransport, at index: Int = 0) async -> [Stri
         let h = FHarness()
         let ws = workspace(h)
         let s = await ws.newSession(name: "A")
-        #expect(h.configs[0].mcpConfigJSON != nil)
+        #expect(h.configs[0].mcpConfigArgument != nil)
         await h.transports[0].emit(fixture: Fixture.lines("fork-init"))
         await waitUntil("working") { s.status == .working }
         try ws.updateSettings(AlloySettings(shareKnowledge: false))
@@ -598,7 +598,7 @@ private func userTexts(_ t: ScriptedTransport, at index: Int = 0) async -> [Stri
         #expect(h.transports.count == 2)
         let c = h.configs[1]
         #expect(c.resume && c.resumeID == s.cliSessionID && !c.forkSession)
-        #expect(c.mcpConfigJSON == nil && c.appendSystemPrompt == nil && c.allowedTools.isEmpty)
+        #expect(c.mcpConfigArgument == nil && c.appendSystemPrompt == nil && c.allowedTools.isEmpty)
         let sent = await h.transports[1].sentAfterInitialize
         #expect(sent.count == 1)
         if case .user(let content, _, _)? = sent.first {
@@ -631,7 +631,7 @@ private func userTexts(_ t: ScriptedTransport, at index: Int = 0) async -> [Stri
         await waitUntil("relaunched") { h.transports.count == 2 }
         await ws.settle()
         #expect(await h.transports[0].terminated)
-        #expect(h.configs[1].mcpConfigJSON == nil)
+        #expect(h.configs[1].mcpConfigArgument == nil)
         await ws.stopAll()
     }
 
@@ -644,7 +644,7 @@ private func userTexts(_ t: ScriptedTransport, at index: Int = 0) async -> [Stri
         #expect(h.transports.count == 2)
         #expect(await h.transports[0].terminated)
         #expect(hasNotice(s, "Settings applied"))
-        #expect(h.configs[1].allowedTools.isEmpty && h.configs[1].mcpConfigJSON != nil)
+        #expect(h.configs[1].allowedTools.isEmpty && h.configs[1].mcpConfigArgument != nil)
         // A setting that does not change launch options relaunches nothing.
         try ws.updateSettings(AlloySettings(claudePath: "/other", askBeforeSharedNotes: true))
         await ws.settle()

@@ -10,6 +10,12 @@
     <key>CFBundleVersion</key>            <string>1</string>
     <key>CFBundleIconFile</key>           <string>Alloy</string>
     <key>LSMinimumSystemVersion</key>     <string>14.0</string>
+    <key>LSApplicationCategoryType</key>  <string>public.app-category.developer-tools</string>
+    <key>NSHumanReadableCopyright</key>   <string>Copyright © 2026 Max Burger. MIT License.</string>
+    <key>NSDesktopFolderUsageDescription</key>   <string>Alloy opens and runs tools in the folders you choose.</string>
+    <key>NSDocumentsFolderUsageDescription</key> <string>Alloy opens and runs tools in the folders you choose.</string>
+    <key>NSDownloadsFolderUsageDescription</key> <string>Alloy opens and runs tools in the folders you choose.</string>
+    <key>NSAppleEventsUsageDescription</key>     <string>Alloy opens and runs tools in the folders you choose.</string>
     <key>NSHighResolutionCapable</key>    <true/>
     <key>SUFeedURL</key>                  <string>https://mburger89.github.io/Alloy/appcast.xml</string>
     <key>SUEnableSystemProfiling</key>    <false/>

@@ -34,6 +34,32 @@ import Testing
         #expect(!paths.contains { $0.hasPrefix("build/") })
     }
 
+    @Test func fileIndexUsesWalkWhenGitShimHasNoTools() throws {
+        let root = try tempDir()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try git(root, "init", "-q")
+        try write(root, "src/a.swift")
+        let marker = root.appendingPathComponent("marker-ran")
+        let script = root.appendingPathComponent("fake-git.sh")
+        try "#!/bin/sh\ntouch '\(marker.path)'\n".write(to: script, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: script.path)
+        let result = FileIndex.scanAll(root, git: .shimWithoutTools).paths
+        #expect(result.contains("src/a.swift"))
+        #expect(result == FileIndex.scanAll(root, git: .notFound).paths)
+        #expect(!FileManager.default.fileExists(atPath: marker.path))
+    }
+
+    @Test func fileIndexRunsTheResolvedGitPath() throws {
+        let root = try tempDir()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try write(root, "real.txt")
+        let script = root.appendingPathComponent("fake-git.sh")
+        try "#!/bin/sh\nprintf 'real.txt\\0'\n".write(to: script, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: script.path)
+        let files = FileIndex.gitFiles(root, git: .usable(path: script.path, version: [2, 40]))
+        #expect(files == ["real.txt"])
+    }
+
     @Test func nonGitWalkSkipsBuild() async throws {
         let root = try tempDir()
         defer { try? FileManager.default.removeItem(at: root) }

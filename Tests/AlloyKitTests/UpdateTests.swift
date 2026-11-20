@@ -222,6 +222,18 @@ private let notes = "## 0.2.0\n\n- Faster **startup**\n- Fixes a crash"
         #expect(driver.events.last == "check")
     }
 
+    @Test func startPolicyRejectsNonHTTPSFeeds() {
+        for feed in ["http://example.test/appcast.xml", "ftp://example.test/appcast.xml", "file:///x", "https://", "https:///appcast.xml", "not a url", ""] {
+            var info = goodInfo
+            info["SUFeedURL"] = feed
+            #expect(!UpdateStartPolicy.canStart(bundleURL: appURL, info: info, environment: [:]), "\(feed)")
+        }
+    }
+
+    @Test func startPolicyAcceptsHTTPS() {
+        #expect(UpdateStartPolicy.canStart(bundleURL: appURL, info: goodInfo, environment: [:]))
+    }
+
     @Test func updaterNotStartedOutsideBundle() async throws {
         let driver = FakeUpdateDriver()
         let controller = UpdateController(driver: driver, model: UpdateModel())

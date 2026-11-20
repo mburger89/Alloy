@@ -27,7 +27,7 @@ import Testing
             try fm.createDirectory(at: repo.appendingPathComponent("Packaging/macOS"), withIntermediateDirectories: true)
             try fm.copyItem(at: ReleaseScriptTests.root.appendingPathComponent("Packaging/macOS/dmg"), to: repo.appendingPathComponent("Packaging/macOS/dmg"))
             // Fake bundler: records its argv and makes build/Alloy.app.
-            try write("#!/bin/sh\necho \"bundle $* identity=${ALLOY_SIGN_IDENTITY:-none}\" >> '\(log.path)'\nmkdir -p build/Alloy.app/Contents\n",
+            try write("#!/bin/sh\necho \"bundle $* identity=${ALLOY_SIGN_IDENTITY:-none}\" >> '\(log.path)'\nmkdir -p build/Alloy.app/Contents/Resources\ntouch build/Alloy.app/Contents/Resources/Alloy.icns\n",
                       to: repo.appendingPathComponent("scripts/bundle-macos.sh"), executable: true)
             if withNotes { try write(notes, to: repo.appendingPathComponent("docs/releases/0.1.0.md")) }
             if let existingFeed { try write(existingFeed, to: repo.appendingPathComponent("Bench/site/appcast.xml")) }
@@ -202,6 +202,30 @@ import Testing
         #expect(!r.calls.contains { $0.contains("notarytool") || $0.contains("stapler") })
         #expect(r.calls.contains { $0.hasPrefix("bundle --version 0.1.0 --build 1 identity=none") }, "\(r.calls)")
         #expect(r.calls.filter { $0.hasPrefix("codesign") && $0.contains("--sign") }.allSatisfy { $0.contains("--sign -") })
+    }
+
+    @Test func dmgStagesARetinaBackgroundAndVolumeIcon() throws {
+        let fx = try Fixture()
+        let r = try fx.run(args: ["0.1.0", "--dry-run"], env: ["ALLOY_SIGN_IDENTITY": "Test Identity"])
+        #expect(r.status == 0, "\(r.output)")
+        // The stub keeps the finished image's contents next to it as a directory.
+        let img = fx.repo.appendingPathComponent("build/release/0.1.0/Alloy.dmg.d")
+        #expect(fx.fm.fileExists(atPath: img.appendingPathComponent(".background/background.tiff").path), "background.tiff staged")
+        #expect(fx.fm.fileExists(atPath: img.appendingPathComponent(".VolumeIcon.icns").path), ".VolumeIcon.icns staged")
+        let script = try String(contentsOf: ReleaseScriptTests.root.appendingPathComponent("Packaging/macOS/dmg/layout.applescript"), encoding: .utf8)
+        #expect(script.contains(".background:background.tiff"))
+    }
+
+    @Test func backgroundTiffHasBothRepresentations() throws {
+        let fx = try Fixture()
+        let dir = ReleaseScriptTests.root.appendingPathComponent("Packaging/macOS/dmg")
+        let (s, info) = try fx.sh(["tiffutil", "-info", dir.appendingPathComponent("background.tiff").path], in: fx.tmp)
+        #expect(s == 0, "\(info)")
+        #expect(info.contains("2 directories") || info.components(separatedBy: "Image Width:").count == 3, "two images: \(info)")
+        #expect(info.contains("Image Width: 600 Image Length: 400"), "1x representation")
+        #expect(info.contains("Image Width: 1200 Image Length: 800"), "2x representation")
+        let (_, dpi) = try fx.sh(["sips", "-g", "dpiWidth", dir.appendingPathComponent("background@2x.png").path], in: fx.tmp)
+        #expect(dpi.contains("144"), "2x png dpi: \(dpi)")
     }
 
     @Test func dryRunAllowsPlaceholderNotes() throws {

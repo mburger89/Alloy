@@ -7,13 +7,21 @@ import MetalUI
 /// (so user overrides apply); see docs/command-registry.md. The content closures run when the bar is shown or a key
 /// reaches the command stage, so enabled state and shortcuts are live.
 @MainActor @CommandsBuilder
-public func alloyCommands(center: CommandCenter, updates: UpdateModel? = nil, checkForUpdates: @escaping @MainActor () -> Void = {}) -> some Commands {
+public func alloyCommands(center: CommandCenter, updates: UpdateModel? = nil, checkForUpdates: @escaping @MainActor () -> Void = {},
+                          openAcknowledgements: (@MainActor () -> Void)? = nil) -> some Commands {
     let registry = center.registry
     if let updates {
         CommandGroup(after: .appInfo) {
             Button("Check for Updates\u{2026}") { checkForUpdates() }
                 .disabled(updates.isBusy)
                 .accessibilityIdentifier("menu-check-for-updates")
+        }
+    }
+    // Next to About: opens the bundled THIRD-PARTY-NOTICES.md. Absent when the app passes no opener.
+    if let openAcknowledgements {
+        CommandGroup(after: .appInfo) {
+            Button("Acknowledgements") { openAcknowledgements() }
+                .accessibilityIdentifier("menu-acknowledgements")
         }
     }
     CommandGroup(replacing: .appSettings) {

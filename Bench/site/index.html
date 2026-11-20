@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Alloy — the code editor for Claude Code</title>
-<meta name="description" content="The code editor for Claude Code — written in Swift, drawn on the GPU with Metal.">
+<title>Alloy — the code editor for Claude Code and other AI coding agents</title>
+<meta name="description" content="The code editor for Claude Code and other AI coding agents — written in Swift, drawn on the GPU with Metal.">
 <meta name="color-scheme" content="dark light">
 <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
 <link rel="icon" href="assets/icon-64.png" type="image/png" sizes="64x64">
@@ -113,7 +113,7 @@ footer{padding:26px 0;color:var(--mute);font-size:13px}footer .wrap{display:flex
 <main>
 <header class="hero"><div class="wrap">
 <h1>Fast. Native. Yours.</h1>
-<p class="lead">The code editor for Claude Code — written in Swift, drawn on the GPU with Metal.</p>
+<p class="lead">The code editor for Claude Code and other AI coding agents — written in Swift, drawn on the GPU with Metal.</p>
 <p><span class="btn p soon" aria-disabled="true">Coming soon</span><a class="btn s" href="https://github.com/mburger89/Alloy">View on GitHub</a></p>
 <p class="meta">Coming soon for Apple-silicon Macs · macOS 14 or later · free, MIT</p>
 <figure class="app has-poster"><video autoplay muted loop playsinline poster="assets/hero-poster.png" aria-label="Alloy with two Claude Code sessions editing the same function, and the overlap warning that follows, in the Dracula theme."><source src="assets/hero.mp4" type="video/mp4"></video><img class="poster" src="assets/hero-poster.png" alt="Alloy with two Claude Code sessions editing the same function, and the overlap warning that follows, in the Dracula theme." fetchpriority="high"></figure>
@@ -204,7 +204,7 @@ footer{padding:26px 0;color:var(--mute);font-size:13px}footer .wrap{display:flex
 </div></section>
 <section id="features"><div class="wrap">
 <h2 class="sr">Features</h2>
-<div class="feat"><div class="txt"><h3>Many Claude sessions. One folder.</h3><p>Run several Claude Code sessions side by side, each with rich chat: plans, questions and permission requests you answer in place.</p></div><figure class="shot"><img src="assets/shot-sessions.png" alt="The session list beside a chat with a plan awaiting approval." loading="lazy"></figure></div>
+<div class="feat"><div class="txt"><h3>Many agent sessions. One folder.</h3><p>Run several Claude Code sessions side by side, or bring Codex, Gemini CLI, OpenCode and Goose. Plans, questions and permission requests are answered in place.</p></div><figure class="shot"><img src="assets/shot-sessions.png" alt="The session list beside a chat with a plan awaiting approval." loading="lazy"></figure></div>
 <div class="feat r"><div class="txt"><h3>Know who changed what.</h3><p>Every line is coloured by the session that wrote it. Per-session diffs; keep or revert an edit in one click.</p></div><figure class="shot"><img src="assets/shot-changes.png" alt="Code with each changed line coloured by the session that wrote it." loading="lazy"></figure></div>
 <div class="feat"><div class="txt"><h3>Sessions that don't collide.</h3><p>Alloy warns a session before it edits lines another session (or you) is changing, so work doesn't get overwritten.</p></div><figure class="shot"><img src="assets/shot-collisions.png" alt="An overlap warning on lines two sessions are both editing." loading="lazy"></figure></div>
 <div class="feat r"><div class="txt"><h3>A real code editor, too.</h3><p>Code mode puts a full editor beside your sessions: language servers, split panes, Git and a built-in terminal, all drawn on the GPU.</p></div><figure class="shot"><img src="assets/shot-code.png" alt="Alloy's Code mode: the file tree, a Swift file with Git change bars, a second file in a split pane and the terminal below." loading="lazy"></figure></div>
@@ -214,7 +214,7 @@ footer{padding:26px 0;color:var(--mute);font-size:13px}footer .wrap{display:flex
 <div class="caps"><div><b>Code mode</b><span>File tree, tabs and split panes. Switch between chat and code in one click.</span></div><div><b>Language servers</b><span>Completion with snippets, hover, go to definition and references, rename, quick fixes and formatting, with errors and linter warnings as you type.</span></div><div><b>Editing</b><span>Multiple cursors, folding, find, and search and replace across the project. Command palette, Quick Open and your own shortcuts.</span></div><div><b>Git</b><span>Change bars in the gutter, blame with author and age, compare with the last commit, stage, commit and switch branches.</span></div><div><b>Terminal</b><span>A built-in terminal with clickable links, find, and a check before multi-line pastes.</span></div></div>
 </div></section>
 <section id="themes"><div class="wrap"><div class="themes">
-<div class="tag">Themes</div><h2>Dracula by default. Make your own.</h2><p class="sub">Built-in themes, or describe one to Claude and Alloy builds it.</p>
+<div class="tag">Themes</div><h2>Dracula by default. Make your own.</h2><p class="sub">Built-in themes, or describe one to Claude Code and Alloy builds it.</p>
 <input class="vh" type="radio" name="theme" id="th-0" checked>
 <input class="vh" type="radio" name="theme" id="th-1">
 <input class="vh" type="radio" name="theme" id="th-2">
@@ -239,12 +239,13 @@ footer{padding:26px 0;color:var(--mute);font-size:13px}footer .wrap{display:flex
 </div></section>
 <section><div class="wrap">
 <div class="tag">Privacy</div><h2>Your code stays yours.</h2>
-<ul class="plain"><li>No telemetry and no account. Alloy runs the Claude Code you already have.</li><li>It never changes your Claude Code settings — the optional theme skill is installed only when you click it.</li><li>The update check is the only network call Alloy itself makes.</li></ul>
+<ul class="plain"><li>No telemetry and no account. Alloy runs the agents you already have installed.</li><li>It never changes your Claude Code settings — the optional theme skill is installed only when you click it.</li><li>The only requests Alloy itself makes are update checks. Agents and language servers you run make their own connections.</li></ul>
 </div></section>
 <section class="faq" id="faq"><div class="wrap">
 <div class="tag">FAQ</div><h2>Questions</h2>
 <details open><summary>Is it free?</summary><p>Yes. Alloy is open source under the MIT licence.</p></details>
-<details><summary>Do I need a Claude subscription?</summary><p>Yes — Alloy runs your own Claude Code, so you need Claude Code installed and logged in (a Claude subscription or API account).</p></details>
+<details><summary>Does it work with other agents?</summary><p>Yes. Claude Code is supported directly. Codex, Gemini CLI, OpenCode, Goose and other agents that speak the Agent Client Protocol work too.</p></details>
+<details><summary>What do I need to run it?</summary><p>A Mac with Apple silicon on macOS 14 or later, and at least one supported agent installed and signed in.</p></details>
 <details><summary>Does it run on Intel Macs?</summary><p>Not yet: Apple silicon only.</p></details>
 <details><summary>How do updates work?</summary><p>Alloy checks for updates once a day in the background. It installs when you quit or when you choose Restart to update — never mid-session.</p></details>
 <details><summary>How is it so fast?</summary><p>It's native Swift drawn straight to the GPU with Metal, and it only does work for what's on screen.</p></details>
@@ -252,9 +253,9 @@ footer{padding:26px 0;color:var(--mute);font-size:13px}footer .wrap{display:flex
 <section class="end"><div class="wrap">
 <h2>Coming soon.</h2><p class="sub">Alloy is coming soon for Apple-silicon Macs. Star the repository on GitHub to hear when it ships.</p>
 <p><span class="btn p soon" aria-disabled="true">Coming soon</span></p>
-<p class="meta"><a href="https://github.com/mburger89/Alloy">Source on GitHub</a> · Needs the Claude Code CLI</p>
+<p class="meta"><a href="https://github.com/mburger89/Alloy">Source on GitHub</a> · <a href="https://github.com/mburger89/Alloy/issues">Issues</a> · Needs a supported coding agent</p>
 </div></section>
 </main>
-<footer><div class="wrap"><span>Alloy · MIT</span><span><a href="benchmarks/">Benchmarks</a> · <a href="https://github.com/mburger89/Alloy">GitHub</a></span></div></footer>
+<footer><div class="wrap"><span>Alloy · MIT</span><span><a href="benchmarks/">Benchmarks</a> · <a href="https://github.com/mburger89/Alloy">GitHub</a> · <a href="https://github.com/mburger89/Alloy/issues">Issues</a></span></div></footer>
 </body>
 </html>
