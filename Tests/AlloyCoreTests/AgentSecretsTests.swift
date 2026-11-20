@@ -54,3 +54,25 @@ private struct DenyingStore: AgentSecretStore {
         }
     }
 }
+
+@Suite struct StoreNamedSecretTests {
+    @Test func everyStoredSecretOfAnAgentIsInjectedAndNeverLeaksToAnother() throws {
+        let store = InMemorySecretStore()
+        try store.set("g", agent: "gemini", variable: "GEMINI_API_KEY")
+        try store.set("o", agent: "codex", variable: "OPENAI_API_KEY")
+        let gemini = AgentDefinition(id: "gemini", name: "Gemini", command: "gemini")
+        let codex = AgentDefinition(id: "codex", name: "Codex", command: "codex-acp")
+        #expect(gemini.resolveEnvironment(store: store).env == ["GEMINI_API_KEY": "g"])
+        #expect(codex.resolveEnvironment(store: store).env == ["OPENAI_API_KEY": "o"])
+    }
+
+    @Test func legacySecretNamesAreMergedWithTheStoresNames() throws {
+        let store = InMemorySecretStore()
+        try store.set("a", agent: "x", variable: "OLD_KEY")
+        try store.set("b", agent: "x", variable: "NEW_KEY")
+        let def = AgentDefinition(id: "x", name: "X", command: "x", secretNames: ["OLD_KEY", "GONE_KEY"])
+        let r = def.resolveEnvironment(store: store)
+        #expect(r.env == ["OLD_KEY": "a", "NEW_KEY": "b"])
+        #expect(r.missing == ["GONE_KEY"])
+    }
+}

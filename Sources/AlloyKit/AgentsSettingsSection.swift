@@ -4,22 +4,34 @@ import MetalUI
 
 /// The agents part of Settings: the presets (greyed with a copyable install command when their command is missing),
 /// the user's custom agents with an add/edit form, the default agent for new sessions, a Detect button, and the names
-/// of the secrets kept in the Keychain. Secret values are never shown or typed here (see `secretEntryAvailable`).
+/// of the secrets kept in the Keychain. A secret value is typed only into a `SecureField`, goes straight to the Keychain
+/// on Save and is cleared at once; it is never shown, logged or kept.
 /// It exists only while Settings is open, so a closed Settings costs nothing per frame.
 struct AgentsSettingsSection: Component {
-    /// Flips to true when MetalUI ships a secure text field; until then secrets cannot be entered in Settings, and the
-    /// "Add secret" row stays disabled. No other field may stand in for it.
-    static let secretEntryAvailable = false
-    static let secretEntryCaption = "Secure entry is coming in a later update."
+    static let secretEntryCaption = "Kept in your Keychain. Saving a name that exists replaces its value."
+    static let invalidNameMessage = "Use capital letters, digits and underscores, not starting with a digit."
 
     let workspace: Workspace
     @State var editing: Draft?
     @State var failure: String?
     @State var secrets: [StoredSecret] = []
     @State var loaded = false
+    /// The Add secret form (agent and name). The value lives in `secretValue` and is reset on Save and Cancel.
+    @State var secretDraft: SecretDraft?
+    @State var secretValue = ""
+    @State var secretNotice: String?
 
     struct Choice: Equatable { var id: String, name: String }
     struct StoredSecret: Equatable { var agent: String, name: String }
+    struct SecretDraft: Equatable { var agent: String, name = "" }
+
+    /// `[A-Z_][A-Z0-9_]*`.
+    static func isValidSecretName(_ name: String) -> Bool {
+        guard let first = name.unicodeScalars.first, !("0"..."9" as ClosedRange<Unicode.Scalar>).contains(first) else { return false }
+        return name.unicodeScalars.allSatisfy {
+            ("A"..."Z" as ClosedRange<Unicode.Scalar>).contains($0) || ("0"..."9" as ClosedRange<Unicode.Scalar>).contains($0) || $0 == "_"
+        }
+    }
 
     /// The add/edit form's text. `existingID` is set when editing a custom agent.
     struct Draft: Equatable {
@@ -123,15 +135,89 @@ struct AgentsSettingsSection: Component {
                     Button("Remove") { removeSecret(row) }.accessibilityIdentifier("agents-secret-remove-\(row.agent)-\(row.name)")
                 }
             }
-            HStack(spacing: Pixels(8)) {
-                Button("Add secret") {}.disabled(!Self.secretEntryAvailable).accessibilityIdentifier("agents-secret-add")
-                if !Self.secretEntryAvailable {
-                    Text(Self.secretEntryCaption).font(size: 11).foregroundColor(.mutedInk).accessibilityIdentifier("agents-secret-add-caption")
+            if let draft = secretDraft {
+                secretForm(draft)
+            } else {
+                HStack(spacing: Pixels(8)) {
+                    Button("Add secret") { openSecretForm() }.accessibilityIdentifier("agents-secret-add")
+                    Text(Self.secretEntryCaption).font(size: 11).foregroundColor(.mutedInk)
+                        .accessibilityIdentifier("agents-secret-add-caption")
                 }
+            }
+            if let secretNotice {
+                Text(verbatim: secretNotice).font(size: 11).foregroundColor(.mutedInk).accessibilityIdentifier("agents-secret-notice")
             }
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("agents-secrets")
+    }
+
+    private var secretAgents: [AgentDefinition] { workspace.agentDefinitions() }
+
+    private func secretForm(_ draft: SecretDraft) -> some ElementGroup {
+        let agents = secretAgents
+        let nameBinding = Binding<String>(get: { secretDraft?.name ?? "" }, set: { value in
+            secretDraft?.name = value.uppercased(); secretNotice = nil; failure = nil
+        })
+        let agentBinding = Binding<String>(get: { secretDraft?.agent ?? "" }, set: { secretDraft?.agent = $0 })
+        let nameOK = Self.isValidSecretName(draft.name)
+        let canSave = nameOK && !secretValue.isEmpty && agents.contains { $0.id == draft.agent }
+        return VStack(alignment: .leading, spacing: Pixels(6)) {
+            Text("New secret").font(size: 12).foregroundColor(.mutedInk)
+            if agents.count > 1 {
+                Picker("Agent", selection: agentBinding) {
+                    ForEach(agents, id: \.id) { Text(verbatim: $0.name).tag($0.id) }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .accessibilityIdentifier("agents-secret-agent")
+            }
+            TextField("Variable name, for example API_KEY", text: nameBinding).accessibilityIdentifier("agents-secret-name")
+            if !draft.name.isEmpty && !nameOK {
+                Text(Self.invalidNameMessage).font(size: 11).foregroundColor(.errorInk).accessibilityIdentifier("agents-secret-name-refusal")
+            }
+            SecureField("Value", text: $secretValue)
+                .onSubmit { saveSecret() }
+                .accessibilityIdentifier("agents-secret-value")
+            HStack(spacing: Pixels(8)) {
+                Button("Save") { saveSecret() }.disabled(!canSave).accessibilityIdentifier("agents-secret-save")
+                Button("Cancel") { closeSecretForm() }.accessibilityIdentifier("agents-secret-cancel")
+            }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("agents-secret-form")
+    }
+
+    private func openSecretForm() {
+        let agents = secretAgents
+        guard let first = agents.first else { return }
+        let preferred = workspace.settings.defaultAgentID.flatMap { id in agents.first { $0.id == id } } ?? first
+        secretValue = ""
+        secretDraft = SecretDraft(agent: preferred.id)
+        secretNotice = nil; failure = nil
+    }
+
+    /// Clears the typed value and closes the form. Nothing of the value is kept.
+    private func closeSecretForm() {
+        secretValue = ""
+        secretDraft = nil
+    }
+
+    private func saveSecret() {
+        guard let draft = secretDraft, Self.isValidSecretName(draft.name), !secretValue.isEmpty,
+              secretAgents.contains(where: { $0.id == draft.agent }) else { return }
+        // Take the value out of state first: the field is empty and the form closed before the Keychain is touched.
+        let value = secretValue
+        closeSecretForm()
+        do {
+            let replaced = try workspace.saveSecret(value, agent: draft.agent, name: draft.name)
+            secretNotice = replaced ? "Replaced \(draft.name)." : "Saved \(draft.name)."
+            failure = nil
+        } catch {
+            failure = "Could not save: \(error.localizedDescription)"
+            secretNotice = nil
+        }
+        reloadSecrets()
     }
 
     private func reloadSecrets() {

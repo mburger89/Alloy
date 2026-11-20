@@ -33,9 +33,11 @@ arguments and plain environment variables (`NAME=value`, one per line).
 An agent that needs an API key gets it from the macOS Keychain (service `dev.alloy.agent-secret`, account
 `<agent id>/<VARIABLE_NAME>`, readable only while the Mac is unlocked, never synced). Secrets are never written to
 settings.json, history files, logs or error text. Settings shows only the names of the stored secrets, each with a
-Remove button; removing a custom agent deletes its Keychain items. Entering a secret value in Settings is not
-available yet (it waits for a secure text field in the UI framework); store the item in Keychain Access with the
-service and account above, or use the agent's own login.
+Remove button; removing a custom agent deletes its Keychain items. To add one, open Settings, Agents, choose
+"Add secret", pick an agent (a preset or your own), type the variable name (capital letters, digits and underscores) and the value in
+the secure field, and Save. Every secret stored for an agent is passed to it as an environment variable when it starts. The value goes straight to the Keychain
+and the field is cleared; saving a name that exists replaces its value. You can also store the item in Keychain Access
+with the service and account above, or use the agent's own login.
 
 A plain environment variable whose name looks like a credential (`..._KEY`, `..._TOKEN`, `..._SECRET`, `PASSWORD`...)
 is refused with "Add this under Secrets; Alloy keeps it in your Keychain." If the Keychain is unavailable or denies

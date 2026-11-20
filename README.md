@@ -154,7 +154,7 @@ app, and a bar above the chat offers Keep and Discard. `/theme` is available in 
 Claude Code is first-class. Codex, Gemini CLI, OpenCode, Goose and custom agents run over the Agent Client Protocol.
 Pick the agent from the New Session menu. Alloy finds installed agents on your login PATH and shows the install
 command for the rest; it never installs anything. Chat, permissions, the edit ledger, overlap warnings and shared
-notes work as for Claude Code, and agent secrets live only in the Keychain. `/theme` is Claude Code only. See
+notes work as for Claude Code, and agent secrets, which you can enter in Settings > Agents, live only in the Keychain. `/theme` is Claude Code only. See
 [docs/acp.md](docs/acp.md).
 
 ## Privacy

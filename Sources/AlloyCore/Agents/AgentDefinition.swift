@@ -45,11 +45,17 @@ public struct AgentDefinition: Codable, Sendable, Equatable, Identifiable {
         if let bad = env.first(where: { EnvVar.looksSecret($0.name) }) { throw AgentDefinitionError(variable: bad.name) }
     }
 
-    /// The plain variables plus the secrets read from `store`. A denied or unavailable Keychain, or a secret that was
+    /// The plain variables plus every secret `store` holds for this agent (found through `names(agent:)`, plus any older
+    /// `secretNames`). A denied or unavailable Keychain, or a secret that was
     /// never set, never throws: the variable is left out and named in `missing`.
     public func resolveEnvironment(store: AgentSecretStore) -> (env: [String: String], missing: [String]) {
         var out: [String: String] = [:], missing: [String] = []
         for v in env where !EnvVar.looksSecret(v.name) { out[v.name] = v.value }
+        // The store is the source of truth for names; `secretNames` (older custom definitions) is merged in.
+        let stored = (try? store.names(agent: id)) ?? []
+        for name in stored where !secretNames.contains(name) {
+            if let value = (try? store.get(agent: id, variable: name)) ?? nil, !value.isEmpty { out[name] = value }
+        }
         for name in secretNames {
             if let value = (try? store.get(agent: id, variable: name)) ?? nil, !value.isEmpty {
                 out[name] = value

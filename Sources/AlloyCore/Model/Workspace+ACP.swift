@@ -190,6 +190,15 @@ extension Workspace {
         detectedAgents[id] = nil
     }
 
+    /// Writes one secret to the store only (never to settings or a log); launch finds it through the store's names.
+    /// Returns true when it replaced an existing value. The caller clears its copy of `value` before calling.
+    @discardableResult
+    public func saveSecret(_ value: String, agent: String, name: String) throws -> Bool {
+        let existed = ((try? agentSecrets.names(agent: agent)) ?? []).contains(name)
+        try agentSecrets.set(value, agent: agent, variable: name)
+        return existed
+    }
+
     /// Deletes one stored secret and forgets its name on a custom agent.
     public func removeSecret(agent: String, name: String) throws {
         try agentSecrets.delete(agent: agent, variable: name)
