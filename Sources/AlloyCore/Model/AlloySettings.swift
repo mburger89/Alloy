@@ -96,6 +96,12 @@ public struct AlloySettings: Codable, Equatable, Sendable {
     /// The server that formats a language when it has a main server and linters: language id -> server id. A language with no entry uses the automatic choice.
     public var formatters: [String: String]
 
+    /// The user's custom ACP agents (presets are built in). Secret names only; values live in the Keychain.
+    public var agents: [AgentDefinition]
+
+    /// The agent a new session uses when none is picked: a preset or custom agent id, nil for Claude.
+    public var defaultAgentID: String?
+
     public init(claudePath: String? = nil, lastProjectPath: String? = nil,
                 shareKnowledge: Bool = true, shareAcrossProjects: Bool = true, askBeforeSharedNotes: Bool = false, followEdits: Bool = true, paletteShowsDisabled: Bool = true,
                 themeMode: ThemeMode = .single, theme: String = "dracula",
@@ -105,7 +111,10 @@ public struct AlloySettings: Codable, Equatable, Sendable {
                 backgroundImages: [String: String] = [:], terminal: TerminalSettings = TerminalSettings(),
                 keybindings: [String: String] = [:],
                 searchMaxResults: Int = AlloySettings.defaultSearchMaxResults, searchExcludes: [String] = [],
-                formatters: [String: String] = [:], git: GitSettings = GitSettings()) {
+                formatters: [String: String] = [:], git: GitSettings = GitSettings(),
+                agents: [AgentDefinition] = [], defaultAgentID: String? = nil) {
+        self.agents = agents
+        self.defaultAgentID = defaultAgentID
         self.terminal = terminal
         self.git = git
         self.searchMaxResults = min(max(searchMaxResults, Self.searchResultRange.lowerBound), Self.searchResultRange.upperBound)
@@ -130,7 +139,7 @@ public struct AlloySettings: Codable, Equatable, Sendable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case claudePath, lastProjectPath, shareKnowledge, shareAcrossProjects, askBeforeSharedNotes, followEdits, paletteShowsDisabled, themeMode, theme, lightTheme, darkTheme, languageServers, appearance, glass, backgroundImages, keybindings, searchMaxResults, searchExcludes, terminal, formatters, git
+        case claudePath, lastProjectPath, shareKnowledge, shareAcrossProjects, askBeforeSharedNotes, followEdits, paletteShowsDisabled, themeMode, theme, lightTheme, darkTheme, languageServers, appearance, glass, backgroundImages, keybindings, searchMaxResults, searchExcludes, terminal, formatters, git, agents, defaultAgentID
     }
 
     /// Every key is optional, so a file written by an older Alloy still loads with its values intact.
@@ -159,9 +168,17 @@ public struct AlloySettings: Codable, Equatable, Sendable {
         searchExcludes = (try? c.decodeIfPresent([String].self, forKey: .searchExcludes)) ?? []
         keybindings = (try? c.decodeIfPresent([String: String].self, forKey: .keybindings)) ?? [:]
         git = (try? c.decodeIfPresent(GitSettings.self, forKey: .git)) ?? GitSettings()
+        defaultAgentID = (try? c.decodeIfPresent(String.self, forKey: .defaultAgentID)) ?? nil
+        // Entry by entry: one malformed agent is dropped without losing the others.
+        agents = ((try? c.decodeIfPresent([LossyAgent].self, forKey: .agents)) ?? nil)?.compactMap(\.value) ?? []
         // Entry by entry: one malformed override is dropped without losing the others.
         let lossy = (try? c.decodeIfPresent([String: LossyOverride].self, forKey: .languageServers)) ?? nil
         languageServers = (lossy ?? [:]).compactMapValues(\.value)
+    }
+
+    private struct LossyAgent: Decodable {
+        var value: AgentDefinition?
+        init(from decoder: Decoder) throws { value = try? AgentDefinition(from: decoder) }
     }
 
     private struct LossyOverride: Decodable {

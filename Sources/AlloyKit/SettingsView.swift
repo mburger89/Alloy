@@ -85,6 +85,8 @@ struct SettingsView: Component {
                 LanguageServersSection(workspace: workspace, builtIn: coordinator.builtIn, locator: coordinator.locator)
             }
             Divider()
+            AgentsSettingsSection(workspace: workspace)
+            Divider()
             TerminalSettingsSection(workspace: workspace)
             Divider()
             GitSettingsSection(workspace: workspace)

@@ -410,6 +410,16 @@ final class ComposerModel {
         Task { await workspace.send(message, to: id) }
     }
 
+    /// "Message Claude", or "Message <Agent name>" for an ACP session.
+    static func placeholder(for session: Session) -> String {
+        "Message \(session.backend.isACP ? session.agentName : "Claude")"
+    }
+
+    func setAgentMode(_ id: String) {
+        let workspace = workspace, sid = sessionID
+        Task { await workspace.setAgentMode(id, for: sid) }
+    }
+
     var mode: PermissionMode {
         session?.permissionMode.flatMap(PermissionMode.init(rawValue:)) ?? .default_
     }

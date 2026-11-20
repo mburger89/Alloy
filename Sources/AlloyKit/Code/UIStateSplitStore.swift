@@ -23,8 +23,14 @@ final class UIStateSplitStore: SplitViewAutosaveStore {
 
 extension Workspace {
     /// The "+" button, the title pill and ⌘N: a new session named after the count, selected.
-    func startNewSession() {
+    /// Without a backend (⌘N, the empty-state button) the default agent runs it, else Claude.
+    func startNewSession(backend: SessionBackend? = nil) {
         let n = sessions.count + 1
-        Task { await newSessionFromUser(name: "Session \(n)") }
+        let backend = backend ?? defaultBackend
+        if backend == .claude {
+            Task { await newSessionFromUser(name: "Session \(n)") }
+        } else {
+            Task { await newSession(name: "Session \(n)", backend: backend) }
+        }
     }
 }

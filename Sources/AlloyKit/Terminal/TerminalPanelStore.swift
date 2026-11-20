@@ -84,7 +84,10 @@ final class TerminalPanelStore {
         let panes = layout.panesToSpawn()
         guard !panes.isEmpty else { return }
         manager.spawnIfNeeded(panes.map { (id: $0, cwd: lastCwd(of: $0)) })
-        for pane in panes { workspace.terminalLayout.markSpawned(pane) }
+        for pane in panes {
+            workspace.terminalLayout.markSpawned(pane)
+            if let input = workspace.takeTerminalStartupInput(pane) { manager.write(pane, Array(input.utf8)) }
+        }
     }
 
     func notice(of pane: UUID) -> String? { notices[pane] }

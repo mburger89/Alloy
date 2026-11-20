@@ -138,11 +138,15 @@ final class Rig {
     let clock = ManualClock()
     /// Delivers file-system events by hand, so a test decides when an outside change arrives.
     let changes = ScriptedChangeSource()
+    let secrets: any AgentSecretStore
 
     /// `followEdits` is off by default: the UI tests drive the panel by hand and expect it to stay where they put it.
-    init(followEdits: Bool = false, branch: String? = nil) {
+    init(followEdits: Bool = false, branch: String? = nil, agents: [AgentDefinition]? = nil, defaultAgentID: String? = nil,
+         secrets: any AgentSecretStore = InMemorySecretStore(), detector customDetector: AgentDetector? = nil) {
+        self.secrets = secrets
         var settings = AlloySettings()
         settings.followEdits = followEdits
+        settings.defaultAgentID = defaultAgentID
         root = FileManager.default.temporaryDirectory.appendingPathComponent("alloy-ui-\(UUID().uuidString)").resolvingSymlinksInPath()
         try? FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         if let branch {
@@ -150,10 +154,23 @@ final class Rig {
             try? "ref: refs/heads/\(branch)\n".write(to: root.appendingPathComponent(".git/HEAD"), atomically: true, encoding: .utf8)
         }
         let bag = transports, source = changes
+        // With `agents`, ACP sessions run on scripted transports too (collected in the same bag, in launch order), and
+        // every listed command counts as installed. Without, the workspace is exactly what the Claude-only tests had.
+        var acpFactory: ACPTransportFactory?
+        if agents != nil { acpFactory = { _ in bag.make() } }
+        let definitions = agents ?? AgentPresets.all
+        let found: @Sendable ([String]) -> [String: String] = { names in
+            var out: [String: String] = [:]
+            for n in names { out[n] = "/fake/" + n }
+            return out
+        }
+        let detector = customDetector ?? AgentDetector(resolve: found, isExecutable: { _ in true }, home: "/nohome", helpRunner: { _ in nil })
         workspace = Workspace(projectRoot: root, appSupport: root.appendingPathComponent("support"), settings: settings,
                               locate: { _ in URL(fileURLWithPath: "/fake/claude") },
-                              makeTransport: { _ in bag.make() }, autosaveClock: clock,
-                              changes: { _ in source })
+                              makeTransport: { _ in bag.make() }, makeACPTransport: acpFactory,
+                              agentDefinitions: { definitions }, agentSecrets: secrets,
+                              agentDetector: detector,
+                              autosaveClock: clock, changes: { _ in source })
     }
 
     deinit { try? FileManager.default.removeItem(at: root) }

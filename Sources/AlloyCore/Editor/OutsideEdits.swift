@@ -136,7 +136,8 @@ extension Workspace {
     /// longer running the window ends a grace period later (a denied call never ran, so its window is dropped).
     func trackShellWindows(_ event: ProcessEvent, session s: Session) {
         let t = autosaveClock.now
-        if case .message(.assistantBlock(_, .toolUse(let id, let name, _, _))) = event, ToolKind.classify(name) == .shell {
+        if case .message(.assistantBlock(_, .toolUse(let id, let name, let input, _))) = event,
+           (ToolKind(acpKind: input["acpKind"]?.stringValue) ?? ToolKind.classify(name)) == .shell {
             if shellWindows[s.id]?.contains(where: { $0.toolUseID == id }) != true {
                 shellWindows[s.id, default: []].append(ShellWindow(toolUseID: id, start: t, end: nil))
             }
@@ -169,7 +170,8 @@ extension Workspace {
         let target = url.path, resolved = url.resolvingSymlinksInPath().path
         for s in sessions where live[s.id] != nil {
             for case .tool(let t) in s.transcript.blocks where t.status == .running && (t.kind == .edit || t.kind == .write) {
-                guard let fp = t.input["file_path"]?.stringValue ?? t.input["notebook_path"]?.stringValue else { continue }
+                guard let fp = t.input["file_path"]?.stringValue ?? t.input["notebook_path"]?.stringValue
+                        ?? (t.input["acpKind"] != nil ? t.input["path"]?.stringValue : nil) else { continue }
                 let u = URL(fileURLWithPath: fp, relativeTo: projectRoot).standardizedFileURL
                 guard u.path == target || u.resolvingSymlinksInPath().path == resolved else { continue }
                 if !Self.awaitsPermission(s, toolUseID: t.toolUseID) { return true }

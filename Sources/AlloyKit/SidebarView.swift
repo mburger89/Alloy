@@ -20,6 +20,7 @@ struct SidebarView: Component {
             HStack(spacing: 0) {
                 SectionHeader(title: "Sessions")
                 Spacer()
+                // The "+" starts the default agent (Claude unless one is chosen), as ⌘N does; the chevron beside it picks one.
                 Button {
                     workspace.startNewSession()
                 } label: {
@@ -31,6 +32,7 @@ struct SidebarView: Component {
                 .keyboardShortcut(newSessionShortcut)
                 .accessibilityIdentifier("new-session")
                 .padding(inset(6, 0))
+                NewSessionMenu(workspace: workspace)
             }
             ScrollView {
                 List(workspace.sessions, selection: selection, rowHeight: Pixels(62)) { session in
@@ -126,12 +128,21 @@ struct SessionRow: Component {
                 }
                 HStack(spacing: Pixels(6)) {
                     Text(statusWord(session.status)).font(size: 11).foregroundColor(.mutedInk).lineLimit(1)
-                    Text(String(format: "$%.2f", session.costUSD)).font(size: 11).foregroundColor(.mutedInk).lineLimit(1)
-                    Text(tokenText(session.totalTokens)).font(size: 11).foregroundColor(.mutedInk).lineLimit(1)
-                        .accessibilityIdentifier("session-tokens-\(id.uuidString)")
+                    if session.backend.isACP {
+                        ForEach(Array(Self.usageParts(session).enumerated()), id: \.offset) { _, part in
+                            Text(part).font(size: 11).foregroundColor(.mutedInk).lineLimit(1)
+                        }
+                    } else {
+                        Text(String(format: "$%.2f", session.costUSD)).font(size: 11).foregroundColor(.mutedInk).lineLimit(1)
+                        Text(tokenText(session.totalTokens)).font(size: 11).foregroundColor(.mutedInk).lineLimit(1)
+                            .accessibilityIdentifier("session-tokens-\(id.uuidString)")
+                    }
                 }
                 HStack(spacing: Pixels(6)) {
-                    if let model = session.model {
+                    if session.backend.isACP {
+                        Text(Self.agentLine(session)).font(size: 11).foregroundColor(.mutedInk).lineLimit(1)
+                            .accessibilityIdentifier("session-agent-\(id.uuidString)")
+                    } else if let model = session.model {
                         Text(modelShortName(model)).font(size: 11).foregroundColor(.mutedInk).lineLimit(1)
                             .accessibilityIdentifier("session-model-\(id.uuidString)")
                     }
@@ -153,8 +164,9 @@ struct SessionRow: Component {
             }
             Menu {
                 Button("Fork") { Task { await workspace.fork(id, name: nil) } }
-                    .disabled(!session.hasConversation)
-                    .help(session.hasConversation ? "" : "Nothing to fork yet")
+                    .disabled(!session.hasConversation || session.backend.isACP)
+                    .help(session.backend.isACP ? "Not available for \(session.agentName)"
+                          : session.hasConversation ? "" : "Nothing to fork yet")
                     .accessibilityIdentifier("fork-\(id.uuidString)")
                 Button("Rename") { draft = session.name; renaming = true }
                     .accessibilityIdentifier("session-rename-\(id.uuidString)")
@@ -170,6 +182,26 @@ struct SessionRow: Component {
         .accessibilityIdentifier("session-row-\(id.uuidString)")
         .accessibilityLabel(session.name)
     }
+
+    /// "Codex", or "Codex · GPT-5" once the agent's model is known (its display name when it offered one).
+    static func agentLine(_ session: Session) -> String {
+        guard let model = session.model, !model.isEmpty else { return session.agentName }
+        let name = session.modelOptions.first { $0.id == model }?.name ?? model
+        return "\(session.agentName) \u{00B7} \(name)"
+    }
+
+    /// Only what the agent reported: cost, context use (`12.3k/200k`), or tokens when it counted them.
+    static func usageParts(_ session: Session) -> [String] {
+        var parts: [String] = []
+        if let u = session.usage {
+            if let cost = u.cost { parts.append((u.currency ?? "USD") == "USD" ? String(format: "$%.2f", cost) : String(format: "%.2f %@", cost, u.currency ?? "")) }
+            if let used = u.used, let size = u.size, size > 0 { parts.append("\(shortCount(used))/\(shortCount(size))") }
+        }
+        if session.totalTokens > 0 { parts.append(tokenText(session.totalTokens)) }
+        return parts
+    }
+
+    private static func shortCount(_ n: Int) -> String { n < 1000 ? "\(n)" : String(format: "%.1fk", Double(n) / 1000) }
 
     private func commit() {
         guard renaming else { return }

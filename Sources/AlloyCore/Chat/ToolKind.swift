@@ -3,6 +3,19 @@ import Foundation
 public enum ToolKind: String, Sendable, CaseIterable {
     case read, search, shell, edit, write, web, subagent, todo, question, plan, mcp, other
 
+    /// The kind an ACP tool kind is shown as (`delete` and `move` read as edits).
+    public init?(acpKind: String?) {
+        switch acpKind {
+        case "read": self = .read
+        case "edit", "delete", "move": self = .edit
+        case "search": self = .search
+        case "execute": self = .shell
+        case "fetch": self = .web
+        case "think", "other": self = .other
+        default: return nil
+        }
+    }
+
     public static func classify(_ toolName: String) -> ToolKind {
         if toolName.hasPrefix("mcp__") { return .mcp }
         switch toolName {

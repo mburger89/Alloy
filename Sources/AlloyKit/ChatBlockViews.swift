@@ -18,15 +18,23 @@ struct ChatBlockView: Component {
     /// Whether the user bubble's "shared" chip is expanded.
     var sharedExpanded: Binding<Bool>?
 
+    /// "Send now" on a message waiting behind a running ACP turn; Claude's queue has no such button.
+    static func sendNowAction(_ workspace: Workspace, _ session: Session, _ id: UUID, _ state: UserState) -> (() -> Void)? {
+        guard session.backend.isACP, case .queued = state else { return nil }
+        let sessionID = session.id
+        return { Task { await workspace.sendNow(id, in: sessionID) } }
+    }
+
     var content: some ElementGroup {
         VStack(alignment: .leading, spacing: 0) {
             switch block {
             case .user(let id, let text, let images, let state): UserBubble(blockID: id.uuidString, text: text, imageCount: images, state: state,
-                                                                  shared: workspace.sharedFiles[id] ?? [], sharedExpanded: sharedExpanded)
+                                                                  shared: workspace.sharedFiles[id] ?? [], sharedExpanded: sharedExpanded,
+                                                                  sendNow: Self.sendNowAction(workspace, session, id, state))
             case .assistantText(let id, let text): AssistantText(blockID: id, text: text, cache: cache)
             case .thinking(let id, let text, let tokens): ThinkingRow(id: id, text: text, tokens: tokens, collapsed: collapsed)
             case .tool(let tool): ToolBlockView(workspace: workspace, tool: tool, collapsed: collapsed, codeState: codeState)
-            case .permission(let p): PermissionCard(workspace: workspace, sessionID: session.id, block: p)
+            case .permission(let p): PermissionCard(workspace: workspace, sessionID: session.id, agentName: session.agentName, block: p)
             case .question(let q): QuestionCard(workspace: workspace, sessionID: session.id, block: q, draft: draft ?? .constant(CardDraft()))
             case .plan(let p): PlanCard(workspace: workspace, sessionID: session.id, block: p, draft: draft ?? .constant(CardDraft()), cache: cache)
             case .notice(_, let kind, let text): NoticeRow(id: block.id, kind: kind, text: text, cache: cache)
@@ -63,6 +71,8 @@ struct UserBubble: Component {
     /// What Alloy added to the message about files other sessions already read.
     var shared: [SharedFile] = []
     var sharedExpanded: Binding<Bool>?
+    /// Set for a queued message of an ACP session: sends it at once and cancels the running turn.
+    var sendNow: (() -> Void)?
 
     /// "shared: 3 files"; nil without any.
     static func sharedCaption(_ count: Int) -> String? {
@@ -108,6 +118,13 @@ struct UserBubble: Component {
                 if let label = Self.stateLabel(state) {
                     Text(label).font(size: 11).foregroundColor(.mutedInk)
                         .accessibilityIdentifier("user-state-\(blockID)")
+                    if let sendNow {
+                        Button { sendNow() } label: {
+                            Text("Send now").font(size: 11).foregroundColor(Color(.accent))
+                        }
+                        .buttonStyle(.plain)
+                            .accessibilityIdentifier("send-now-\(blockID)")
+                    }
                 }
             }
             .padding(inset(12, 8))
@@ -209,11 +226,15 @@ struct NoticeRow: Component {
 struct PermissionCard: Component {
     let workspace: Workspace
     let sessionID: Session.ID
+    /// "Claude" for Claude sessions (output unchanged); the agent's name for ACP sessions.
+    var agentName: String = "Claude"
     let block: PermissionBlock
+
+    static func title(agentName: String, tool: String) -> String { "\(agentName) wants to use \(tool)" }
 
     var content: some ElementGroup {
         let workspace = workspace, sessionID = sessionID, requestID = block.requestID
-        BlockChrome(kind: .overlap, title: "Claude wants to use \(block.toolName)", id: "perm-\(requestID)") {
+        BlockChrome(kind: .overlap, title: Self.title(agentName: agentName, tool: block.toolName), id: "perm-\(requestID)") {
             Text(verbatim: block.summary).font(family: "Menlo", size: 12)
             switch block.state {
             case .pending:

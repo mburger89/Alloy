@@ -1,3 +1,4 @@
+import AlloyACP
 import AlloyCore
 import AlloyKit
 import AppKit
@@ -40,6 +41,7 @@ func makeWorkspace(root: URL) -> Workspace? {
     settings = current
     StartupTrace.mark("makeWorkspace-settings-saved")
     let workspace = Workspace(projectRoot: checked, appSupport: appSupport, settings: current,
+                              makeACPTransport: { ACPTransport(configuration: $0) },
                               loginPATH: { ClaudeLocator.loginShell().path })
     themeController.bind(workspace)
     StartupTrace.mark("makeWorkspace-workspace-init-and-theme-bind")
@@ -49,6 +51,8 @@ func makeWorkspace(root: URL) -> Workspace? {
     GitCoordinator.installLive(on: workspace)
     StartupTrace.mark("makeWorkspace-git-installed")
     workspace.startWatching()
+    // Which agents are installed, for the New Session menu: one login-shell lookup, off the main actor.
+    Task { await workspace.detectAgents() }
     StartupTrace.mark("makeWorkspace-watching-started")
     return workspace
 }

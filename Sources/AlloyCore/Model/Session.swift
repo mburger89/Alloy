@@ -31,6 +31,17 @@ public final class Session: Identifiable {
     /// Total tokens processed: input + cache creation + cache read + output, summed per `result` (the sidebar's "tok").
     public internal(set) var totalTokens: Int = 0
     public internal(set) var model: String?
+    /// What runs this session (fixed for its lifetime).
+    public let backend: SessionBackend
+    /// The agent's display name for an ACP session; "Claude" otherwise.
+    public internal(set) var agentName: String
+    /// The ACP session id (agent side); nil for Claude and before the first handshake.
+    public internal(set) var acpSessionID: String?
+    /// Modes and models an ACP agent offers (empty for Claude and when the agent offers none).
+    public internal(set) var modes: [AgentChoice] = []
+    public internal(set) var modelOptions: [AgentChoice] = []
+    /// Context use and cost the agent reports; nil when it reports none.
+    public internal(set) var usage: SessionUsage?
     /// The CLI effort level (low, medium, high, xhigh, max); nil is the CLI default and passes no flag.
     public internal(set) var effort: String?
     public internal(set) var permissionMode: String?
@@ -64,7 +75,11 @@ public final class Session: Identifiable {
 
     init(id: UUID, name: String, colorIndex: Int, projectRoot: URL, hasConversation: Bool = false,
          cliSessionID: String? = nil, model: String? = nil, permissionMode: String? = nil, forkSource: String? = nil,
-         forkPoint: String? = nil, purpose: SessionPurpose = .coding, effort: String? = nil) {
+         forkPoint: String? = nil, purpose: SessionPurpose = .coding, effort: String? = nil,
+         backend: SessionBackend = .claude, agentName: String? = nil, acpSessionID: String? = nil) {
+        self.backend = backend
+        self.agentName = agentName ?? "Claude"
+        self.acpSessionID = acpSessionID
         self.effort = effort
         self.purpose = purpose
         self.forkSource = forkSource
@@ -108,12 +123,13 @@ public final class Session: Identifiable {
     /// A saved list for a session whose process has not started; the CLI's next list replaces it.
     func restoreCommands(_ commands: [SlashCommandInfo]) {
         allCommands = commands
-        slashCommands = Self.withLocalCommands(commands)
+        slashCommands = backend.isACP ? commands : Self.withLocalCommands(commands)
     }
 
     func setCommands(_ commands: [SlashCommandInfo]) {
         allCommands = commands
-        slashCommands = Self.withLocalCommands(commands.filter { !terminalOnlyCommands.contains($0.name) })
+        let shown = commands.filter { !terminalOnlyCommands.contains($0.name) }
+        slashCommands = backend.isACP ? shown : Self.withLocalCommands(shown)
     }
 
     /// Applies one process event to the transcript and status.
@@ -124,16 +140,26 @@ public final class Session: Identifiable {
             transcript.interruptRunningTools()
             transcript.cancelPendingPermissions()
             let trimmed = tail.trimmingCharacters(in: .whitespacesAndNewlines)
-            let text = trimmed.isEmpty ? "Claude exited (status \(code))" : "Claude exited (status \(code)): \(trimmed)"
+            let who = backend.isACP ? agentName : "Claude"
+            let text = trimmed.isEmpty ? "\(who) exited (status \(code))" : "\(who) exited (status \(code)): \(trimmed)"
             transcript.appendNotice(kind: .exited, text: text)
             transcript.abandonQueued()
-            status = .exited(status: code, message: trimmed.isEmpty ? "Claude exited (status \(code))" : trimmed)
+            status = .exited(status: code, message: trimmed.isEmpty ? "\(who) exited (status \(code))" : trimmed)
         case .message(let m):
             transcript.apply(m)
             switch m {
             case .systemInit(let i):
-                model = i.model; permissionMode = i.permissionMode; status = .working
-                if !i.sessionID.isEmpty { hasConversation = true; cliSessionID = i.sessionID; forkSource = nil; forkPoint = nil }
+                if backend.isACP {
+                    if !i.model.isEmpty { model = i.model }
+                    if !i.permissionMode.isEmpty { permissionMode = i.permissionMode }
+                    // An ACP handshake is not a turn: the session waits for its first prompt.
+                    status = .idle
+                    if !i.sessionID.isEmpty { acpSessionID = i.sessionID }
+                } else {
+                    model = i.model; permissionMode = i.permissionMode
+                    status = .working
+                    if !i.sessionID.isEmpty { hasConversation = true; cliSessionID = i.sessionID; forkSource = nil; forkPoint = nil }
+                }
                 terminalOnlyCommands = Set(i.terminalSlashCommands)
                 setCommands(allCommands)
             case .commandsChanged(let commands):
@@ -143,6 +169,22 @@ public final class Session: Identifiable {
                     permissionMode = mode
                     transcript.appendNotice(kind: .modeChanged,
                                             text: "Mode: \(PermissionMode(rawValue: mode)?.displayName ?? mode)")
+                }
+            case .userEcho(_, _, _, let isReplay):
+                // An ACP prompt is on the wire once it is echoed.
+                if backend.isACP, !isReplay, status == .idle { status = .working }
+            case .agentState(let state):
+                switch state {
+                case .modes(let current, let available):
+                    modes = available
+                    if let current { permissionMode = current }
+                case .models(let current, let available):
+                    modelOptions = available
+                    if let current { model = current }
+                case .usage(let u):
+                    usage = u
+                    // The agent's running total for this process; earlier processes of the session are the base.
+                    if let cost = u.cost, u.currency == nil || u.currency == "USD" { costUSD = costBase + cost }
                 }
             case .assistantBlock:
                 // Assigning an equal value still wakes observers; a streamed chunk must not rerun what only reads `status`.

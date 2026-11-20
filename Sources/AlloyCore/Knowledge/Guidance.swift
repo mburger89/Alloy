@@ -18,4 +18,6 @@ public enum Guidance {
                                         "mcp__alloy__theme_preview", "mcp__alloy__theme_save"]
     /// The only tools Alloy pre-approves, each named exactly (never a wildcard).
     public static let alloyToolNames = notesToolNames + coordinationToolNames
+    /// The same tools without the Claude `mcp__alloy__` prefix, for agents that name them their own way.
+    public static let alloyToolShortNames = alloyToolNames.map { String($0.dropFirst("mcp__alloy__".count)) }
 }

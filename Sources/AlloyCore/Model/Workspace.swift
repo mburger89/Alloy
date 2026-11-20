@@ -24,11 +24,18 @@ struct SessionRecord: Codable {
     var forkPoint: String?
     /// What the session is for; nil (a record from before themes) means coding.
     var purpose: SessionPurpose?
+    /// What runs the session; a record without one (every record from before ACP) is a Claude session.
+    var backend: SessionBackend = .claude
+    /// The agent's own session id for an ACP session, so a restart can resume or load it.
+    var acpSessionID: String?
 
     init(id: UUID, name: String, colorIndex: Int, hasConversation: Bool,
          cliSessionID: String? = nil, model: String? = nil, permissionMode: String? = nil,
          slashCommands: [SlashCommandInfo]? = nil, forkSource: String? = nil, forkPoint: String? = nil,
-         purpose: SessionPurpose? = nil, effort: String? = nil) {
+         purpose: SessionPurpose? = nil, effort: String? = nil, backend: SessionBackend = .claude,
+         acpSessionID: String? = nil) {
+        self.backend = backend
+        self.acpSessionID = acpSessionID
         self.effort = effort
         self.purpose = purpose
         self.forkSource = forkSource
@@ -52,6 +59,32 @@ struct SessionRecord: Codable {
         forkSource = try c.decodeIfPresent(String.self, forKey: .forkSource)
         forkPoint = try c.decodeIfPresent(String.self, forKey: .forkPoint)
         purpose = try c.decodeIfPresent(SessionPurpose.self, forKey: .purpose)
+        backend = try c.decodeIfPresent(SessionBackend.self, forKey: .backend) ?? .claude
+        acpSessionID = try c.decodeIfPresent(String.self, forKey: .acpSessionID)
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, name, colorIndex, hasConversation, cliSessionID, model, effort, permissionMode, slashCommands
+        case forkSource, forkPoint, purpose, backend, acpSessionID
+    }
+
+    /// The keys a Claude record has always had; `backend` and `acpSessionID` are written only for ACP sessions.
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(id, forKey: .id)
+        try c.encode(name, forKey: .name)
+        try c.encode(colorIndex, forKey: .colorIndex)
+        try c.encode(hasConversation, forKey: .hasConversation)
+        try c.encodeIfPresent(cliSessionID, forKey: .cliSessionID)
+        try c.encodeIfPresent(model, forKey: .model)
+        try c.encodeIfPresent(effort, forKey: .effort)
+        try c.encodeIfPresent(permissionMode, forKey: .permissionMode)
+        try c.encodeIfPresent(slashCommands, forKey: .slashCommands)
+        try c.encodeIfPresent(forkSource, forKey: .forkSource)
+        try c.encodeIfPresent(forkPoint, forKey: .forkPoint)
+        try c.encodeIfPresent(purpose, forKey: .purpose)
+        if backend != .claude { try c.encode(backend, forKey: .backend) }
+        try c.encodeIfPresent(acpSessionID, forKey: .acpSessionID)
     }
 }
 
@@ -94,7 +127,7 @@ public final class Workspace {
     /// hundreds of files waited for one frame per file.
     @ObservationIgnored private var storedLedger: ProjectLedger
     @ObservationIgnored private var ledgerNotifyPending = false
-    public private(set) var ledger: ProjectLedger {
+    public internal(set) var ledger: ProjectLedger {
         get { access(keyPath: \.ledger); return storedLedger }
         set { ledgerWillChange(); storedLedger = newValue; ledgerDidChange() }
         _modify { ledgerWillChange(); yield &storedLedger; ledgerDidChange() }
@@ -438,7 +471,7 @@ public final class Workspace {
 
     /// Per edit, the diff lines its chat block shows (the edit's runs plus two lines of context). Computed
     /// when the edit is recorded; frozen across keep and revert.
-    public private(set) var editDiffs: [UUID: [DiffLine]] = [:]
+    public internal(set) var editDiffs: [UUID: [DiffLine]] = [:]
     /// Why a revert was refused, until a later revert or keep of that edit succeeds.
     public internal(set) var revertConflicts: [UUID: String] = [:]
     /// How many full-file `diffLines()` computations have run (for tests).
@@ -451,17 +484,25 @@ public final class Workspace {
     @ObservationIgnored package private(set) var settingsGeneration = 0
     /// The `claude` path auto-detection finds, once `detectClaude()` has run.
     public private(set) var detectedClaudePath: String?
+    /// What `detectAgents()` found per agent id; empty until it has run.
+    public internal(set) var detectedAgents: [String: AgentStatus] = [:]
+    /// Set by the app: "Add agent..." in the New Session menu opens Settings with it.
+    @ObservationIgnored public var onAddAgent: (@MainActor () -> Void)?
     @ObservationIgnored private let locate: @Sendable (String?) throws -> URL
     @ObservationIgnored private let makeTransport: TransportFactory
+    @ObservationIgnored let makeACPTransport: ACPTransportFactory?
+    @ObservationIgnored let baseAgentDefinitions: @Sendable () -> [AgentDefinition]
+    @ObservationIgnored let agentSecrets: any AgentSecretStore
+    @ObservationIgnored let agentDetector: AgentDetector
     /// The login shell's PATH, merged into every child's environment (a GUI launch has a minimal PATH).
-    @ObservationIgnored private let loginPATH: @Sendable () -> String?
-    @ObservationIgnored private var cachedLoginPATH: String??
+    @ObservationIgnored let loginPATH: @Sendable () -> String?
+    @ObservationIgnored var cachedLoginPATH: String??
     @ObservationIgnored let now: () -> Date
     /// Writes the file; `abortIf` is asked right before the rename and a true answer leaves the file alone (the result is then true).
     @ObservationIgnored let writeFile: @Sendable (Data, URL, () -> Bool) throws -> Bool
     @ObservationIgnored var live: [UUID: (transport: any SessionTransport, task: Task<Void, Never>)] = [:]
     /// Sessions whose `stop()` arrived while they were still launching.
-    @ObservationIgnored private var stoppedDuringLaunch: Set<UUID> = []
+    @ObservationIgnored var stoppedDuringLaunch: Set<UUID> = []
     /// Messages sent before the transport was live, delivered (in order) once it is.
     @ObservationIgnored private var queued: [UUID: [(message: OutgoingMessage, uuid: UUID, context: String?, pending: PendingTold?)]] = [:]
     /// Sessions that must relaunch at their next idle point because a launch setting changed.
@@ -482,6 +523,13 @@ public final class Workspace {
     /// Control requests Alloy issued and has not seen answered, by `request_id`.
     @ObservationIgnored private var pendingControls: [String: (session: UUID, kind: PendingControlKind)] = [:]
     /// The original input of each open question or plan prompt, which the answer must echo back.
+    /// ACP: open approvals for writes to protected paths (`acp-fs-N` request ids; see Workspace+ACPFiles.swift).
+    @ObservationIgnored var acpFsApprovals: [String: (session: UUID, continuation: CheckedContinuation<Bool, Never>)] = [:]
+    @ObservationIgnored var acpFsCounter = 0
+    /// ACP: overlap warnings from an agent's file writes, told to it with its next prompt.
+    @ObservationIgnored var acpOverlapContext: [UUID: [String]] = [:]
+    /// Text typed into a new terminal pane once its shell runs (the sign-in of an ACP agent).
+    @ObservationIgnored var terminalStartupInput: [UUID: String] = [:]
     @ObservationIgnored private var promptInputs: [String: (session: UUID, input: JSONValue)] = [:]
     /// Sessions whose queued messages are being delivered; new sends join the queue to keep order.
     @ObservationIgnored private var draining: Set<UUID> = []
@@ -534,6 +582,10 @@ public final class Workspace {
                                              home: NSHomeDirectory())
                 },
                 makeTransport: @escaping TransportFactory = { ClaudeProcess(configuration: $0) },
+                makeACPTransport: ACPTransportFactory? = nil,
+                agentDefinitions: @escaping @Sendable () -> [AgentDefinition] = { AgentPresets.all },
+                agentSecrets: any AgentSecretStore = KeychainSecretStore(),
+                agentDetector: AgentDetector = AgentDetector(),
                 loginPATH: @escaping @Sendable () -> String? = { nil },
                 now: @escaping () -> Date = Date.init,
                 writeFile: @escaping @Sendable (Data, URL, () -> Bool) throws -> Bool = { try Workspace.writeKeepingMode($0, to: $1, abortIf: $2) },
@@ -548,6 +600,8 @@ public final class Workspace {
         self.fileIndex = FileIndex(root: projectRoot)
         self.projectRoot = projectRoot; self.appSupport = appSupport; self.settings = settings
         self.locate = locate; self.loginPATH = loginPATH; self.makeTransport = makeTransport; self.now = now; self.writeFile = writeFile
+        self.makeACPTransport = makeACPTransport; self.baseAgentDefinitions = agentDefinitions
+        self.agentSecrets = agentSecrets; self.agentDetector = agentDetector
         self.storedLedger = ProjectLedger(projectRoot: projectRoot)
         self.knowledgeScope = KnowledgeScope(ownRoot: projectRoot.path)
         self.hasCurrentNote = { [weak self] path, stamp in
@@ -655,6 +709,12 @@ public final class Workspace {
         return s
     }
 
+    /// New Session with an agent: a session run by an ACP agent (or Claude) and selected.
+    @discardableResult
+    public func newSession(name: String, backend: SessionBackend) async -> Session {
+        await newSession(name: name, purpose: .coding, select: true, backend: backend)
+    }
+
     /// The "+" button and ⌘N: creates a session and switches to it. `newSession` alone selects only when nothing is
     /// selected (restore and theme paths rely on that).
     @discardableResult
@@ -663,10 +723,11 @@ public final class Workspace {
     }
 
     @discardableResult
-    func newSession(name: String, purpose: SessionPurpose, select: Bool = false) async -> Session {
+    func newSession(name: String, purpose: SessionPurpose, select: Bool = false,
+                    backend: SessionBackend = .claude) async -> Session {
         ensureLoaded()
         let s = Session(id: UUID(), name: allowedName(name, for: nil), colorIndex: records.count % 12, projectRoot: projectRoot,
-                        purpose: purpose)
+                        purpose: purpose, backend: backend, agentName: agentDisplayName(for: backend))
         if Self.isReserved(name) { s.transcript.appendNotice(kind: .commandOutput, text: Self.reservedNotice(for: s.name)) }
         if isShuttingDown {
             // Not registered and never launched; the caller gets a stopped session.
@@ -713,6 +774,7 @@ public final class Workspace {
         let serversChanged = s.languageServers != settings.languageServers
         let gitChanged = s.git != settings.git
         let keybindingsChanged = s.keybindings != settings.keybindings
+        let changedAgents = Set(s.agents.filter { n in settings.agents.first { $0.id == n.id } != n }.map(\.id))
         settings = s
         if gitChanged { onGitSettingsChanged?(s.git) }
         if keybindingsChanged { onKeybindingsChanged?(s.keybindings) }
@@ -724,6 +786,12 @@ public final class Workspace {
         // Live sessions pick up the new launch options at their next idle point; dormant ones at their next wake.
         if launchOptionsChanged {
             for session in sessions where live[session.id] != nil || session.status == .starting { relaunchWhenIdle(session.id) }
+        }
+        // A changed custom agent applies to its live sessions at their next idle point, like the launch options above.
+        if !changedAgents.isEmpty {
+            for session in sessions where live[session.id] != nil || session.status == .starting {
+                if case .acp(let id) = session.backend, changedAgents.contains(id) { relaunchWhenIdle(session.id) }
+            }
         }
     }
 
@@ -774,6 +842,32 @@ public final class Workspace {
         await checkForkPoint(s)
         await launch(s, resume: s.hasConversation || s.forkSource != nil, forkFrom: s.forkSource, forkAt: s.forkPoint)
         if live[id] != nil { s.transcript.appendNotice(kind: .commandOutput, text: "Settings applied") }
+    }
+
+    /// Replaces an ACP session's agent process with a fresh one that restores the conversation (resume, else load, else
+    /// new): Restart after the watchdog, and the return from a terminal sign-in. Messages that waited in the old
+    /// transport behind the turn are told about, not resent.
+    public func restartACP(_ id: Session.ID) async {
+        guard let s = session(id), s.backend.isACP, !isShuttingDown, !relaunching.contains(id) else { return }
+        relaunching.insert(id)
+        defer { relaunching.remove(id) }
+        s.status = .starting
+        exitedWhileDraining.remove(id)
+        forgetPending(for: id)
+        releaseAwaitingEcho(for: id)
+        revokeToken(for: id)
+        cancelACPFsApprovals(session: id)
+        if let entry = live.removeValue(forKey: id) {
+            entry.task.cancel()
+            shellWindows.removeValue(forKey: id)
+            await entry.transport.stopAndWait(timeout: .seconds(3))
+        }
+        turnPending.remove(id)
+        s.transcript.finalizeStreaming()
+        s.transcript.interruptRunningTools()
+        s.transcript.cancelPendingPermissions()
+        s.transcript.abandonQueued()
+        await launch(s, resume: true)
     }
 
     /// Called as events arrive: lets work that waited for the session's idle point go.
@@ -903,6 +997,10 @@ public final class Workspace {
                 for w in waiters { w.resume() }
             }
         }
+        if case .acp(let agentID) = s.backend {
+            await launchACP(s, agentID: agentID)
+            return
+        }
         let exe: URL
         do { exe = try await resolveExecutable() } catch let e as ClaudeNotFound {
             failLaunch(s, "claude not found. Tried: \(e.tried.joined(separator: ", ")). Set a path in Alloy settings or ALLOY_CLAUDE_PATH.")
@@ -956,8 +1054,15 @@ public final class Workspace {
             markStopped(s)
             return
         }
-        // stream-json emits init only after the first message, so a started session is idle.
-        s.status = .idle
+        await runSession(s, transport: transport, stream: stream, initialStatus: .idle)
+    }
+
+    /// Registers a started transport, forwards its events, and delivers what waited for it. Shared by both backends.
+    func runSession(_ s: Session, transport: any SessionTransport, stream: AsyncStream<ProcessEvent>,
+                    initialStatus: SessionStatus) async {
+        // stream-json emits init only after the first message, so a started Claude session is idle; an ACP session
+        // is starting until its handshake completes.
+        s.status = initialStatus
         let task = Task { @MainActor [weak self] in
             for await event in stream {
                 guard let self else { return }
@@ -1019,14 +1124,15 @@ public final class Workspace {
         if !ended { s.transcript.appendNotice(kind: .error, text: "Session has ended") }
     }
 
-    private func failLaunch(_ s: Session, _ message: String) {
+    func failLaunch(_ s: Session, _ message: String) {
         revokeToken(for: s.id)
         if stoppedDuringLaunch.contains(s.id) { markStopped(s); return }
         noteThemeSessionEnded(s.id)
         s.status = .failedToLaunch(message)
         deferredControls.removeValue(forKey: s.id)
         if discardQueue(for: s.id) {
-            s.transcript.appendNotice(kind: .error, text: "Message not sent: Claude could not start")
+            s.transcript.appendNotice(kind: .error,
+                                      text: "Message not sent: \(s.backend.isACP ? s.agentName : "Claude") could not start")
         }
     }
 
@@ -1036,7 +1142,7 @@ public final class Workspace {
         themeWorkshop?.themeSessionEnded(id)
     }
 
-    private func markStopped(_ s: Session) {
+    func markStopped(_ s: Session) {
         noteThemeSessionEnded(s.id)
         pendingRelaunch.remove(s.id)
         turnPending.remove(s.id)
@@ -1083,6 +1189,7 @@ public final class Workspace {
         if case .message(.controlCancel(let rid)) = event { promptInputs.removeValue(forKey: rid) }
         if case .exited = event {
             pendingRelaunch.remove(s.id)
+            cancelACPFsApprovals(session: s.id)
             noteThemeSessionEnded(s.id)
             releaseIdleWaiters(s.id, reachedIdle: false)
             revokeToken(for: s.id)
@@ -1097,6 +1204,8 @@ public final class Workspace {
             if draining.contains(s.id) { exitedWhileDraining.insert(s.id) }
             resumeToolResultWaiters()
         }
+        if case .message(.controlRequest(let req)) = event, case .other(let subtype, let body) = req.kind, s.backend.isACP,
+           handleACPRequest(subtype: subtype, body: body, session: s) { return }
         // Control requests Alloy does not handle get an error answer, so the CLI never waits for one.
         if case .message(.controlRequest(let req)) = event, case .other = req.kind, let t = live[s.id]?.transport {
             let reply = OutboundMessage.controlError(requestID: req.requestID, message: "Unsupported by Alloy")
@@ -1152,6 +1261,12 @@ public final class Workspace {
         case .setMode(let mode): await setPermissionMode(mode, for: id); return
         case .setEffort(let level): await setEffort(level, for: id); return
         case .showModelPicker: s.requestModelPicker = true; return
+        case .fork where s.backend.isACP:
+            s.transcript.appendNotice(kind: .commandOutput, text: "/fork is not available for \(s.agentName).")
+            return
+        case .theme where s.backend.isACP:
+            s.transcript.appendNotice(kind: .commandOutput, text: "/theme is not available for \(s.agentName); start a Claude session for it.")
+            return
         case .fork(let name): await fork(id, name: name); return
         case .theme(let description): await newThemeSession(description: description); return
         case .localHelp:
@@ -1167,7 +1282,8 @@ public final class Workspace {
         // not delay the echo of what the user typed. A queue priority only means something while a turn runs.
         let uuid = message.uuid ?? UUID()
         let busy = s.status == .working || s.status == .awaitingPermission
-        let priority = busy ? message.priority : nil
+        // An ACP agent takes one prompt at a time: a message sent mid-turn waits (in the transport) and shows queued.
+        let priority = busy ? (message.priority ?? (s.backend.isACP ? .later : nil)) : nil
         let waitsForProcess = s.status == .dormant || s.status == .starting || draining.contains(id)
         if let origin = message.origin {
             s.transcript.appendSessionMessage(id: uuid, direction: origin.isSystem ? .system : .from, peer: AlreadyRead.oneLine(origin.senderName), peerID: origin.sender,
@@ -1181,6 +1297,11 @@ public final class Workspace {
         // A message from another session is not the user's: it names no files to share.
         let context = message.origin == nil ? await sharedContext(for: s, message: message.text) : nil
         releaseContext(id)
+        var contextText = context?.text
+        // A queued ACP message gets the notices that gathered by the time it is sent (the transport asks then).
+        if message.origin == nil, !(s.backend.isACP && busy), let overlap = takeACPOverlapContext(for: id) {
+            contextText = [overlap, contextText].compactMap { $0 }.joined(separator: "\n\n")
+        }
         if isShuttingDown {
             settleTold(context?.pending, sent: false)
             s.transcript.appendNotice(kind: .error, text: "Message not sent: Alloy is quitting")
@@ -1191,17 +1312,17 @@ public final class Workspace {
         if let context { sharedFiles[uuid] = context.files }
         if s.status == .dormant {
             // First message to a restored session: queue it and start the process (resuming when it has a conversation).
-            queued[id, default: []].append((message, uuid, context?.text, context?.pending))
+            queued[id, default: []].append((message, uuid, contextText, context?.pending))
             await wake(id)
             return
         }
         if draining.contains(id), live[id] != nil {
-            queued[id, default: []].append((message, uuid, context?.text, context?.pending))
+            queued[id, default: []].append((message, uuid, contextText, context?.pending))
             return
         }
         guard let t = live[id]?.transport else {
             if s.status == .starting {
-                queued[id, default: []].append((message, uuid, context?.text, context?.pending))
+                queued[id, default: []].append((message, uuid, contextText, context?.pending))
                 return
             }
             // Exited while the context was built: the bubble is already shown, so say it did not go out.
@@ -1210,7 +1331,7 @@ public final class Workspace {
             noteSessionEnded(s)
             return
         }
-        await deliverUser(.user(content: Self.content(message, context: context?.text), uuid: uuid, priority: priority),
+        await deliverUser(.user(content: Self.content(message, context: contextText), uuid: uuid, priority: priority),
                           uuid: uuid, pending: context?.pending, via: t, to: s)
     }
 
@@ -1310,7 +1431,7 @@ public final class Workspace {
 
     private func persistedState(_ s: Session) -> [String?] {
         [s.hasConversation ? "1" : "0", s.cliSessionID, s.forkSource, s.forkPoint, s.model, s.effort, s.permissionMode,
-         s.slashCommands.map { "\($0.name):\($0.description)" }.joined(separator: "\n")]
+         s.slashCommands.map { "\($0.name):\($0.description)" }.joined(separator: "\n"), s.acpSessionID]
     }
 
     /// Waits until the session's earlier sends have passed the point where they are built and handed on, so a control
@@ -1346,6 +1467,13 @@ public final class Workspace {
         guard !isShuttingDown, let s = session(id) else { return }
         guard let t = live[id]?.transport else { await deferControl(.mode(mode), for: s); return }
         await sendControl(.setPermissionMode(mode.rawValue), kind: .setMode(mode.rawValue), via: t, to: s)
+    }
+
+    /// Selects an ACP agent's mode by its own id (agents name modes differently from Claude's permission modes).
+    public func setAgentMode(_ mode: String, for id: Session.ID) async {
+        await afterEarlierSends(id)
+        guard !isShuttingDown, let s = session(id), let t = live[id]?.transport else { return }
+        await sendControl(.setPermissionMode(mode), kind: .setMode(mode), via: t, to: s)
     }
 
     public func answerQuestion(session id: Session.ID, requestID: String, answers: [String: String]) async {
@@ -1407,6 +1535,14 @@ public final class Workspace {
     }
 
     public func answerPermission(session id: Session.ID, requestID: String, allow: Bool) async {
+        // A protected-path write the agent asked for through `fs/write_text_file`: the file service waits on it, not the agent.
+        if let waiting = acpFsApprovals[requestID], waiting.session == id, let s = session(id) {
+            acpFsApprovals.removeValue(forKey: requestID)
+            s.transcript.resolvePermission(requestID: requestID, allowed: allow)
+            if s.status == .awaitingPermission, !s.hasPendingPermission { s.status = .working }
+            waiting.continuation.resume(returning: allow)
+            return
+        }
         guard let s = session(id), let t = live[id]?.transport else { return }
         let pending = s.transcript.blocks.compactMap { b -> JSONValue? in
             if case .permission(let p) = b, p.requestID == requestID, p.state == .pending { return p.input } else { return nil }
@@ -1423,11 +1559,18 @@ public final class Workspace {
     }
 
     public func interrupt(_ id: Session.ID) async {
+        cancelACPFsApprovals(session: id)
         guard let s = session(id), let t = live[id]?.transport else { return }
+        if s.backend.isACP {
+            // Stop means stop: the transport drops what waited behind the turn, and so does the chat.
+            s.transcript.abandonQueued()
+            releaseAwaitingEcho(for: id)
+        }
         await deliver(.control(requestID: UUID().uuidString.lowercased(), .interrupt), via: t, to: s)
     }
 
     public func stop(_ id: Session.ID) async {
+        cancelACPFsApprovals(session: id)
         exitedWhileDraining.remove(id)
         deferredControls.removeValue(forKey: id)
         pendingRelaunch.remove(id)
@@ -1459,6 +1602,7 @@ public final class Workspace {
     /// SIGKILL, bounded at about 3 s) concurrently, and this returns only once they have exited.
     public func stopAll() async {
         isShuttingDown = true
+        for id in Set(acpFsApprovals.values.map(\.session)) { cancelACPFsApprovals(session: id) }
         search.shutdown()
         await flushUIState()
         warningSleeper?.cancel(); warningSleeper = nil; warningSleeperExpiry = nil
@@ -1516,7 +1660,7 @@ public final class Workspace {
 
     /// Whether the transport took the message.
     @discardableResult
-    private func deliver(_ m: OutboundMessage, via t: any SessionTransport, to s: Session) async -> Bool {
+    func deliver(_ m: OutboundMessage, via t: any SessionTransport, to s: Session) async -> Bool {
         // Marked before the send: the CLI may begin the turn while the send is still being awaited.
         var isUser = false
         if case .user = m { isUser = true; turnPending.insert(s.id) }
@@ -2053,7 +2197,7 @@ public final class Workspace {
     public func editRecord(id: UUID) -> EditRecord? { recordIndex[id] }
 
     /// `detectTug` is false when the ledger was just loaded: old edits are not new activity.
-    private func reindex(_ path: String, detectTug: Bool = true) {
+    func reindex(_ path: String, detectTug: Bool = true) {
         for r in ledger.files[path]?.edits ?? [] { recordIndex[r.id] = r }
         if detectTug { scanTugOfWar(path) } else { markTugSeen(path) }
         refreshOverlapWarnings(path)
@@ -2294,7 +2438,8 @@ public final class Workspace {
             let r = SessionRecord(id: s.id, name: s.name, colorIndex: s.colorIndex, hasConversation: s.hasConversation,
                                   cliSessionID: s.cliSessionID, model: s.model, permissionMode: s.permissionMode,
                                   slashCommands: s.slashCommands.isEmpty ? nil : s.slashCommands, forkSource: s.forkSource, forkPoint: s.forkPoint,
-                                  purpose: s.purpose == .coding ? nil : s.purpose, effort: s.effort)
+                                  purpose: s.purpose == .coding ? nil : s.purpose, effort: s.effort,
+                                  backend: s.backend, acpSessionID: s.acpSessionID)
             if let i = records.firstIndex(where: { $0.id == s.id }) { records[i] = r } else { records.append(r) }
         }
         do {
@@ -2324,14 +2469,17 @@ public final class Workspace {
         // The fork's chat ends where the fork starts, however far its source has moved on since.
         let historyPoint = historySource == nil ? nil : (forkHistoryPoint[s.id] ?? s.forkPoint)
         let forked = historySource != nil
-        let url = TranscriptFile.url(cliSessionID: historySource ?? s.cliSessionID, projectRoot: projectRoot, home: home)
+        let isACP = s.backend.isACP
+        let url = isACP ? ACPHistory.url(directory: acpHistoryDirectory, sessionID: s.id)
+                        : TranscriptFile.url(cliSessionID: historySource ?? s.cliSessionID, projectRoot: projectRoot, home: home)
         let root = projectRoot, limit = Self.historyLimit
         // Read, parse and replay all off the main actor; only the last blocks come back.
         let replayed = await Task.detached { () -> (blocks: [ChatBlock], skippedLines: Int)? in
             guard var data = try? Data(contentsOf: url) else { return nil }
             if let historyPoint, let cut = TranscriptFile.truncated(data, after: historyPoint) { data = cut }
             var replay = Transcript(projectRoot: root)
-            let skipped = TranscriptFile.forEachMessage(in: data) { replay.apply($0, now: $1) }
+            let skipped = isACP ? ACPHistory.forEachMessage(in: data) { replay.apply($0) }
+                                : TranscriptFile.forEachMessage(in: data) { replay.apply($0, now: $1) }
             replay.finishReplay()
             return (Array(replay.blocks.suffix(limit)), skipped)
         }.value
@@ -2392,7 +2540,8 @@ public final class Workspace {
             let s = Session(id: r.id, name: r.name, colorIndex: r.colorIndex, projectRoot: projectRoot,
                             hasConversation: r.hasConversation, cliSessionID: r.cliSessionID,
                             model: r.model, permissionMode: r.permissionMode, forkSource: r.forkSource, forkPoint: r.forkPoint,
-                            purpose: r.purpose ?? .coding, effort: r.effort)
+                            purpose: r.purpose ?? .coding, effort: r.effort, backend: r.backend,
+                            agentName: agentDisplayName(for: r.backend), acpSessionID: r.acpSessionID)
             s.status = .dormant
             // A name saved before "Alloy" was reserved.
             if Self.isReserved(r.name) {

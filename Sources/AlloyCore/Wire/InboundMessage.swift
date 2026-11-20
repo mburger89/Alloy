@@ -184,6 +184,10 @@ public enum InboundMessage: Sendable, Equatable {
     /// A built-in slash command answered locally by the CLI (`/cost`, `/context`, ...).
     case localCommandOutput(text: String)
     case controlResponse(requestID: String, result: ControlResult)
+    /// A notice the transport itself raises (an ACP agent's warning, a stop reason). Claude never produces this.
+    case notice(kind: NoticeKind, text: String)
+    /// Mode, model and usage state of an ACP agent. Claude never produces this.
+    case agentState(AgentStateUpdate)
     /// Known-but-unused, including the echoed `control_response` and hook events.
     case ignored(type: String)
     /// Unrecognised or malformed (`"<malformed>"`).

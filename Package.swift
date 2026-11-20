@@ -47,6 +47,10 @@ let package = Package(
                 .product(name: "MetalUICodeBuffer", package: "MetalUI"),
             ]
         ),
+        // Agent Client Protocol client: framing, JSON-RPC connection, v1 models, agent process. UI-free.
+        .target(name: "AlloyACP", dependencies: ["AlloyCore"]),
+        // Test-only scriptable ACP agent (no dependencies; scripted through FAKE_ACP_SCRIPT).
+        .executableTarget(name: "AlloyFakeACP"),
         // Test-only scriptable language server. Not a product: the test targets depend on it, so SwiftPM always builds it.
         .executableTarget(name: "AlloyFakeLSP", dependencies: ["AlloyCore", "AlloyLSP"]),
         // Shared helpers of the tests that run the fake server (its path, polling, launch and result collectors).
@@ -99,6 +103,7 @@ let package = Package(
             name: "Alloy",
             dependencies: [
                 "AlloyKit",
+                "AlloyACP",
                 .product(name: "MetalUI", package: "MetalUI"),
             ],
             // Sparkle.framework lives in Alloy.app/Contents/Frameworks (scripts/bundle-macos.sh).
@@ -107,6 +112,11 @@ let package = Package(
         .testTarget(
             name: "AlloyCoreTests",
             dependencies: ["AlloyCore", "AlloyTestSupport"],
+            resources: [.copy("Fixtures")]
+        ),
+        .testTarget(
+            name: "AlloyACPTests",
+            dependencies: ["AlloyACP", "AlloyCore", "AlloyFakeACP", "AlloyTestSupport"],
             resources: [.copy("Fixtures")]
         ),
         .testTarget(

@@ -74,6 +74,14 @@ extension Workspace {
             ProposedChange.from(session: s.id, toolUseID: request.toolUseID, path: rel, toolName: request.toolName,
                                 input: request.toolInput, currentText: $0, date: now())
         }
+        guard let text = overlapAdvice(for: s, path: rel, change: change, toolUseID: request.toolUseID) else { return HookReply() }
+        return HookReply(additionalContext: text)
+    }
+
+    /// Registers `change` as the session's proposal, then tells the session (in its chat, and in the returned text) of
+    /// the overlaps it has not heard of; the other session hears of it too. Nil when there is nothing new to tell.
+    /// Shared by the Claude hook and by an ACP agent's file writes.
+    func overlapAdvice(for s: Session, path rel: String, change: ProposedChange?, toolUseID: String) -> String? {
         var overlaps: [Overlap] = []
         var spans: [ClosedRange<Int>]?
         if let change {
@@ -95,7 +103,7 @@ extension Workspace {
                                        toolID: { toolIDs[$0] })
         let claimed = claimItems(for: s.id, path: rel, spans: spans)
         let items = (noticeItems + claimed).filter { told[$0.key] != generation && !$0.text.isEmpty }
-        guard !items.isEmpty else { return HookReply() }
+        guard !items.isEmpty else { return nil }
 
         let joined = OverlapNotice.join(items.map(\.text))
         var table = told
@@ -108,12 +116,12 @@ extension Workspace {
         persistOverlapTold()
         s.transcript.appendNotice(kind: .warning, text: joined.text)
         let editorLines = spans.flatMap { sp in sp.map(\.lowerBound).min().flatMap { lo in sp.map(\.upperBound).max().map { lo...$0 } } }
-        recordOverlapWarnings(editor: s, path: rel, told: Array(items.prefix(joined.included)), lines: editorLines, tool: request.toolUseID)
-        return HookReply(additionalContext: joined.text)
+        recordOverlapWarnings(editor: s, path: rel, told: Array(items.prefix(joined.included)), lines: editorLines, tool: toolUseID)
+        return joined.text
     }
 
     /// The file's text as Alloy holds it in memory: the ledger's, else an open editable buffer's saved text.
-    private func currentText(of path: String) -> String? {
+    func currentText(of path: String) -> String? {
         if let file = ledger.files[path] { return file.currentText }
         if let doc = documents[path], doc.state == .editable { return doc.savedSnapshot.text }
         return nil

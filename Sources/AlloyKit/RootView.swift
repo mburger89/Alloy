@@ -125,6 +125,7 @@ struct AlloyScreen: Component {
     init(workspace: Workspace, themes: ThemeController? = nil, updates: UpdateModel? = nil, center: CommandCenter,
          terminal: TerminalPanelStore? = nil) {
         self.workspace = workspace; self.themes = themes; self.updates = updates; self.center = center
+        if workspace.onAddAgent == nil { workspace.onAddAgent = { [weak center] in _ = center?.registry.run(id: "app.settings") } }
         _splitStore = State(wrappedValue: UIStateSplitStore(workspace: workspace))
         _terminal = State(wrappedValue: terminal ?? TerminalPanelStore(workspace: workspace))
     }

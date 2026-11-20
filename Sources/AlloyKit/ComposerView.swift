@@ -36,6 +36,36 @@ struct QueuedCount: Component {
     }
 }
 
+/// An ACP agent's Mode and Model pickers, each shown only when the agent offered choices. There is no Effort menu.
+struct AgentPickers: Component {
+    let session: Session
+    let model: ComposerModel
+    var style: AppearanceStyle = .defaults
+
+    var content: some ElementGroup {
+        let model = model
+        if session.modes.count > 1 {
+            let mode = Binding<String>(get: { session.permissionMode ?? "" }, set: { model.setAgentMode($0) })
+            Picker("Mode", selection: mode) {
+                ForEach(session.modes) { m in Text(m.name).tag(m.id) }
+            }
+            .buttonBorderShape(style.buttonShape)
+            .accessibilityIdentifier("mode-picker")
+        }
+        if session.modelOptions.count > 1 {
+            let current = session.modelOptions.first { $0.id == session.model }?.name ?? session.model ?? "Model"
+            Menu(current) {
+                for choice in session.modelOptions {
+                    Button(choice.name) { model.setModel(choice.id) }
+                        .accessibilityIdentifier("model-choice-\(choice.id)")
+                }
+            }
+            .buttonBorderShape(style.buttonShape)
+            .accessibilityIdentifier("model-menu")
+        }
+    }
+}
+
 /// The toolbar (mode, model, Stop, queued count) above the message field and Send button. Return sends (steering a
 /// running turn), ⌥Return queues, ⇧Return adds a line, ⌘Return sends, ⇧Tab cycles the mode, Esc interrupts.
 struct ComposerView: Component {
@@ -58,43 +88,48 @@ struct ComposerView: Component {
         let open = Binding<Bool>(get: { model.suggestionsVisible }, set: { _ in })
         let clipboard = clipboard
         let caret = Binding<Range<Int>?>(get: { model.caret }, set: { if model.caret != $0 { model.caret = $0 } })
+        let placeholder = ComposerModel.placeholder(for: session)
         let pickerOpen = Binding<Bool>(get: { session.requestModelPicker }, set: { session.requestModelPicker = $0 })
         VStack(alignment: .leading, spacing: Pixels(6)) {
             HStack(spacing: Pixels(8)) {
-                Picker("Mode", selection: mode) {
-                    ForEach(PermissionMode.allCases, id: \.self) { m in
-                        Text(m.displayName).tag(m)
+                if session.backend.isACP {
+                    AgentPickers(session: session, model: model, style: style)
+                } else {
+                    Picker("Mode", selection: mode) {
+                        ForEach(PermissionMode.allCases, id: \.self) { m in
+                            Text(m.displayName).tag(m)
+                        }
                     }
+                    .buttonBorderShape(style.buttonShape)
+                    .accessibilityIdentifier("mode-picker")
+                    Menu(session.model ?? "Model") {
+                        Button("Sonnet") { model.setModel("sonnet") }
+                            .accessibilityIdentifier("model-choice-sonnet")
+                        Button("Opus") { model.setModel("opus") }
+                            .accessibilityIdentifier("model-choice-opus")
+                        Button("Haiku") { model.setModel("haiku") }
+                            .accessibilityIdentifier("model-choice-haiku")
+                    }
+                    .menuPresented(pickerOpen)   // `/model` with no name opens it (G9)
+                    .buttonBorderShape(style.buttonShape)
+                    .accessibilityIdentifier("model-menu")
+                    Menu(Self.effortLabel(session.effort)) {
+                        Button("Default") { model.setEffort(nil) }
+                            .accessibilityIdentifier("effort-choice-default")
+                        Button("Low") { model.setEffort("low") }
+                            .accessibilityIdentifier("effort-choice-low")
+                        Button("Medium") { model.setEffort("medium") }
+                            .accessibilityIdentifier("effort-choice-medium")
+                        Button("High") { model.setEffort("high") }
+                            .accessibilityIdentifier("effort-choice-high")
+                        Button("Extra high") { model.setEffort("xhigh") }
+                            .accessibilityIdentifier("effort-choice-xhigh")
+                        Button("Max") { model.setEffort("max") }
+                            .accessibilityIdentifier("effort-choice-max")
+                    }
+                    .buttonBorderShape(style.buttonShape)
+                    .accessibilityIdentifier("effort-menu")
                 }
-                .buttonBorderShape(style.buttonShape)
-                .accessibilityIdentifier("mode-picker")
-                Menu(session.model ?? "Model") {
-                    Button("Sonnet") { model.setModel("sonnet") }
-                        .accessibilityIdentifier("model-choice-sonnet")
-                    Button("Opus") { model.setModel("opus") }
-                        .accessibilityIdentifier("model-choice-opus")
-                    Button("Haiku") { model.setModel("haiku") }
-                        .accessibilityIdentifier("model-choice-haiku")
-                }
-                .menuPresented(pickerOpen)   // `/model` with no name opens it (G9)
-                .buttonBorderShape(style.buttonShape)
-                .accessibilityIdentifier("model-menu")
-                Menu(Self.effortLabel(session.effort)) {
-                    Button("Default") { model.setEffort(nil) }
-                        .accessibilityIdentifier("effort-choice-default")
-                    Button("Low") { model.setEffort("low") }
-                        .accessibilityIdentifier("effort-choice-low")
-                    Button("Medium") { model.setEffort("medium") }
-                        .accessibilityIdentifier("effort-choice-medium")
-                    Button("High") { model.setEffort("high") }
-                        .accessibilityIdentifier("effort-choice-high")
-                    Button("Extra high") { model.setEffort("xhigh") }
-                        .accessibilityIdentifier("effort-choice-xhigh")
-                    Button("Max") { model.setEffort("max") }
-                        .accessibilityIdentifier("effort-choice-max")
-                }
-                .buttonBorderShape(style.buttonShape)
-                .accessibilityIdentifier("effort-menu")
                 if working {
                     Button("Stop") { Task { await workspace.interrupt(sessionID) } }
                         .buttonStyle(PillButtonStyle(style: style))
@@ -119,7 +154,7 @@ struct ComposerView: Component {
                 }
             }
             HStack(alignment: .bottom, spacing: Pixels(8)) {
-                TextField("Message Claude", text: draft, selectedOffsets: caret, prompt: Text("Message Claude").foregroundColor(.mutedInk), axis: .vertical)
+                TextField(placeholder, text: draft, selectedOffsets: caret, prompt: Text(placeholder).foregroundColor(.mutedInk), axis: .vertical)
                     .textFieldStyle(.plain)
                     .lineLimit(1...8)
                     .accessibilityIdentifier("composer")

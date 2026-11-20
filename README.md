@@ -84,6 +84,13 @@ Coordination between sessions
   dismissed unless it escalates.
 - Settings: "Ask before sessions use Alloy's tools" covers all seven Alloy tools.
 
+## Other agents (ACP)
+
+Besides Claude, a session can run Codex, Gemini CLI, OpenCode, Goose or an agent you add, over the Agent Client
+Protocol. Pick the agent from the New Session menu; Alloy finds installed agents on your login PATH and shows the
+install command for the rest (it never installs anything). Chat, permissions, the file ledger, overlap warnings and
+shared notes work as for Claude, and agent secrets live only in the Keychain. See [docs/acp.md](docs/acp.md).
+
 ## Language servers
 
 Alloy can talk to the language servers you already have installed. Phase 1 gives you:
@@ -319,6 +326,8 @@ package-benchmark (`tools/microbench.sh check --filter "Wire decode"`).
 
 ## Docs
 
+- [docs/acp.md](docs/acp.md), [docs/acp-probe.md](docs/acp-probe.md): running other agents over ACP, and what
+  the live probe found.
 - [docs/slash-commands.md](docs/slash-commands.md): how slash commands are routed.
 - [docs/protocol-notes.md](docs/protocol-notes.md), [plan 3](docs/protocol-notes-plan3.md),
   [plan 5](docs/protocol-notes-plan5.md): verified behaviour of the `claude` stream-json protocol.

@@ -270,7 +270,9 @@ public struct Transcript: Sendable, Equatable {
             let root = projectRoot
             mutateTool(r.toolUseID) {
                 $0.endedAt = now
-                $0.summary = ToolSummary.line(toolName: $0.name, input: $0.input, projectRoot: root, result: r.raw)
+                if $0.input["acpKind"] == nil {
+                    $0.summary = ToolSummary.line(toolName: $0.name, input: $0.input, projectRoot: root, result: r.raw)
+                }
                 $0.result = r.raw
                 $0.resultText = text
                 $0.status = !r.isError ? .succeeded : denied ? .denied : cancelled ? .interrupted : .failed
@@ -363,7 +365,8 @@ public struct Transcript: Sendable, Equatable {
         // Consumed by later Plan 3 tasks (workspace/session layers); the transcript has nothing to show.
         case .conversationReset:
             push(.notice(id: UUID(), kind: .reset, text: "Conversation cleared"))
-        case .commandsChanged, .statusChanged, .controlResponse: break
+        case .commandsChanged, .statusChanged, .controlResponse, .agentState: break
+        case .notice(let kind, let text): push(.notice(id: UUID(), kind: kind, text: text))
         case .systemInit, .ignored, .unknown: break
         }
     }
@@ -541,9 +544,12 @@ public struct Transcript: Sendable, Equatable {
             if id.isEmpty { anonymousTools += 1; id = "tool-anon-\(anonymousTools)" }
             guard indexOf(id) == nil else { return }
             let denied = deniedToolIDs.contains(id)
+            // An ACP agent's call names its own kind and one-line summary (its title is the tool name).
+            let acp = input["acpKind"]?.stringValue
             push(.tool(ToolBlock(
-                toolUseID: id, name: name, kind: ToolKind.classify(name),
-                summary: ToolSummary.line(toolName: name, input: input, projectRoot: projectRoot),
+                toolUseID: id, name: name, kind: ToolKind(acpKind: acp) ?? ToolKind.classify(name),
+                summary: acp != nil ? (input["acpSummary"]?.stringValue ?? name)
+                                    : ToolSummary.line(toolName: name, input: input, projectRoot: projectRoot),
                 status: denied ? .denied : .running, input: input, startedAt: now)))
         }
     }
