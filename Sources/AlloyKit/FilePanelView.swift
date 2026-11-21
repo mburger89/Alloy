@@ -109,6 +109,8 @@ extension ElementGroup {
             .onKeyPress(keys: ["f"], phases: .down) { press in
                 guard press.modifiers == .primary, let path = workspace.activeTab(in: pane), let document = workspace.document(path),
                       let view = panel.view(for: document, in: pane) else { return .ignored }
+                // Find lives in the text view: a table switches to Text first.
+                if workspace.presentation(of: path, in: pane) == .table { workspace.setPresentation(.plain, of: path, in: pane) }
                 view.showFind()
                 return .handled
             }
@@ -314,6 +316,7 @@ struct FilePanelHeader: Component {
                 Picker(ids.presentationLabel, selection: Binding(get: { workspace.presentation(of: path, in: pane) },
                                                                  set: { workspace.setPresentation($0, of: path, in: pane) })) {
                     if ids.offersPlain { Text("Plain").tag(Presentation.plain) }
+                    if ids.offersPlain, Presentation.offersTable(language: document?.language) { Text("Table").tag(Presentation.table) }
                     Text("Inline").tag(Presentation.inline)
                     Text("Side by side").tag(Presentation.sideBySide)
                 }

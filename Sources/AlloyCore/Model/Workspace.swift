@@ -375,6 +375,10 @@ public final class Workspace {
     }
     /// Messages about the user's work for the UI to show (for example a session edit that overlapped unsaved typing).
     public internal(set) var notices: [Notice] = []
+
+    /// A row the Table should select and scroll to, per path (the newest request wins). Written by
+    /// ``open(_:revealLine:mode:in:)`` when the pane shows the CSV as a table; the table that owns the request takes it.
+    public var tableReveal: [String: TableReveal] = [:]
     @ObservationIgnored private var opening: Set<String> = []
     /// Callers of `open` that arrived while the same path was being read; resumed when that read finished.
     @ObservationIgnored private var openWaiters: [String: [CheckedContinuation<Void, Never>]] = [:]
@@ -1759,7 +1763,12 @@ public final class Workspace {
                 // The empty row after a final newline is not a line of the file.
                 let last = snap.lineCount > 1 && snap.lineRange(snap.lineCount - 1).isEmpty ? snap.lineCount - 2 : snap.lineCount - 1
                 let row = max(0, min(line - 1, last))
-                selectionState(for: path, in: pane)?.select(snap.lineRange(row), reveal: true)
+                if Presentation.offersTable(language: doc.language), presentation(of: path, in: pane) == .table {
+                    // The table maps the line's offset to its row once its index exists.
+                    tableReveal[path] = TableReveal(pane: pane, offset: snap.lineRange(row).lowerBound)
+                } else {
+                    selectionState(for: path, in: pane)?.select(snap.lineRange(row), reveal: true)
+                }
             }
         }
     }
@@ -2702,4 +2711,14 @@ public struct OutgoingMessage: Sendable, Equatable {
 enum EditorFileRead: Sendable {
     case unreadable, binary
     case text([UInt8], FileStamp, truncated: Bool)
+}
+
+
+/// A pending "show this place" for a table: the pane that asked and the UTF-8 offset of the wanted line's start.
+public struct TableReveal: Equatable, Sendable {
+    public var pane: PaneID
+    public var offset: Int
+    /// A data column to land on; nil resolves the column from `offset`.
+    public var column: Int?
+    public init(pane: PaneID, offset: Int, column: Int? = nil) { self.pane = pane; self.offset = offset; self.column = column }
 }

@@ -82,6 +82,16 @@ struct EditHistory: Codable, Equatable, Sendable {
     var fragments: [Fragment]
     var metas: [UUID: Meta] = [:]
     var removals: [Removal] = []
+    /// Insertions handed from an edit to its range-keep sibling (`keep(_:visibleRange:)`), so anchors made before
+    /// the carve still resolve. Offsets are unchanged: only the owning edit differs.
+    var aliases: [Alias] = []
+
+    struct Alias: Codable, Equatable, Sendable {
+        var from: UUID
+        var to: UUID
+        var start: Int
+        var length: Int
+    }
 
     /// Creation sequence of an edit; "latest" always means record sequence, not date.
     func seq(of edit: UUID) -> Int { metas[edit]?.seq ?? -1 }
@@ -92,10 +102,11 @@ struct EditHistory: Codable, Equatable, Sendable {
         fragments = try c.decode([Fragment].self, forKey: .fragments)
         metas = try c.decodeIfPresent([UUID: Meta].self, forKey: .metas) ?? [:]
         removals = try c.decodeIfPresent([Removal].self, forKey: .removals) ?? []
+        aliases = try c.decodeIfPresent([Alias].self, forKey: .aliases) ?? []
         refreshVisibility()
     }
 
-    private enum CodingKeys: String, CodingKey { case fragments, metas, removals }
+    private enum CodingKeys: String, CodingKey { case fragments, metas, removals, aliases }
 
     init(baseline: String) {
         fragments = baseline.isEmpty ? [] : [Fragment(id: InsertionID(edit: nil, offset: 0), text: baseline)]
@@ -208,6 +219,52 @@ struct EditHistory: Codable, Equatable, Sendable {
         fragments.removeAll { $0.deletedBy.contains(edit) }
     }
 
+    /// Keeps only the part of `edit` inside `visibleRange` (visible scalar offsets): the fragments it inserted there
+    /// and the tombstones it left there or touching the range move to a new sibling edit that is kept at once.
+    /// `edit` stays live for the rest. Returns the sibling's id; `edit` itself when the range covers everything
+    /// `edit` still owns (then it is the plain whole-edit `keep`); nil when nothing lies in the range.
+    mutating func keep(_ edit: UUID, visibleRange range: Range<Int>) -> UUID? {
+        guard let meta = metas[edit], meta.state == .live else { return nil }
+        var touched = false, leftover = false
+        var cum = 0
+        for f in fragments {
+            if f.visible {
+                if f.id.edit == edit {
+                    if cum + f.length > range.lowerBound && cum < range.upperBound { touched = true }
+                    if cum < range.lowerBound || cum + f.length > range.upperBound { leftover = true }
+                }
+                cum += f.length
+            } else if f.deletedBy.contains(edit) {
+                if cum >= range.lowerBound && cum <= range.upperBound { touched = true } else { leftover = true }
+            }
+        }
+        guard touched else { return nil }
+        if !leftover { keep(edit); return edit }
+
+        _ = split(atVisible: range.upperBound)
+        _ = split(atVisible: range.lowerBound)
+        let sibling = UUID()
+        metas[sibling] = Meta(state: .live, seq: meta.seq, nextOffset: 0, ranges: [])
+        cum = 0
+        for i in fragments.indices {
+            if fragments[i].visible {
+                let length = fragments[i].length
+                if fragments[i].id.edit == edit, cum >= range.lowerBound, cum + length <= range.upperBound {
+                    let offset = fragments[i].id.offset
+                    fragments[i].id.edit = sibling
+                    metas[sibling]!.ranges.append(InsertRange(start: offset, length: length))
+                    aliases.append(Alias(from: edit, to: sibling, start: offset, length: length))
+                }
+                cum += length
+            } else if fragments[i].deletedBy.contains(edit), cum >= range.lowerBound, cum <= range.upperBound {
+                fragments[i].deletedBy.remove(edit)
+                fragments[i].deletedBy.insert(sibling)
+            }
+        }
+        keep(sibling)
+        return sibling
+    }
+
     // MARK: Revert conflicts
 
     enum Conflict: Equatable { case other(UUID), notLive }
@@ -264,6 +321,25 @@ struct EditHistory: Codable, Equatable, Sendable {
             } else if isInserted(f) {
                 let k = visibleNewlines + 1
                 for d in f.deletedBy where metas[d]?.state == .live && out[d]?.last != k { out[d, default: []].append(k) }
+            }
+        }
+        return out
+    }
+
+    /// Where each live edit's deletions sit in the visible text, as UTF-8 byte offsets (ascending, one per edit and
+    /// place). The byte counterpart of `deletionAnchors`, for callers that need the exact spot and not the line.
+    func deletionPoints() -> [(offset: Int, edit: UUID)] {
+        var out: [(offset: Int, edit: UUID)] = []
+        var visibleBytes = 0
+        var last: [UUID: Int] = [:]
+        for f in fragments {
+            if isVisible(f) {
+                visibleBytes += f.text.utf8.count
+            } else if isInserted(f) {
+                for d in f.deletedBy where metas[d]?.state == .live && last[d] != visibleBytes {
+                    last[d] = visibleBytes
+                    out.append((visibleBytes, d))
+                }
             }
         }
         return out
@@ -432,7 +508,10 @@ struct EditHistory: Codable, Equatable, Sendable {
     /// character (the end of the text if none), `.left` the offset of the previous visible character
     /// (0 if none).
     func offset(of anchor: Anchor) -> Int {
-        guard let id = anchor.insertion else { return visibleLength }
+        guard var id = anchor.insertion else { return visibleLength }
+        if let e = id.edit, let a = aliases.last(where: { $0.from == e && id.offset >= $0.start && id.offset < $0.start + $0.length }) {
+            id.edit = a.to
+        }
         var cum = 0
         for f in fragments {
             if f.id.edit == id.edit, id.offset >= f.id.offset, id.offset < f.id.offset + f.length {

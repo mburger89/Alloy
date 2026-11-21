@@ -71,4 +71,24 @@ struct ByteCopiesTests {
         #expect(closed == 0)
         withExtendedLifetime(buffer) {}
     }
+
+    /// The table holds the row index and a bounded window of parsed rows, not the file.
+    @Test func csvTableHoldsIndexAndWindowOnly() async throws {
+        var bytes = [UInt8]()
+        bytes.reserveCapacity(17 << 20)
+        bytes.append(contentsOf: Array("id,name,city,note\n".utf8))
+        var i = 0
+        while bytes.count < 16 << 20 { bytes.append(contentsOf: Array("\(i),name\(i),city\(i),some note\n".utf8)); i += 1 }
+        let size = bytes.count
+        let doc = EditorDocument(path: "big.csv", buffer: CodeBuffer(utf8: bytes), language: "csv", state: .editable,
+                                 diskStamp: FileStamp(modified: nil, size: size))
+        bytes = []
+        let model = CSVTableModel(document: doc)
+        await model.buildFinished()
+        #expect(model.rowCount == i)
+        for k in 0..<200 { _ = model.cells(forDataRow: (k * 2_477) % i) }
+        #expect(model.retainedByteEstimate < 8 << 20, "retained \(model.retainedByteEstimate) bytes of a \(size) byte file")
+        #expect(model.retainedByteEstimate < size / 4)
+        model.close()
+    }
 }

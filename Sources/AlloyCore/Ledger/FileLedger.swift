@@ -183,6 +183,12 @@ public struct FileLedger: Codable, Sendable, Equatable {
     /// Per live edit, the visible lines where its deleted text used to be (see `EditHistory.deletionAnchors`).
     public func deletionAnchors() -> [UUID: [Int]] { history.deletionAnchors() }
 
+    /// Per live edit, the UTF-8 byte offsets in the visible text where its deleted text used to be, ascending.
+    public func deletionPoints() -> [(offset: Int, edit: UUID)] { history.deletionPoints() }
+
+    /// The order edits were recorded in (the sequence "latest" is decided by); nil for an unknown edit.
+    public func sequence(of edit: UUID) -> Int? { history.seq(of: edit) >= 0 ? history.seq(of: edit) : nil }
+
     /// Changed lines are attributed by identity, never by position, and lines are paired by identity too
     /// (an old and a new line are the same line only if they are each other's only survivors and byte-equal),
     /// so identical-looking lines such as blanks never swap roles.
@@ -303,6 +309,21 @@ public struct FileLedger: Codable, Sendable, Equatable {
         history.keep(id)
     }
 
+    /// Keeps only the part of edit `id` inside `visibleRange` (scalar offsets in the visible text, like `anchor(atOffset:)`).
+    /// The kept part becomes a new `.kept` sibling record (same author, date and tool call, no hunks); `id` stays
+    /// live while it owns anything else. A range covering all of `id` equals `keep(id)`. Returns the sibling's id
+    /// (`id` when the whole edit was kept), nil when nothing changed.
+    @discardableResult
+    public mutating func keep(_ id: UUID, visibleRange: Range<Int>) -> UUID? {
+        guard let i = edits.firstIndex(where: { $0.id == id }), edits[i].state == .live,
+              let kept = history.keep(id, visibleRange: visibleRange) else { return nil }
+        if kept == id { edits[i].state = .kept; return id }
+        var sibling = edits[i]
+        sibling.id = kept; sibling.hunks = []; sibling.state = .kept
+        edits.append(sibling)
+        return kept
+    }
+
     public mutating func keepAll(where predicate: (EditRecord) -> Bool) {
         for rec in edits where rec.state == .live && predicate(rec) { keep(rec.id) }
     }
@@ -328,6 +349,12 @@ public struct FileLedger: Codable, Sendable, Equatable {
         edits.append(EditRecord(id: userEdit, author: .user, path: path, date: date, toolUseID: nil,
                                 hunks: TextDiff.hunks(old: old, new: new), state: .kept))
         return .reverted(newText: new)
+    }
+
+    /// Who wrote the edit `edit`, in the ledger's own words ("session <id>", "you", "an outside change"); nil when the
+    /// ledger has no such edit.
+    public func authorDescription(of edit: UUID) -> String? {
+        edits.first { $0.id == edit }.map { describe($0.author) }
     }
 
     private func describe(_ author: Author) -> String {

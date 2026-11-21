@@ -9,6 +9,8 @@ let codeGroupEmptyInset = Float(12)
 
 /// One editor group: its glass bar (tab strip and header), then notices, Quick Open's field while this group has focus,
 /// and the code of the active tab, or the empty state.
+struct TableWish: Equatable { var document: UUID?; var wanted: Bool }
+
 struct EditorGroupView: Component {
     let workspace: Workspace
     let store: SessionUIStore
@@ -27,6 +29,7 @@ struct EditorGroupView: Component {
     /// The notice, then the file's message or its code. The code takes `clear` as its top margin; the others as padding.
     @ElementBuilder
     private func fileBody(path: String?, notice: Notice?, document: EditorDocument?, view: OpenDocumentView?,
+                          table: CSVTableModel?, showTable: Bool,
                           clear: Double, noticeClear: Double, focus: @escaping () -> Void) -> some ElementGroup {
         let top = Self.topInset(clear)
         if let path {
@@ -36,6 +39,13 @@ struct EditorGroupView: Component {
             }
             if let message = workspace.tabMessages[path] {
                 VStack(spacing: 0) { FilePanelMessage(text: message) }.padding(top)
+            } else if showTable {
+                if let table {
+                    TablePanel(workspace: workspace, model: table, groupID: groupID, style: style, topClear: clear).equatable()
+                        .id(document?.id.uuidString ?? path)
+                } else {
+                    VStack(spacing: 0) { FilePanelMessage(text: "Loading\u{2026}") }.padding(top)
+                }
             } else if let document, let view {
                 let _ = workspace.selectionRevision
                 CodePanel(workspace: workspace, store: store, document: document, view: view, selection: view.selection(in: workspace), fold: workspace.foldState(for: path, in: view.pane), topClear: clear,
@@ -62,6 +72,9 @@ struct EditorGroupView: Component {
         let path = group?.activeTab
         let document = path.flatMap { workspace.document($0) }
         let view = document.flatMap { panel.view(for: $0, in: pane) }
+        let showTable = document.map { Presentation.offersTable(language: $0.language)
+            && workspace.presentation(of: $0.path, in: pane) == .table } ?? false
+        let table = document.flatMap { panel.table(for: $0, in: pane) }
         let focused = layout.focusedGroupID == groupID
         let barHeight = $barHeight
         let notice = path.flatMap { path in workspace.notices.last(where: { $0.path == path }) }
@@ -78,7 +91,7 @@ struct EditorGroupView: Component {
             } else if showPicker, let picker {
                 VStack(spacing: 0) { QuickOpenField(source: picker) }.padding(Self.topInset(clear))
             }
-            fileBody(path: path, notice: notice, document: document, view: view, clear: belowBar ? 0 : clear,
+            fileBody(path: path, notice: notice, document: document, view: view, table: table, showTable: showTable, clear: belowBar ? 0 : clear,
                      noticeClear: showQuickOpen || showPicker ? 0 : clear, focus: focus)
         }
         .overlay(alignment: .top) {
@@ -91,6 +104,12 @@ struct EditorGroupView: Component {
             panel.attach(workspace: workspace)
             if let path = workspace.activeTab(in: pane) { workspace.loadIfNeeded(path, in: pane) }
             if let path = workspace.activeTab(in: pane), let document = workspace.document(path) { panel.ensureView(for: document, in: pane) }
+        }
+        // The table model exists only while the pane shows the file as a table.
+        .onChange(of: TableWish(document: document?.id, wanted: showTable), initial: true) {
+            if let document = path.flatMap({ workspace.document($0) }) {
+                panel.updateTable(for: document, in: pane, wanted: showTable, workspace: workspace)
+            }
         }
         // A request for another tab's caret must not move the user once they have left it.
         .onChange(of: path) { panel.cancelDefinition() }

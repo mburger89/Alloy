@@ -847,6 +847,16 @@ final class CodePanelStore {
         registry.removeAll { $0.store == nil }
         return registry.lazy.compactMap { $0.store?.view(for: document, in: pane) }.first
     }
+    /// The table model of `document` in whichever store made it (a test hook).
+    package static func tableModel(for document: EditorDocument) -> CSVTableModel? {
+        registry.removeAll { $0.store == nil }
+        return registry.lazy.compactMap { $0.store?.tables.values.first { $0.model.document === document }?.model }.first
+    }
+    /// How many table models any store holds for `document` (a test hook).
+    package static func tableModelCount(for document: EditorDocument) -> Int {
+        registry.removeAll { $0.store == nil }
+        return registry.reduce(0) { $0 + ($1.store?.tables.values.filter { $0.model.document === document }.count ?? 0) }
+    }
     /// The code action service of whichever store made the Chat view of `document`.
     package static func existingCodeActionService(for document: EditorDocument) -> CodeActionService? {
         registry.removeAll { $0.store == nil }
@@ -872,6 +882,8 @@ final class CodePanelStore {
         }.first
     }
     private var views: [ViewKey: OpenDocumentView] = [:]
+    /// The CSV table models of the views shown as a table; made when the presentation becomes `.table`, closed when it leaves.
+    private var tables: [ViewKey: CSVTableHandle] = [:]
     private var servicesByPath: [String: DocumentServices] = [:]
     private var lsp: LSPCoordinator?
     /// Builds the fold ranges of every open document and gives them to the workspace.
@@ -1122,9 +1134,33 @@ final class CodePanelStore {
         return view
     }
 
+    /// The table model of `document` in `pane`, once ``updateTable(for:in:wanted:workspace:)`` made it.
+    func table(for document: EditorDocument, in pane: PaneID) -> CSVTableModel? {
+        guard let handle = tables[ViewKey(pane: pane, path: document.path)], handle.model.document === document else { return nil }
+        return handle.model
+    }
+
+    /// Makes the table model of `document` in `pane` when `wanted` (the pane shows it as a table), closes it otherwise.
+    /// Called outside rendering.
+    func updateTable(for document: EditorDocument, in pane: PaneID, wanted: Bool, workspace: Workspace) {
+        let key = ViewKey(pane: pane, path: document.path)
+        if wanted {
+            if let existing = tables[key], existing.model.document === document { return }
+            tables[key]?.close()
+            tables[key] = CSVTableHandle(document: document, workspace: workspace, pane: pane)
+        } else if let existing = tables[key] {
+            existing.close()
+            tables[key] = nil
+        }
+    }
+
     /// Closes every view of `path` and its services (the document was replaced or is gone).
     private func dropDocument(_ path: String) {
         cancelDefinition()
+        for key in tables.keys where key.path == path {
+            tables[key]?.close()
+            tables[key] = nil
+        }
         for key in views.keys where key.path == path {
             views[key]?.close()
             views[key] = nil
@@ -1148,6 +1184,10 @@ final class CodePanelStore {
 
     /// Drops the views of `pane` whose tab is gone. The documents' services stay until ``pruneServices(workspace:)``.
     func prune(pane: PaneID, keeping paths: [String]) {
+        for key in tables.keys where key.pane == pane && !paths.contains(key.path) {
+            tables[key]?.close()
+            tables[key] = nil
+        }
         for (key, view) in views where key.pane == pane && !paths.contains(key.path) {
             cancelDefinition()
             view.close()

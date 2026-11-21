@@ -106,6 +106,8 @@ extension Workspace {
     public func presentation(of path: String, in pane: PaneID) -> Presentation {
         if let p = presentations[pane]?[path] { return p }
         if case .chat = pane { return .inline }
+        // CSV and TSV open as a table in a Code group until the user picks another presentation (not persisted).
+        if Presentation.offersTable(language: URL(fileURLWithPath: path).pathExtension.lowercased()) { return .table }
         return .plain
     }
 

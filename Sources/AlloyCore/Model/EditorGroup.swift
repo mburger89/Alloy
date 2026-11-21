@@ -8,9 +8,12 @@ public enum PaneID: Hashable, Codable, Sendable {
 }
 
 /// How a pane shows a file: the plain text, its session edits inline or side by side, or the buffer side by side with
-/// git's HEAD or index copy (never persisted).
+/// git's HEAD or index copy (never persisted), or, for a CSV or TSV file, its rows as a table.
 public enum Presentation: String, Codable, Sendable {
-    case plain, inline, sideBySide, compareHead, compareIndex
+    case plain, inline, sideBySide, compareHead, compareIndex, table
+
+    /// Whether a file with this language (extension) can be shown as a table.
+    public static func offersTable(language: String?) -> Bool { language == "csv" || language == "tsv" }
 
     /// Whether this is one of the two git compare presentations.
     public var isCompare: Bool { self == .compareHead || self == .compareIndex }

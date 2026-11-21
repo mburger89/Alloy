@@ -81,6 +81,9 @@ the same files. Alloy is an editor designed around that situation:
 - Multiple cursors, code folding, find, quick open (Cmd-P), a command palette, and rebindable keyboard shortcuts.
 - Project-wide search and replace with regular expressions and include and exclude globs; results respect `.gitignore`.
 - Git: change bars in the gutter, blame, compare with the last commit, stage, commit and switch branches.
+- CSV Table: CSV and TSV files open as a table with a Text | Table switch. Cells are tinted by author, Previous and
+  Next change walk the changed rows and cells, and Keep and Revert work per row and per cell. Edit cells in place with
+  undo shared with Text; large files stay responsive.
 - A built-in terminal running your login shell.
 - Language servers, described below.
 
