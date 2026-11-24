@@ -1,6 +1,7 @@
 import AlloyACP
 import AlloyCore
 import AlloyKit
+import AlloyPlugins
 import AppKit
 import Foundation
 import MetalUI
@@ -88,6 +89,7 @@ if case .open(let root, _) = initial.choice, let workspace = makeWorkspace(root:
 StartupTrace.mark("workspace-created")
 // The registry and quick open, shared by the window and the menu bar. Created before the window.
 let center = CommandCenter(launcher: model)
+center.plugins = PluginCoordinator.live(appSupport: appSupport, center: center, themes: themeController)
 if let workspace = model.workspace { center.bind(workspace) }
 StartupTrace.mark("command-center-ready")
 center.standardMenuClaims = { app.standardMenuShortcuts() }
@@ -147,6 +149,7 @@ StartupTrace.mark("frame-timing-installed")
 FrameTimingRecorder.installStartupTrace(on: window)
 BuiltinCommands.register(into: center, launcher: model, settings: { settingsWindow }, themes: { themeController })
 StartupTrace.mark("builtin-commands-registered")
+Task { await center.plugins?.activate() }
 app.commands {
     alloyCommands(center: center, updates: updatesEnabled ? updateModel : nil, checkForUpdates: { updateController.checkForUpdates() },
                   openAcknowledgements: {
@@ -185,6 +188,7 @@ model.chooseFolder = {
             center.bind(workspace)
             model.adopt(workspace)
             await workspace.restore()
+            center.plugins?.noteStartupComplete()
         } else {
             model.message = picked.reason ?? "That folder can't be used as a project."
         }
@@ -194,7 +198,11 @@ model.chooseFolder = {
 if let workspace = model.workspace {
     // The command-line file opens after the saved layout is back, so it lands in the restored mode's pane.
     let startupFile: String? = if case .open(_, let file) = initial.choice { file } else { nil }
-    Task { await workspace.restore(opening: startupFile); StartupTrace.mark("restore-finished") }
+    Task {
+        await workspace.restore(opening: startupFile)
+        StartupTrace.mark("restore-finished")
+        center.plugins?.noteStartupComplete()
+    }
 } else if !arguments.isEmpty, let reason = initial.reason {
     model.message = reason
 } else {

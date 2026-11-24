@@ -435,3 +435,13 @@ The user approved every recommendation above ("Approved build it"). Binding:
 - 3(b) local folder plus git URL at a tag. 4(a) no per-keystroke events in v1.
 - 5(b) plugins contribute MCP tools to sessions and receive `claude/toolUsed` / edit events.
 - Plugin commands register in the shared `CommandRegistry`.
+
+## Updates (2026-11-23)
+
+- R1 Guards: the current frame guards are chat 46, code 46/62/72, idle 0, knownPopoverGap 0, steadyCompare 77, terminal 0/0/55; the 88 and 91/107/117 above are stale, and no plugin task raises a guard.
+- R2 Secrets: plugin settings gain a `secret` type, entered with a SecureField and kept only in the Keychain (service `dev.alloy.plugin-secret`, account `<plugin id>/<key>`), handed to the plugin only as the environment variable its manifest names, and never in settings, manifests, state, logs or protocol messages; it shows as unavailable where there is no Keychain. This replaces "no `secret` type in v1".
+- R3 Range highlights: MetalUI gap 1 landed (`CodeDecorations.setHighlights(_:in:layer:asOf:owner:)`), so plugin range underlines and tints ship in v1 under owner `plugin.<id>` at priority -10, inside the 500-item cap.
+- R4 Shortcuts: MetalUI gap 2 landed as `App.commandShortcuts()` and the standard-menu claims; a plugin's proposed key is bound only when it collides with nothing (the registry, the user's key settings, MetalUI's claims), checked with the Keyboard settings' collision logic, and a dropped key shows in Settings with what it collides with.
+- R5 Already built: `CommandRegistry`, `CommandSource.plugin(id:)` and the Plugins menu exist (`docs/command-registry.md`), and so does the terminal panel, so task commands are unblocked.
+- R6 Agent sessions: `session/turnEnded` and `session/ended` cover every agent session (Claude Code and ACP agents) and add `agent` (the agent definition id); `claude/toolUsed` still comes only from Claude Code hooks; plugin MCP tools follow the same scope rule for every session that receives Alloy's MCP server, ACP sessions included.
+- R7 Other platforms: the Linux and Windows sandbox backends are not built in this project; without a backend no scripted plugin with `network` or `process.spawn` can be enabled, and all code still compiles on Linux and Windows.

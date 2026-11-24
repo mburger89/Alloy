@@ -102,6 +102,9 @@ public struct AlloySettings: Codable, Equatable, Sendable {
     /// The agent a new session uses when none is picked: a preset or custom agent id, nil for Claude.
     public var defaultAgentID: String?
 
+    /// Installed plugins by plugin id.
+    public var plugins: [String: PluginSetting]
+
     public init(claudePath: String? = nil, lastProjectPath: String? = nil,
                 shareKnowledge: Bool = true, shareAcrossProjects: Bool = true, askBeforeSharedNotes: Bool = false, followEdits: Bool = true, paletteShowsDisabled: Bool = true,
                 themeMode: ThemeMode = .single, theme: String = "dracula",
@@ -112,7 +115,9 @@ public struct AlloySettings: Codable, Equatable, Sendable {
                 keybindings: [String: String] = [:],
                 searchMaxResults: Int = AlloySettings.defaultSearchMaxResults, searchExcludes: [String] = [],
                 formatters: [String: String] = [:], git: GitSettings = GitSettings(),
-                agents: [AgentDefinition] = [], defaultAgentID: String? = nil) {
+                agents: [AgentDefinition] = [], defaultAgentID: String? = nil,
+                plugins: [String: PluginSetting] = [:]) {
+        self.plugins = plugins
         self.agents = agents
         self.defaultAgentID = defaultAgentID
         self.terminal = terminal
@@ -139,7 +144,7 @@ public struct AlloySettings: Codable, Equatable, Sendable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case claudePath, lastProjectPath, shareKnowledge, shareAcrossProjects, askBeforeSharedNotes, followEdits, paletteShowsDisabled, themeMode, theme, lightTheme, darkTheme, languageServers, appearance, glass, backgroundImages, keybindings, searchMaxResults, searchExcludes, terminal, formatters, git, agents, defaultAgentID
+        case claudePath, lastProjectPath, shareKnowledge, shareAcrossProjects, askBeforeSharedNotes, followEdits, paletteShowsDisabled, themeMode, theme, lightTheme, darkTheme, languageServers, appearance, glass, backgroundImages, keybindings, searchMaxResults, searchExcludes, terminal, formatters, git, agents, defaultAgentID, plugins
     }
 
     /// Every key is optional, so a file written by an older Alloy still loads with its values intact.
@@ -174,6 +179,13 @@ public struct AlloySettings: Codable, Equatable, Sendable {
         // Entry by entry: one malformed override is dropped without losing the others.
         let lossy = (try? c.decodeIfPresent([String: LossyOverride].self, forKey: .languageServers)) ?? nil
         languageServers = (lossy ?? [:]).compactMapValues(\.value)
+        let lossyPlugins = (try? c.decodeIfPresent([String: LossyPlugin].self, forKey: .plugins)) ?? nil
+        plugins = (lossyPlugins ?? [:]).compactMapValues(\.value)
+    }
+
+    private struct LossyPlugin: Decodable {
+        var value: PluginSetting?
+        init(from decoder: Decoder) throws { value = try? PluginSetting(from: decoder) }
     }
 
     private struct LossyAgent: Decodable {

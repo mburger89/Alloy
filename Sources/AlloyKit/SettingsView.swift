@@ -84,6 +84,10 @@ struct SettingsView: Component {
                 Divider()
                 LanguageServersSection(workspace: workspace, builtIn: coordinator.builtIn, locator: coordinator.locator)
             }
+            if let plugins = center?.plugins {
+                Divider()
+                PluginsSection(workspace: workspace, coordinator: plugins)
+            }
             Divider()
             AgentsSettingsSection(workspace: workspace)
             Divider()

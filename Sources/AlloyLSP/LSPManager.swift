@@ -1,5 +1,6 @@
 import AlloyCore
 import AlloyHighlight
+import AlloyRPC
 import Foundation
 import MetalUICodeBuffer
 
@@ -68,9 +69,9 @@ public final class ApplyEditReply: @unchecked Sendable {
 
 /// Starts a server process: the config, the resolved executable path and the workspace root.
 public struct ServerLauncher: Sendable {
-    public var make: @Sendable (ServerConfig, String, URL) throws -> any LSPByteChannel & ServerExitObserving
+    public var make: @Sendable (ServerConfig, String, URL) throws -> any RPCByteChannel & ServerExitObserving
 
-    public init(make: @escaping @Sendable (ServerConfig, String, URL) throws -> any LSPByteChannel & ServerExitObserving) {
+    public init(make: @escaping @Sendable (ServerConfig, String, URL) throws -> any RPCByteChannel & ServerExitObserving) {
         self.make = make
     }
 

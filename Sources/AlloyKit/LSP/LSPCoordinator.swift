@@ -30,6 +30,9 @@ public final class LSPCoordinator {
     let locator: ServerLocator
     private let launcher: ServerLauncher
     private var registry: ServerRegistry
+    /// The user's overrides and the enabled plugins' servers; the registry is built from both (user fields win).
+    private var userOverrides: [String: ServerConfigOverride]
+    private var pluginServers: [String: ServerConfigOverride]
     private var manager: LSPManager?
     private var commands: AsyncStream<Command>.Continuation?
     private var resultsTask: Task<Void, Never>?
@@ -59,12 +62,15 @@ public final class LSPCoordinator {
     var applyEditHandler: (@MainActor (String, String, String?, JSONValue, ApplyEditReply) -> Void)?
 
     public init(root: URL, builtIn: [ServerConfig] = ServerRegistry.builtIn,
-                overrides: [String: ServerConfigOverride] = [:], locator: ServerLocator, launcher: ServerLauncher) {
+                overrides: [String: ServerConfigOverride] = [:], pluginServers: [String: ServerConfigOverride] = [:],
+                locator: ServerLocator, launcher: ServerLauncher) {
         self.root = root
         self.builtIn = builtIn
         self.locator = locator
         self.launcher = launcher
-        registry = ServerRegistry(builtIn: builtIn, overrides: overrides)
+        userOverrides = overrides
+        self.pluginServers = pluginServers
+        registry = ServerRegistry(builtIn: builtIn, overrides: ServerConfigOverride.layered(plugin: pluginServers, user: overrides))
     }
 
     /// Creates the coordinator for `workspace` and wires the workspace's save, settings and quit hooks to it.
@@ -72,7 +78,9 @@ public final class LSPCoordinator {
     public static func install(on workspace: Workspace, builtIn: [ServerConfig] = ServerRegistry.builtIn,
                                locator: ServerLocator = .live, launcher: ServerLauncher) -> LSPCoordinator {
         let coordinator = LSPCoordinator(root: workspace.projectRoot, builtIn: builtIn,
-                                         overrides: workspace.settings.languageServers, locator: locator, launcher: launcher)
+                                         overrides: workspace.settings.languageServers,
+                                         pluginServers: (workspace.pluginServices as? PluginCoordinator)?.effectiveServers ?? [:],
+                                         locator: locator, launcher: launcher)
         workspace.languageServices = coordinator
         workspace.onSaved = { [weak coordinator] path in coordinator?.documentSaved(path) }
         workspace.onLanguageServersChanged = { [weak coordinator] overrides in coordinator?.reload(overrides: overrides) }
@@ -139,9 +147,20 @@ public final class LSPCoordinator {
         send(.saved(path))
     }
 
+    /// The registry the coordinator routes with (tests read the effective servers from it).
+    var effectiveRegistry: ServerRegistry { registry }
+
+    /// Replaces the servers enabled plugins contribute and rebuilds the registry (a no-op when they did not change).
+    func setPluginServers(_ servers: [String: ServerConfigOverride]) {
+        guard servers != pluginServers else { return }
+        pluginServers = servers
+        reload(overrides: userOverrides)
+    }
+
     func reload(overrides: [String: ServerConfigOverride]) {
+        userOverrides = overrides
         let before = Dictionary(uniqueKeysWithValues: openPaths.map { ($0, registry.server(forPath: $0)?.id) })
-        registry = ServerRegistry(builtIn: builtIn, overrides: overrides)
+        registry = ServerRegistry(builtIn: builtIn, overrides: ServerConfigOverride.layered(plugin: pluginServers, user: overrides))
         // A path that now belongs to another server (or none) keeps nothing of the old one's. (Keyed by path here, not by
         // a late `.stopped` of the old instance, which could arrive after the new server published.)
         for path in openPaths where (before[path] ?? nil) != nil && registry.server(forPath: path)?.id != (before[path] ?? nil) {

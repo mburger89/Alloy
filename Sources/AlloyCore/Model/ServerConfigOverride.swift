@@ -61,4 +61,23 @@ public struct ServerConfigOverride: Codable, Equatable, Sendable {
         clippy = try c.decodeIfPresent(Bool.self, forKey: .clippy)
         formatOnSave = try c.decodeIfPresent(Bool.self, forKey: .formatOnSave)
     }
+
+    /// This override laid over `base`: every field `self` sets wins, every other keeps `base`'s value.
+    public func overlaid(on base: ServerConfigOverride) -> ServerConfigOverride {
+        ServerConfigOverride(name: name ?? base.name, languageID: languageID ?? base.languageID,
+                             languageIDs: languageIDs ?? base.languageIDs, extensions: extensions ?? base.extensions,
+                             fileNames: fileNames ?? base.fileNames, command: command ?? base.command,
+                             arguments: arguments ?? base.arguments,
+                             initializationOptions: initializationOptions ?? base.initializationOptions,
+                             enabled: enabled ?? base.enabled, role: role ?? base.role, clippy: clippy ?? base.clippy,
+                             formatOnSave: formatOnSave ?? base.formatOnSave)
+    }
+
+    /// The overrides in force: built-in table, then plugins, then the user (the user's fields win over a plugin's).
+    public static func layered(plugin: [String: ServerConfigOverride], user: [String: ServerConfigOverride]) -> [String: ServerConfigOverride] {
+        guard !plugin.isEmpty else { return user }
+        var out = plugin
+        for (id, o) in user { out[id] = plugin[id].map { o.overlaid(on: $0) } ?? o }
+        return out
+    }
 }

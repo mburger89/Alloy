@@ -1,15 +1,15 @@
 import Foundation
 
-public enum LSPFramingError: Error, Equatable {
+public enum RPCFramingError: Error, Equatable {
     case badHeader
-    /// The header block exceeded `LSPFrameDecoder.maxHeaderBytes`.
+    /// The header block exceeded `RPCFrameDecoder.maxHeaderBytes`.
     case headerTooLarge
-    /// `Content-Length` exceeded `LSPFrameDecoder.maxBodyBytes`.
+    /// `Content-Length` exceeded `RPCFrameDecoder.maxBodyBytes`.
     case bodyTooLarge
 }
 
 /// Splits a byte stream into `Content-Length` framed message bodies.
-public struct LSPFrameDecoder: Sendable {
+public struct RPCFrameDecoder: Sendable {
     public static let maxHeaderBytes = 8 * 1024
     public static let maxBodyBytes = 64 * 1024 * 1024
     private var buffer = Data()
@@ -23,12 +23,12 @@ public struct LSPFrameDecoder: Sendable {
         let separator = Data("\r\n\r\n".utf8)
         while true {
             guard let range = buffer.range(of: separator) else {
-                if buffer.count > Self.maxHeaderBytes { buffer.removeAll(); throw LSPFramingError.headerTooLarge }
+                if buffer.count > Self.maxHeaderBytes { buffer.removeAll(); throw RPCFramingError.headerTooLarge }
                 return bodies
             }
             if range.lowerBound - buffer.startIndex > Self.maxHeaderBytes {
                 buffer.removeAll()
-                throw LSPFramingError.headerTooLarge
+                throw RPCFramingError.headerTooLarge
             }
             let header = String(decoding: buffer[buffer.startIndex..<range.lowerBound], as: UTF8.self)
             var length: Int?
@@ -40,11 +40,11 @@ public struct LSPFrameDecoder: Sendable {
             }
             guard let length, length >= 0 else {
                 buffer.removeAll()
-                throw LSPFramingError.badHeader
+                throw RPCFramingError.badHeader
             }
             if length > Self.maxBodyBytes {
                 buffer.removeAll()
-                throw LSPFramingError.bodyTooLarge
+                throw RPCFramingError.bodyTooLarge
             }
             let bodyStart = range.upperBound
             guard buffer.endIndex - bodyStart >= length else { return bodies }
@@ -54,7 +54,7 @@ public struct LSPFrameDecoder: Sendable {
     }
 }
 
-public enum LSPFrame {
+public enum RPCFrame {
     /// `Content-Length: <utf8 byte count>\r\n\r\n<body>`.
     public static func encode(_ body: Data) -> Data {
         var out = Data("Content-Length: \(body.count)\r\n\r\n".utf8)

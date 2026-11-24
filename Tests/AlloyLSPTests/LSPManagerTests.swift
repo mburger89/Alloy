@@ -1,9 +1,10 @@
 import AlloyCore
+@testable import AlloyLSP
 import AlloyLSPTestSupport
+import AlloyRPC
 import Foundation
 import MetalUICodeBuffer
 import Testing
-@testable import AlloyLSP
 
 
 struct Rig {

@@ -38,11 +38,14 @@ let package = Package(
     targets: [
         // UI-free logic: wire protocol, sessions, edit ledger.
         .target(name: "AlloyCore", dependencies: [.product(name: "MetalUICodeBuffer", package: "MetalUI")]),
-        // Language Server Protocol client: framing, JSON-RPC, sessions. UI-free.
+        // JSON-RPC over stdio: framing, connection, child process (shared by the language-server client and plugins). UI-free.
+        .target(name: "AlloyRPC", dependencies: ["AlloyCore"]),
+        // Language Server Protocol client: sessions, document sync. UI-free.
         .target(
             name: "AlloyLSP",
             dependencies: [
                 "AlloyCore",
+                "AlloyRPC",
                 "AlloyHighlight",
                 .product(name: "MetalUICodeBuffer", package: "MetalUI"),
             ]
@@ -52,9 +55,11 @@ let package = Package(
         // Test-only scriptable ACP agent (no dependencies; scripted through FAKE_ACP_SCRIPT).
         .executableTarget(name: "AlloyFakeACP"),
         // Test-only scriptable language server. Not a product: the test targets depend on it, so SwiftPM always builds it.
-        .executableTarget(name: "AlloyFakeLSP", dependencies: ["AlloyCore", "AlloyLSP"]),
+        .executableTarget(name: "AlloyFakeLSP", dependencies: ["AlloyCore", "AlloyLSP", "AlloyRPC"]),
+        // Test-only scriptable plugin process (JSON-RPC over stdio). Not a product: the test targets depend on it.
+        .executableTarget(name: "AlloyFakePlugin", dependencies: ["AlloyCore", "AlloyRPC"]),
         // Shared helpers of the tests that run the fake server (its path, polling, launch and result collectors).
-        .target(name: "AlloyLSPTestSupport", dependencies: ["AlloyLSP"]),
+        .target(name: "AlloyLSPTestSupport", dependencies: ["AlloyLSP", "AlloyRPC"]),
         // Test doubles shared by the test targets.
         .target(
             name: "AlloyTestSupport",
@@ -85,6 +90,8 @@ let package = Package(
                 .product(name: "TreeSitterCSS", package: "tree-sitter-css"),
             ]
         ),
+        // Plugin manifest, catalog, installer and host. UI-free.
+        .target(name: "AlloyPlugins", dependencies: ["AlloyCore", "AlloyRPC"]),
         // Everything but the entry point, so a test imports it plainly.
         .target(
             name: "AlloyKit",
@@ -92,6 +99,8 @@ let package = Package(
                 "AlloyCore",
                 "AlloyHighlight",
                 "AlloyLSP",
+                "AlloyRPC",
+                "AlloyPlugins",
                 "AlloyTerminal",
                 .product(name: "MetalUI", package: "MetalUI"),
                 .product(name: "MetalUIMarkdown", package: "MetalUI"),
@@ -121,9 +130,11 @@ let package = Package(
         ),
         .testTarget(
             name: "AlloyLSPTests",
-            dependencies: ["AlloyLSP", "AlloyCore", "AlloyLSPTestSupport", "AlloyFakeLSP",
+            dependencies: ["AlloyLSP", "AlloyRPC", "AlloyCore", "AlloyLSPTestSupport", "AlloyFakeLSP",
                            .product(name: "MetalUICodeBuffer", package: "MetalUI")]
         ),
+        .testTarget(name: "AlloyPluginsTests", dependencies: ["AlloyPlugins", "AlloyCore", "AlloyRPC", "AlloyTestSupport", "AlloyFakePlugin"]),
+        .testTarget(name: "AlloyRPCTests", dependencies: ["AlloyRPC", "AlloyCore", "AlloyLSPTestSupport"]),
         .testTarget(
             name: "AlloyHighlightTests",
             dependencies: [
@@ -146,9 +157,12 @@ let package = Package(
                 "AlloyKit",
                 "AlloyTerminal",
                 "AlloyLSP",
+                "AlloyRPC",
+                "AlloyPlugins",
                 "AlloyTestSupport",
                 "AlloyLSPTestSupport",
                 "AlloyFakeLSP",
+                "AlloyFakePlugin",
                 .product(name: "MetalUI", package: "MetalUI"),
                 .product(name: "MetalUITesting", package: "MetalUI"),
                 .product(name: "MetalUITestingSnapshot", package: "MetalUI"),

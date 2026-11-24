@@ -210,7 +210,16 @@ public final class ThemeController: ThemeWorkshop {
         let loaded = await Task.detached {
             ThemeLibrary.load(builtIns: BuiltInThemes.all, userDirectory: directory, previous: previous)
         }.value
-        library = loaded
+        var next = loaded
+        next.plugin = library.plugin
+        library = next
+        apply()
+    }
+
+    /// Replaces the themes enabled plugins ship, then applies. A chosen plugin theme that vanishes falls back like a deleted user theme.
+    public func setPluginThemes(_ entries: [ThemeEntry]) {
+        guard library.plugin != entries else { return }
+        library.plugin = entries
         apply()
     }
 

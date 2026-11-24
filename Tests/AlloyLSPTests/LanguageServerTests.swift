@@ -1,8 +1,9 @@
 import AlloyCore
+@testable import AlloyLSP
 import AlloyLSPTestSupport
+import AlloyRPC
 import Foundation
 import Testing
-@testable import AlloyLSP
 
 
 /// Hands the launched process back to the test.

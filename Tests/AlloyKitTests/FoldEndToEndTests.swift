@@ -1,8 +1,9 @@
 @testable import AlloyCore
 import AlloyHighlight
+@testable import AlloyKit
 import AlloyLSP
 import AlloyLSPTestSupport
-@testable import AlloyKit
+import AlloyRPC
 import AlloyTestSupport
 import Foundation
 import MetalUI

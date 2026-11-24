@@ -1,10 +1,11 @@
 import AlloyCore
 import AlloyHighlight
+@testable import AlloyLSP
 import AlloyLSPTestSupport
+import AlloyRPC
 import Foundation
 import MetalUICodeBuffer
 import Testing
-@testable import AlloyLSP
 
 private let legend = SemanticTokensLegend(
     tokenTypes: ["keyword", "string", "variable", "function", "type", "bogus", "enumMember", "decorator"],

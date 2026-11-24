@@ -560,6 +560,10 @@ public final class Workspace {
     @ObservationIgnored public var onGitSettingsChanged: (@MainActor (GitSettings) -> Void)?
     /// An opaque slot for the UI layer's git coordinator.
     @ObservationIgnored public var gitServices: AnyObject?
+    /// An opaque slot for the UI layer's plugin coordinator.
+    @ObservationIgnored public var pluginServices: AnyObject?
+    /// Called after a settings update changed the `plugins` entries.
+    @ObservationIgnored public var onPluginsChanged: (@MainActor ([String: PluginSetting]) -> Void)?
     /// The clock the workspace's timers use; the git service shares it so tests drive both by hand.
     public var scheduleClock: any AutosaveClock { autosaveClock }
     /// The unsent commit message of the Git tab.
@@ -784,6 +788,7 @@ public final class Workspace {
         let visibilityChanged = s.shareKnowledge != settings.shareKnowledge || s.shareAcrossProjects != settings.shareAcrossProjects
         let serversChanged = s.languageServers != settings.languageServers
         let gitChanged = s.git != settings.git
+        let pluginsChanged = s.plugins != settings.plugins
         let keybindingsChanged = s.keybindings != settings.keybindings
         let changedAgents = Set(s.agents.filter { n in settings.agents.first { $0.id == n.id } != n }.map(\.id))
         settings = s
@@ -791,6 +796,7 @@ public final class Workspace {
         if keybindingsChanged { onKeybindingsChanged?(s.keybindings) }
         themeWorkshop?.settingsDidChange()
         if serversChanged { onLanguageServersChanged?(s.languageServers) }
+        if pluginsChanged { onPluginsChanged?(s.plugins) }
         if visibilityChanged { reloadKnowledgeAfterSettingsChange() }
         settingsGeneration += 1
         cachedExecutable = nil

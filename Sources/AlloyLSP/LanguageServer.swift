@@ -1,4 +1,5 @@
 import AlloyCore
+import AlloyRPC
 import Foundation
 
 public enum PositionEncoding: String, Sendable {
@@ -123,7 +124,7 @@ public enum LanguageServerError: Error, Equatable {
 
 /// Owns one language server: launch, handshake, answering its requests, and the restart policy.
 public actor LanguageServer {
-    public typealias Channel = any LSPByteChannel & ServerExitObserving
+    public typealias Channel = any RPCByteChannel & ServerExitObserving
 
     public static let maxRestarts = 3
     public static let restartWindow: Duration = .seconds(300)

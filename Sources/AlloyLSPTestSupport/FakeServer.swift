@@ -1,4 +1,5 @@
 import AlloyLSP
+import AlloyRPC
 import Foundation
 
 /// The scriptable fake language server (`AlloyFakeLSP`), which the test targets depend on so that SwiftPM always builds

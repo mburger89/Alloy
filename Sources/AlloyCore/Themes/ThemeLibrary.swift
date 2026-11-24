@@ -42,6 +42,8 @@ public struct ThemeLibrary: Equatable, Sendable {
 
     public var builtIns: [ThemeEntry]
     public var user: [ThemeEntry]
+    /// Themes shipped by enabled plugins (ids `plugin/<plugin id>/<file stem>`); set by the plugin coordinator, never read from disk here.
+    public var plugin: [ThemeEntry] = []
     public var errors: [ThemeLoadError]
     /// The folder user themes are read from; a draft's `backgroundImage` resolves against it.
     public var userDirectory: URL?
@@ -58,15 +60,15 @@ public struct ThemeLibrary: Equatable, Sendable {
     }
 
     /// Built-ins in registry order, then user themes sorted by name.
-    public var all: [ThemeEntry] { builtIns + user }
+    public var all: [ThemeEntry] { builtIns + user + plugin }
 
     public func entry(_ id: String) -> ThemeEntry? {
-        builtIns.first { $0.id == id } ?? user.first { $0.id == id }
+        builtIns.first { $0.id == id } ?? user.first { $0.id == id } ?? plugin.first { $0.id == id }
     }
 
     /// The entry a `base` string names: a built-in id first, then a user file stem.
     private func baseEntry(_ base: String) -> ThemeEntry? {
-        builtIns.first { $0.id == base } ?? user.first { $0.id == "user/" + base }
+        builtIns.first { $0.id == base } ?? user.first { $0.id == "user/" + base } ?? plugin.first { $0.id == base }
     }
 
     private func fallbackEntry(for appearance: ThemeAppearance) -> ThemeEntry? {
@@ -154,6 +156,45 @@ public struct ThemeLibrary: Equatable, Sendable {
     }
 
     // MARK: Loading
+
+    /// Reads the theme files plugins ship. The id is `plugin/<pluginID>/<file stem>`; a file that is missing, too large or does not
+    /// parse is reported and skipped. Entries are sorted by name.
+    public static func loadPluginThemes(_ files: [(pluginID: String, url: URL)]) -> (entries: [ThemeEntry], errors: [ThemeLoadError]) {
+        var entries: [ThemeEntry] = []
+        var errors: [ThemeLoadError] = []
+        var seen: Set<String> = []
+        for (pluginID, url) in files {
+            let id = "plugin/\(pluginID)/" + url.deletingPathExtension().lastPathComponent
+            let label = pluginID + "/" + url.lastPathComponent
+            guard seen.insert(id).inserted else {
+                errors.append(ThemeLoadError(fileName: label, message: "Duplicate theme id; ignored"))
+                continue
+            }
+            let target = url.resolvingSymlinksInPath()
+            guard let values = try? target.resourceValues(forKeys: [.fileSizeKey, .isRegularFileKey]), values.isRegularFile == true else {
+                errors.append(ThemeLoadError(fileName: label, message: "Theme file is missing"))
+                continue
+            }
+            if let size = values.fileSize, size > ThemeFile.maxBytes {
+                errors.append(ThemeLoadError(fileName: label, message: ThemeFileError.tooLarge(size).message))
+                continue
+            }
+            guard let data = try? Data(contentsOf: target) else {
+                errors.append(ThemeLoadError(fileName: label, message: "Could not read file"))
+                continue
+            }
+            do {
+                entries.append(ThemeEntry(id: id, file: try ThemeFile.parse(data), isBuiltIn: false, url: url))
+            } catch {
+                errors.append(ThemeLoadError(fileName: label, message: error.message))
+            }
+        }
+        entries.sort {
+            let order = $0.file.name.localizedCaseInsensitiveCompare($1.file.name)
+            return order == .orderedSame ? $0.id < $1.id : order == .orderedAscending
+        }
+        return (entries, errors)
+    }
 
     /// Reads `userDirectory/*.json`. Synchronous and cheap; safe to call from a background context.
     /// A file that stops parsing keeps its `previous` good version and is reported in `errors`.

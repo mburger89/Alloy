@@ -1,4 +1,5 @@
 import AlloyCore
+import AlloyRPC
 import Foundation
 import MetalUICodeBuffer
 

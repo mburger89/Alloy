@@ -1,11 +1,11 @@
 import AlloyCore
 import AlloyLSPTestSupport
+@testable import AlloyRPC
 import Foundation
 import Testing
-@testable import AlloyLSP
 
 /// One end of an in-memory pipe. Bytes sent here come out of the peer's `incoming`.
-final class PairChannel: LSPByteChannel, @unchecked Sendable {
+final class PairChannel: RPCByteChannel, @unchecked Sendable {
     let incoming: AsyncStream<Data>
     private let inbox: AsyncStream<Data>.Continuation
     nonisolated(unsafe) private var peer: PairChannel?
@@ -26,7 +26,7 @@ final class PairChannel: LSPByteChannel, @unchecked Sendable {
 final class FakeServer: @unchecked Sendable {
     let channel: PairChannel
     private let lock = NSLock()
-    private var decoder = LSPFrameDecoder()
+    private var decoder = RPCFrameDecoder()
     private var messages: [JSONValue] = []
     private var waiters: [(Int, CheckedContinuation<Void, Never>)] = []
     private var task: Task<Void, Never>?
@@ -79,11 +79,11 @@ final class FakeServer: @unchecked Sendable {
 
     var received: [JSONValue] { lock.lock(); defer { lock.unlock() }; return messages }
 
-    func reply(_ json: String) async throws { try await channel.send(LSPFrame.encode(Data(json.utf8))) }
+    func reply(_ json: String) async throws { try await channel.send(RPCFrame.encode(Data(json.utf8))) }
 }
 
 /// A channel whose `send` always throws and which reports `close()`.
-final class FailingChannel: LSPByteChannel, @unchecked Sendable {
+final class FailingChannel: RPCByteChannel, @unchecked Sendable {
     let incoming: AsyncStream<Data>
     private let inbox: AsyncStream<Data>.Continuation
     let closed: AsyncStream<Void>
@@ -101,7 +101,7 @@ final class FailingChannel: LSPByteChannel, @unchecked Sendable {
 }
 
 /// A channel whose writes block until `open()`: a server that has stopped reading its stdin.
-final class StalledChannel: LSPByteChannel, @unchecked Sendable {
+final class StalledChannel: RPCByteChannel, @unchecked Sendable {
     let incoming: AsyncStream<Data>
     private let inbox: AsyncStream<Data>.Continuation
     private let lock = NSLock()

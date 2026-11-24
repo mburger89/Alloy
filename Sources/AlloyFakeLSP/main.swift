@@ -1,5 +1,6 @@
 import AlloyCore
 import AlloyLSP
+import AlloyRPC
 import Foundation
 
 // Scriptable fake language server, used only by the AlloyLSP tests.
@@ -162,7 +163,7 @@ struct FakeLSP {
     }
 
     func send(_ v: JSONValue) {
-        FileHandle.standardOutput.write(LSPFrame.encode(encode(v)))
+        FileHandle.standardOutput.write(RPCFrame.encode(encode(v)))
     }
 
     func respond(id: JSONValue, result: JSONValue) {
@@ -176,7 +177,7 @@ struct FakeLSP {
     }
 
     mutating func run() {
-        var decoder = LSPFrameDecoder()
+        var decoder = RPCFrameDecoder()
         while true {
             let chunk = FileHandle.standardInput.availableData
             if chunk.isEmpty { exit(0) }

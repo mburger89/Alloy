@@ -1,7 +1,7 @@
 import AlloyCore
 import Foundation
 
-public protocol LSPByteChannel: Sendable {
+public protocol RPCByteChannel: Sendable {
     func send(_ data: Data) async throws
     var incoming: AsyncStream<Data> { get }
     func close() async
@@ -24,6 +24,16 @@ public struct JSONRPCError: Error, Equatable, Sendable {
     public static let timedOut = JSONRPCError(code: -32001, message: "Request timed out")
     /// Local: the connection closed before a response arrived.
     public static let connectionClosed = JSONRPCError(code: -32099, message: "Connection closed")
+    /// Local: the write queue is full and the connection's policy is `.fail`.
+    public static let queueFull = JSONRPCError(code: -32098, message: "Write queue full")
+}
+
+/// What `notify` and `request` do when the write queue is at its limit.
+public enum RPCOverflowPolicy: Sendable {
+    /// Wait for room (the language-server default: the document sync coalesces what piles up behind the wait).
+    case wait
+    /// Throw `JSONRPCError.queueFull` at once.
+    case fail
 }
 
 public actor JSONRPCConnection {
@@ -32,7 +42,7 @@ public actor JSONRPCConnection {
         var timeoutTask: Task<Void, Never>
     }
 
-    private let channel: any LSPByteChannel
+    private let channel: any RPCByteChannel
     private let requestTimeout: Duration
     private var nextID = 1
     private var pending: [Int: Pending] = [:]
@@ -53,13 +63,17 @@ public actor JSONRPCConnection {
     private var queuedBytes = 0
     private var queuedMessages = 0
     private var roomWaiters: [(id: UUID, continuation: CheckedContinuation<Void, Error>)] = []
+    private let overflow: RPCOverflowPolicy
+    private var inboundGate: (@Sendable () async -> Void)?
 
-    public init(channel: any LSPByteChannel, requestTimeout: Duration = .seconds(10),
-                maxQueuedBytes: Int = 1 << 20, maxQueuedMessages: Int = 256) {
+    public init(channel: any RPCByteChannel, requestTimeout: Duration = .seconds(10),
+                maxQueuedBytes: Int = 1 << 20, maxQueuedMessages: Int = 256,
+                overflow: RPCOverflowPolicy = .wait) {
         self.channel = channel
         self.requestTimeout = requestTimeout
         self.maxQueuedBytes = maxQueuedBytes
         self.maxQueuedMessages = maxQueuedMessages
+        self.overflow = overflow
         (outgoing, outgoingContinuation) = AsyncStream.makeStream()
     }
 
@@ -79,10 +93,13 @@ public actor JSONRPCConnection {
         }
         let incoming = channel.incoming
         readTask = Task { [weak self] in
-            var decoder = LSPFrameDecoder()
+            var decoder = RPCFrameDecoder()
             for await chunk in incoming {
                 do {
-                    for body in try decoder.append(chunk) { await self?.handle(body) }
+                    for body in try decoder.append(chunk) {
+                        if let gate = await self?.inboundGate { await gate() }
+                        await self?.handle(body)
+                    }
                 } catch {
                     await self?.shutdown(reason: "framing error: \(error)", drainWriter: true)
                     return
@@ -94,6 +111,11 @@ public actor JSONRPCConnection {
 
     public func onNotification(_ handler: @escaping @Sendable (String, JSONValue?) -> Void) {
         notificationHandler = handler
+    }
+
+    /// Awaited before each incoming message is dispatched (the plugin host's rate limit).
+    public func setInboundGate(_ gate: @escaping @Sendable () async -> Void) {
+        inboundGate = gate
     }
 
     public func onRequest(_ handler: @escaping @Sendable (String, JSONValue?) async -> Result<JSONValue, JSONRPCError>) {
@@ -131,6 +153,14 @@ public actor JSONRPCConnection {
         if !urgent { try await waitForRoom() }
         if closed { throw JSONRPCError.connectionClosed }
         enqueue(["jsonrpc": .string("2.0"), "method": .string(method), "params": params ?? .null], omitNullParams: params == nil)
+    }
+
+    /// Frames and writes an already-encoded notification body (encode once, fan out to many connections).
+    public func notify(encodedBody: Data) async throws {
+        if closed { throw JSONRPCError.connectionClosed }
+        try await waitForRoom()
+        if closed { throw JSONRPCError.connectionClosed }
+        enqueue(frame: RPCFrame.encode(encodedBody))
     }
 
     /// Fails the pending request with `CancellationError` and tells the server to abandon it.
@@ -184,6 +214,7 @@ public actor JSONRPCConnection {
         let deadline = timeout.map { ContinuousClock.now.advanced(by: $0) }
         while !hasRoom {
             if closed { throw JSONRPCError.connectionClosed }
+            if overflow == .fail { throw JSONRPCError.queueFull }
             if let deadline, ContinuousClock.now >= deadline { throw JSONRPCError.timedOut }
             let id = UUID()
             let timer = deadline.map { deadline in
@@ -230,7 +261,10 @@ public actor JSONRPCConnection {
         var message = message
         if omitNullParams { message["params"] = nil }
         guard let body = Self.encode(.object(message)) else { return }
-        let frame = LSPFrame.encode(body)
+        enqueue(frame: RPCFrame.encode(body))
+    }
+
+    private func enqueue(frame: Data) {
         queuedBytes += frame.count
         queuedMessages += 1
         outgoingContinuation.yield(frame)
