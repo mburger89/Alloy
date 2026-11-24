@@ -38,7 +38,7 @@ struct CodeChatColumn: Component, Equatable {
         let _ = BodyProbe.hit("CodeChatColumn")
         VStack(spacing: 0) {
             SessionMenuHeader(workspace: workspace).equatable()
-            ChatIslandBody(workspace: workspace, store: store, themes: themes)
+            ChatIslandBody(workspace: workspace, store: store, themes: themes).equatable()
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }

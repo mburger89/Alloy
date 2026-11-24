@@ -9,8 +9,10 @@ func colourPairsText(_ count: Int) -> String {
 /// The strip above the chat for a theme preview (`theme-preview-bar`: Keep and Discard, plus the contrast findings) and
 /// for an activation held back by the contrast warning (`theme-activation-warning`: Use anyway and Cancel). Draws nothing
 /// when neither applies. Theme tokens only.
-struct ThemeBar: Component {
+struct ThemeBar: Component, Equatable {
     let themes: ThemeController
+
+    nonisolated static func == (a: Self, b: Self) -> Bool { a.themes === b.themes }
     /// A Keep that could not save, or an activation that failed; shown inline.
     /// Each error remembers what it was for and shows only while that is still on screen, so a newer preview or a
     /// different pending warning never inherits the old message.
@@ -19,6 +21,7 @@ struct ThemeBar: Component {
     @State var activationFailure: Failure<PendingActivation>?
 
     var content: some ElementGroup {
+        let _ = BodyProbe.hit("ThemeBar")
         let themes = themes
         VStack(spacing: 0) {
             if let preview = themes.preview {

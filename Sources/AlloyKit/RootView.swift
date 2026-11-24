@@ -209,7 +209,7 @@ struct IslandRow: Component, Equatable {
             SidebarView(workspace: workspace, keymap: keymap, updates: updates).equatable()
                 .island(style: style, identifier: "island-sidebar")
                 .frame(minWidth: Pixels(200), idealWidth: Pixels(250), maxWidth: Pixels(380))
-            ChatIslandBody(workspace: workspace, store: store, themes: themes)
+            ChatIslandBody(workspace: workspace, store: store, themes: themes).equatable()
             .island(style: style, identifier: "island-chat")
             .frame(minWidth: Pixels(320), maxWidth: .infinity)
             FilePanelView(workspace: workspace, store: store, panel: panel, quickOpen: quickOpen, themes: themes).equatable()

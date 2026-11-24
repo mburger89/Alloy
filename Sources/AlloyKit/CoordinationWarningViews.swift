@@ -35,10 +35,13 @@ struct WarningMark: Component {
 
 /// A one-line strip above the chat when a warning involves a session the user is not looking at. Clicking it goes to
 /// that session; the x hides it (the markers stay).
-struct CoordinationNotice: Component {
+struct CoordinationNotice: Component, Equatable {
     let workspace: Workspace
 
+    nonisolated static func == (a: Self, b: Self) -> Bool { a.workspace === b.workspace }
+
     var content: some ElementGroup {
+        let _ = BodyProbe.hit("CoordinationNotice")
         let workspace = workspace
         if let warning = workspace.noticeWarning(selected: workspace.selectedSessionID) {
             let colors = CoordinationStyle.colors(for: warning)
