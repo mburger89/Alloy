@@ -43,7 +43,7 @@ Alloy's themes folder:
    - `textPrimary`, `mutedInk` on `thinkingTint`, `readTint`, `shellTint`, `editAddTint`, `editRemoveTint`, `errorTint`, `warningTint`, `questionTint`, `planTint`, `commandTint`, `webTint`: 4.5:1
    - `syntax.*` on `markdownCodeFill`, `surface`: 4.5:1 (except syntax.comment, which needs 3)
    - `syntax.comment` on `markdownCodeFill`, `surface`: 3:1
-   - `syntax.*` on `editAddTint`, `editRemoveTint`, `surface` over `codeSelectionFill`: 3:1
+   - `syntax.*` on `editAddTint`, `editRemoveTint`, `surface` over `codeSelectionFill`, `surface` over `codeInactiveSelectionFill`: 3:1
    - `thinkingInk` on `thinkingTint`: 3:1
    - `readInk` on `readTint`: 3:1
    - `shellInk` on `shellTint`: 3:1

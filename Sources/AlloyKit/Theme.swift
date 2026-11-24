@@ -171,6 +171,11 @@ struct ControlBorder: ThemeColorKey {
 struct CodeSelectionFill: ThemeColorKey {
     static let defaultValue = Color(light: Color(hex: 0xDDE8FC), dark: Color(hex: 0x26406B))
 }
+/// The code view's selection while the view is not the focused element of a key window (`CV-BB`): opaque and grey, quieter
+/// than `CodeSelectionFill` like AppKit's unemphasized selection, so syntax colours keep 4.5:1 on it.
+struct CodeInactiveSelectionFill: ThemeColorKey {
+    static let defaultValue = Color(light: Color(hex: 0xE3E5E9), dark: Color(hex: 0x363A42))
+}
 /// The code view's find highlights: opaque so the text reads on them in both schemes.
 struct FindMatchFill: ThemeColorKey {
     static let defaultValue = Color(light: Color(hex: 0xFFF1C0), dark: Color(hex: 0x3A3217))
@@ -292,6 +297,7 @@ extension Color {
     /// The 1 px outline of the selected segment in a segmented picker (MetalUI `SegmentedThumbEdge`).
     static let pickerThumbEdge = Color(SegmentedThumbEdge.self)
     static let codeSelectionFill = Color(CodeSelectionFill.self)
+    static let codeInactiveSelectionFill = Color(CodeInactiveSelectionFill.self)
     static let findMatchFill = Color(FindMatchFill.self)
     static let currentFindMatchFill = Color(CurrentFindMatchFill.self)
     static let snippetPlaceholderFill = Color(SnippetPlaceholderFill.self)
@@ -316,5 +322,5 @@ extension CodeTheme {
     /// MetalUI's default code theme with a clear background, so the code sits on the file island's own surface (the default
     /// `surface` painted opaque white on a light island), and the colours that fail 4.5:1 replaced: selection, line numbers
     /// the find highlights and the snippet placeholders.
-    static let alloy = CodeTheme(background: .clear, selection: .codeSelectionFill, gutterForeground: .mutedInk, findMatch: .findMatchFill, currentFindMatch: .currentFindMatchFill, snippetPlaceholder: .snippetPlaceholderFill)
+    static let alloy = CodeTheme(background: .clear, selection: .codeSelectionFill, gutterForeground: .mutedInk, findMatch: .findMatchFill, currentFindMatch: .currentFindMatchFill, inactiveSelection: .codeInactiveSelectionFill, snippetPlaceholder: .snippetPlaceholderFill)
 }

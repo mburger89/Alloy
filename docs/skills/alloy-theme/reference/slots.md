@@ -51,6 +51,7 @@ Every colour slot a theme file can set under `colors`, in file order, with what 
 - `sessionSelection`: Fill of the selected session row.
 - `controlBorder`: Border of the composer box.
 - `codeSelectionFill`: Selection fill in code views.
+- `codeInactiveSelectionFill`: Selection fill in code views that are not the focused view of the key window.
 - `findMatchFill`: Highlight of find matches in code views.
 - `currentFindMatchFill`: Highlight of the current find match.
 - `snippetPlaceholderFill`: Tint of the placeholders of a running snippet other than the current one.

@@ -118,7 +118,7 @@ The selected segment of a segmented picker is outlined by the `pickerThumbEdge` 
 | `textPrimary` and `textSecondary` on `surfaceSecondary` | 4.5:1 |
 | `textPrimary` and `mutedInk` on each tint (thinking, read, shell, added, removed, error, warning, question, plan, command, web) | 4.5:1 |
 | Syntax colours on the Markdown code fill and the surface | 4.5:1 (comments 3:1) |
-| Syntax colours on the added and removed line tints, and on the surface under the code selection | 3:1 |
+| Syntax colours on the added and removed line tints, and on the surface under the code selection and the inactive code selection | 3:1 |
 | Each block ink (thinking, read, shell, edit, web, question, plan) on its own tint | 3:1 |
 | `errorInk` on `errorTint` and on the panel fill, `warningInk` on `warningTint`, `linkInk` on the chat and code fills | 4.5:1 |
 | `pickerThumbEdge` on `surfaceSecondary` (the track), and on the selected segment (`surface` in a light theme, `textPrimary` at 0.18 over the track in a dark one); skipped when the slot is absent | 3:1 |
@@ -209,6 +209,7 @@ Every slot name a theme file can set, with its purpose. MetalUI tokens come firs
 | `sessionSelection` | Fill of the selected session row. |
 | `controlBorder` | Border of the composer box. |
 | `codeSelectionFill` | Selection fill in code views. |
+| `codeInactiveSelectionFill` | Selection fill in code views that are not the focused view of the key window. |
 | `findMatchFill` | Highlight of find matches in code views. |
 | `currentFindMatchFill` | Highlight of the current find match. |
 | `snippetPlaceholderFill` | Tint of the placeholders of a running snippet other than the current one. |

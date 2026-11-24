@@ -156,6 +156,7 @@ private func ratio(_ a: RGB, _ b: RGB) -> Double {
             add("syntax.\(token).panelAdded", fg, [.islandFill, .addedRowTint], 4.5)
             add("syntax.\(token).panelRemoved", fg, [.islandFill, .removedRowTint], 4.5)
             add("syntax.\(token).selection", fg, [.islandFill, CodeTheme.alloy.selection], 4.5)
+            add("syntax.\(token).inactiveSelection", fg, [.islandFill, CodeTheme.alloy.inactiveSelection], 4.5)
             add("syntax.\(token).find", fg, [.islandFill, CodeTheme.alloy.findMatch], 4.5)
             add("syntax.\(token).findCurrent", fg, [.islandFill, CodeTheme.alloy.currentFindMatch], 4.5)
             add("syntax.\(token).snippetPlaceholder", fg, [.islandFill, .snippetPlaceholderFill], 4.5)
@@ -188,6 +189,7 @@ private func ratio(_ a: RGB, _ b: RGB) -> Double {
         add("panel.code.added", text, [.islandFill, .addedRowTint], 4.5)
         add("panel.code.removed", text, [.islandFill, .removedRowTint], 4.5)
         add("panel.code.selection", text, [.islandFill, CodeTheme.alloy.selection], 4.5)
+        add("panel.code.inactiveSelection", text, [.islandFill, CodeTheme.alloy.inactiveSelection], 4.5)
         add("panel.code.find", text, [.islandFill, CodeTheme.alloy.findMatch], 4.5)
         add("panel.code.findCurrent", text, [.islandFill, CodeTheme.alloy.currentFindMatch], 4.5)
         add("panel.code.snippetPlaceholder", text, [.islandFill, .snippetPlaceholderFill], 4.5)
@@ -337,11 +339,11 @@ private func ratio(_ a: RGB, _ b: RGB) -> Double {
         if id == "text.secondary.on.surfaceSecondary" { return true }
         if id.hasPrefix("syntax.comment.") { return true }
         if id.hasPrefix("syntax.") {
-            return ["added", "removed", "panelAdded", "panelRemoved", "selection", "find", "findCurrent"].contains { id.hasSuffix(".\($0)") }
+            return ["added", "removed", "panelAdded", "panelRemoved", "selection", "inactiveSelection", "find", "findCurrent"].contains { id.hasSuffix(".\($0)") }
         }
         if id.hasPrefix("sidebar.selected.") || id.hasPrefix("panel.code.authorRun.") || id == "sidebar.files.active" { return true }
         return ["code.gutter.added", "code.gutter.removed", "code.text.added", "code.text.removed", "panel.code.added",
-                "panel.code.removed", "panel.code.selection", "panel.code.find", "panel.code.findCurrent"].contains(id)
+                "panel.code.removed", "panel.code.selection", "panel.code.inactiveSelection", "panel.code.find", "panel.code.findCurrent"].contains(id)
     }
 
     /// Ruling 12: each built-in outlines the selected segment at 3:1 or better against the track and the thumb, with its

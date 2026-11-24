@@ -235,4 +235,47 @@ import Testing
         await s.settle(3)
         #expect(s.doc.buffer.snapshot().utf8(in: at..<at + 1).elementsEqual(Array("Q".utf8)), "typing landed at the new state's caret")
     }
+
+    /// The selection fills painted inside one group's code view, as (active, inactive) rect counts (`CV-BB`).
+    private func selectionRects(_ s: Setup, in pane: PaneID) throws -> (active: Int, inactive: Int) {
+        guard case .group(let id) = pane else { return (0, 0) }
+        let frame = try s.window.element(identifier: "code-view-\(id.uuidString)").frame
+        let env = EnvironmentValues()
+        func matches(_ fill: Color, _ l0: Float, _ s0: Float) -> Bool {
+            let c = fill.resolve(in: env)
+            let hi = max(c.red, c.green, c.blue), lo = min(c.red, c.green, c.blue)
+            let l = (hi + lo) / 2
+            let sat = hi == lo ? 0 : (hi - lo) / (1 - abs(2 * l - 1))
+            return abs(l0 - l) < 0.01 && abs(s0 - sat) < 0.02
+        }
+        let inside = s.window.scene.rects.filter {
+            $0.bounds.origin.x >= Float(frame.minX.value) && $0.bounds.origin.x < Float(frame.maxX.value)
+                && $0.bounds.origin.y >= Float(frame.minY.value) && $0.bounds.origin.y < Float(frame.maxY.value)
+        }
+        return (inside.filter { matches(.codeSelectionFill, $0.background.l, $0.background.s) }.count,
+                inside.filter { matches(.codeInactiveSelectionFill, $0.background.l, $0.background.s) }.count)
+    }
+
+    /// A selection draws in `codeSelectionFill` only in the focused view of a key window; in an unfocused split, and in
+    /// the focused one once the window stops being key, it draws in the quieter `codeInactiveSelectionFill` (`CV-BB`).
+    @Test func anUnfocusedViewDrawsItsSelectionInTheInactiveFill() async throws {
+        let s = try await setup()
+        try focus(s, s.a)
+        s.stateA.select(s.offset(row: 3)..<s.offset(row: 3, column: 8), reveal: false)
+        s.stateB.select(s.offset(row: 3)..<s.offset(row: 3, column: 8), reveal: false)
+        await s.settle()
+        let a = try selectionRects(s, in: s.a), b = try selectionRects(s, in: s.b)
+        #expect(a.active > 0 && a.inactive == 0, "focused A uses the active fill: \(a)")
+        #expect(b.inactive > 0 && b.active == 0, "unfocused B uses the inactive fill: \(b)")
+        try focus(s, s.b)
+        s.stateB.select(s.offset(row: 3)..<s.offset(row: 3, column: 8), reveal: false)
+        await s.settle()
+        let a2 = try selectionRects(s, in: s.a), b2 = try selectionRects(s, in: s.b)
+        #expect(a2.inactive > 0 && a2.active == 0, "A after focus moved to B: \(a2)")
+        #expect(b2.active > 0 && b2.inactive == 0, "B once focused: \(b2)")
+        s.window.setControlActiveState(.inactive)
+        await s.settle()
+        let b3 = try selectionRects(s, in: s.b)
+        #expect(b3.inactive > 0 && b3.active == 0, "a window that is not key draws the focused view inactive: \(b3)")
+    }
 }

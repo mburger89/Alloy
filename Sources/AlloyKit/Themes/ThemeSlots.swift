@@ -81,6 +81,7 @@ public enum ThemeSlots {
         key("sessionSelection", SessionSelectionFill.self, "Fill of the selected session row."),
         key("controlBorder", ControlBorder.self, "Border of the composer box."),
         key("codeSelectionFill", CodeSelectionFill.self, "Selection fill in code views."),
+        key("codeInactiveSelectionFill", CodeInactiveSelectionFill.self, "Selection fill in code views that are not the focused view of the key window."),
         key("findMatchFill", FindMatchFill.self, "Highlight of find matches in code views."),
         key("currentFindMatchFill", CurrentFindMatchFill.self, "Highlight of the current find match."),
         key("snippetPlaceholderFill", SnippetPlaceholderFill.self, "Tint of the placeholders of a running snippet other than the current one."),

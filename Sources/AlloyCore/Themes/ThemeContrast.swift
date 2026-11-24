@@ -56,7 +56,7 @@ public enum ThemeContrast {
         ContrastRule(foregrounds: ["syntax.*"], backgrounds: [["markdownCodeFill"], ["surface"]], minimum: 4.5,
                      note: "except syntax.comment, which needs 3"),
         ContrastRule(foregrounds: ["syntax.comment"], backgrounds: [["markdownCodeFill"], ["surface"]], minimum: 3, note: nil),
-        ContrastRule(foregrounds: ["syntax.*"], backgrounds: [["editAddTint"], ["editRemoveTint"], ["surface", "codeSelectionFill"]],
+        ContrastRule(foregrounds: ["syntax.*"], backgrounds: [["editAddTint"], ["editRemoveTint"], ["surface", "codeSelectionFill"], ["surface", "codeInactiveSelectionFill"]],
                      minimum: 3, note: nil),
         ContrastRule(foregrounds: ["thinkingInk"], backgrounds: [["thinkingTint"]], minimum: 3, note: nil),
         ContrastRule(foregrounds: ["readInk"], backgrounds: [["readTint"]], minimum: 3, note: nil),
@@ -155,6 +155,7 @@ public enum ThemeContrast {
             check(name, fg, on: ["editAddTint"], 3)
             check(name, fg, on: ["editRemoveTint"], 3)
             check(name, fg, on: ["surface", "codeSelectionFill"], 3)
+            check(name, fg, on: ["surface", "codeInactiveSelectionFill"], 3)
         }
 
         // Inks on tints.

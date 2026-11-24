@@ -4,6 +4,7 @@
     "accent" : "#60A5FA",
     "background" : "#0B1020",
     "chatFill" : "#16181D",
+    "codeInactiveSelectionFill" : "#363A42",
     "codeSelectionFill" : "#26406B",
     "commandTint" : "#262A31",
     "controlBorder" : "#6B7385",

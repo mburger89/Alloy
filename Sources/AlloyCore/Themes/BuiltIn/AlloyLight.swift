@@ -56,6 +56,7 @@ extension BuiltInThemes {
     "sessionSelection": "#DCE7FA",
     "controlBorder": "#8A8F99",
     "codeSelectionFill": "#DDE8FC",
+    "codeInactiveSelectionFill": "#E3E5E9",
     "findMatchFill": "#FFF1C0",
     "currentFindMatchFill": "#FFDD9E",
     "snippetPlaceholderFill": "#E6E9F0",
