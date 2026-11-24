@@ -92,9 +92,12 @@ struct FileTreeLabel: Component, Equatable {
         let mark = workspace.fileTree.marks[entry.path]
         // Only this row's cell is read, so a status change re-runs this label and no other.
         let gitStatus = (workspace.gitServices as? GitCoordinator)?.tree.cell(for: entry.path).status
+        // A selected row's name takes the primary text colour, as on the sessions list's selection: a git colour
+        // (orange for untracked) does not hold contrast on the selection fill. The change dot stays.
+        let selected = workspace.fileTreeSelection == entry.path
         HStack(spacing: fileTreeRowGap) {
             Image(systemName: entry.isFolder ? "folder" : "doc").font(.system(size: fileTreeIconSize)).foregroundColor(.mutedInk)
-            Text(verbatim: entry.name).font(size: fileTreeFontSize).foregroundColor(Self.gitColor(gitStatus))
+            Text(verbatim: entry.name).font(size: fileTreeFontSize).foregroundColor(Self.nameColor(gitStatus, selected: selected))
             Spacer()
             if let mark {
                 Circle().fill(Self.color(mark, sessions: workspace.sessions)).frame(width: fileTreeMarkSize, height: fileTreeMarkSize)
@@ -104,6 +107,11 @@ struct FileTreeLabel: Component, Equatable {
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("file-tree-row-\(entry.path)")
         .accessibilityValue(gitStatus?.accessibilityName ?? "")
+    }
+
+    /// The name's colour: the selection's text colour on a selected row, else the git status colour.
+    @MainActor static func nameColor(_ status: GitDisplayStatus?, selected: Bool) -> Color? {
+        selected ? Color(.textPrimary) : gitColor(status)
     }
 
     /// The name's colour for a git status; nil keeps the row's own text colour.

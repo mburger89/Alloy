@@ -288,7 +288,8 @@ struct FilePanelHeader: Component {
         let _ = BodyProbe.hit("FilePanelHeader")
         let workspace = workspace, path = path, pane = pane, ids = ids
         HStack(spacing: Pixels(8)) {
-            // The path gives up space first (priority 0, the rest 1) and truncates in the middle, so the file name stays.
+            // The read-only notice gives up space first (priority -1), then the path truncates in the middle (0); the
+            // buttons keep theirs (1), so the file name outlives the notice.
             Text(verbatim: path).font(size: 12).lineLimit(1).truncationMode(.middle)
                 .accessibilityIdentifier(ids.path)
             if document?.tabDirty == true {
@@ -299,7 +300,8 @@ struct FilePanelHeader: Component {
             Spacer()
             if case .readOnly(let reason)? = document?.state {
                 Text(verbatim: "Read-only \u{2014} \(reason)").font(size: 11).foregroundColor(.mutedInk).lineLimit(1)
-                    .layoutPriority(1)
+                    .layoutPriority(-1)
+                    .help(reason)
                     .accessibilityIdentifier(ids.readOnly)
             }
             ServerStatusLabel(workspace: workspace, path: path).equatable()

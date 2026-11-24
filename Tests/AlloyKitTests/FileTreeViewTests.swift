@@ -258,4 +258,34 @@ import Testing
         #expect(sum(work, \.outlineContentEvaluations) == 0 && sum(work, \.outlineContentRebuilds) == 0,
                 "\(work.map(\.outlineContentEvaluations)) \(work.map(\.outlineContentRebuilds))")
     }
+
+    private func nameColors(_ window: TestWindow, _ path: String) throws -> [Hsla] {
+        try window.drawnTextColors(in: window.element(identifier: "file-tree-row-\(path)"))
+    }
+
+    @Test func selectedUntrackedRowUsesTheSelectionTextColourNotTheGitColour() async throws {
+        let rig = Rig()
+        try write(rig, ["tracked.txt"])
+        try git(rig.root, "init", "-q", "-b", "main")
+        try git(rig.root, "add", "-A"); try git(rig.root, "commit", "-qm", "init")
+        try write(rig, ["fresh.txt"])
+        let coordinator = GitCoordinator.install(on: rig.workspace)
+        await coordinator.service.refreshNow()
+        await rig.workspace.restoreUIState()
+        rig.workspace.setMode(.code)
+        let window = try alloyWindow(rig.workspace)
+        try await window.runUntil { rig.workspace.fileTree.snapshot.children(of: "").count == 2 }
+        for _ in 0..<8 { window.tick(); await Task.yield() }
+        let plain = try #require(try nameColors(window, "tracked.txt").last)   // no git status: the row's own text colour
+        let git = try #require(try nameColors(window, "fresh.txt").last)
+        #expect(git.toRgba() != plain.toRgba(), "an untracked row keeps its git colour while unselected")
+        window.click(at: try center(window, "fresh.txt")); await settle(window)
+        #expect(rig.workspace.fileTreeSelection == "fresh.txt")
+        let selected = try #require(try nameColors(window, "fresh.txt").last)
+        #expect(selected.toRgba() == plain.toRgba(), "the selected row's name is in the selection text colour")
+        window.click(at: try center(window, "tracked.txt")); await settle(window)
+        let after = try #require(try nameColors(window, "fresh.txt").last)
+        #expect(after.toRgba() == git.toRgba(), "deselected, the git colour returns")
+        withExtendedLifetime(coordinator) {}
+    }
 }
