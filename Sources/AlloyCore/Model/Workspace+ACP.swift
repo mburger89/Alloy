@@ -117,6 +117,9 @@ extension Workspace {
         terminalLayout = layout
     }
 
+    /// Queues text for a new pane (see `takeTerminalStartupInput`).
+    public func queueTerminalStartupInput(_ pane: UUID, _ text: String) { terminalStartupInput[pane] = text }
+
     /// The text a new terminal pane starts with (an agent sign-in command); taken once, by whoever spawns the pane.
     public func takeTerminalStartupInput(_ pane: UUID) -> String? { terminalStartupInput.removeValue(forKey: pane) }
 }

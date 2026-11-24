@@ -355,6 +355,8 @@ public final class Workspace {
     @ObservationIgnored public var busyTerminalCount: (@MainActor () -> Int)?
     /// The object that installed `busyTerminalCount` and `onTerminalHidden`; a later one only installs while this is gone.
     @ObservationIgnored public weak var terminalHooksOwner: AnyObject?
+    /// Opens a terminal tab titled `title` and types `line` into its shell; installed by the hooks-owning terminal store.
+    @ObservationIgnored public var runTerminalTask: (@MainActor (_ title: String, _ line: String) -> Void)?
     /// Run after the terminal panel hides, so its owner can drop focus state.
     @ObservationIgnored public var onTerminalHidden: (@MainActor () -> Void)?
     /// The terminal-focus action table the tab commands consult (see `Workspace+TerminalFocus.swift`).

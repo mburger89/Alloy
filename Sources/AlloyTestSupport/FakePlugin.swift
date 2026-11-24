@@ -16,11 +16,11 @@ public let fakePluginPath: String = {
 public var fakePluginDirectory: String { URL(fileURLWithPath: fakePluginPath).deletingLastPathComponent().path }
 
 /// Writes `<plugins>/<id>/alloy-plugin.json` for a scripted plugin run by the fake, with `script.json` beside it. The fake
-/// logs every message it receives to `<folder>/log.jsonl`. Returns the plugin folder.
+/// logs every message it receives to `<folder>/log.jsonl` (or `<logDirectory>/log.jsonl`; a sandboxed plugin can write only its scratch folder). Returns the plugin folder.
 @discardableResult
 public func writeFakePlugin(id: String, in plugins: URL, permissions: [String] = [], activation: [String] = [],
                             contributes: JSONValue = .object([:]), script: JSONValue = .object([:]),
-                            apiVersion: Int = 1, name: String? = nil) throws -> URL {
+                            apiVersion: Int = 1, name: String? = nil, logDirectory: URL? = nil) throws -> URL {
     let folder = plugins.appendingPathComponent(id)
     try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
     let manifest: JSONValue = .object([
@@ -30,7 +30,7 @@ public func writeFakePlugin(id: String, in plugins: URL, permissions: [String] =
         "apiVersion": .number(Double(apiVersion)),
         "main": .object(["command": .string("AlloyFakePlugin"),
                          "args": .array([.string("--script"), .string("script.json"),
-                                         .string("--log"), .string(folder.appendingPathComponent("log.jsonl").path)])]),
+                                         .string("--log"), .string((logDirectory ?? folder).appendingPathComponent("log.jsonl").path)])]),
         "permissions": .array(permissions.map { .string($0) }),
         "activationEvents": .array(activation.map { .string($0) }),
         "contributes": contributes,

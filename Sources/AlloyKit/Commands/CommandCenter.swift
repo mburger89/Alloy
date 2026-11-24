@@ -17,7 +17,7 @@ public final class CommandCenter {
     public var standardMenuClaims: @MainActor () -> [ClaimedShortcut] = { [] }
 
     /// The plugin system (set by the entry point before `bind`). Not observable; nothing in a view body reads it.
-    public var plugins: PluginCoordinator?
+    public var plugins: PluginCoordinator? { didSet { plugins?.center = self } }
 
     private let launcher: LauncherModel
     /// A workspace bound directly (a window that has no launcher adopting it); wins over the launcher's.
@@ -41,7 +41,10 @@ public final class CommandCenter {
         guard bound !== workspace else { return }
         bound = workspace
         registry.overrides = workspace.settings.keybindings
-        workspace.onKeybindingsChanged = { [weak registry] overrides in registry?.overrides = overrides }
+        workspace.onKeybindingsChanged = { [weak self] overrides in
+            self?.registry.overrides = overrides
+            self?.plugins?.keybindingsChanged()
+        }
         plugins?.bind(workspace)
     }
 

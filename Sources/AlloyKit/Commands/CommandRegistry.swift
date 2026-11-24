@@ -16,7 +16,7 @@ public enum RejectionReason: Hashable, Sendable {
     case duplicateID
     /// Another registered command already holds this default chord.
     case chordTaken(by: String)
-    /// A plugin command's shortcut is dropped (the command itself is added) until MetalUI can show plugin shortcuts.
+    /// A plugin command's shortcut is dropped (the command itself is added): it was not vetted by the coordinator.
     case pluginShortcutDropped
 }
 
@@ -63,29 +63,42 @@ public final class CommandRegistry {
     }
 
     /// Adds a command. A repeated id is rejected. A built-in whose default chord another command holds is rejected
-    /// (the first registered wins). A plugin command is added without its shortcut, and a rejection is noted.
+    /// (the first registered wins). A plugin command is added without its shortcut and a rejection is noted, unless
+    /// `keepsPluginShortcut` (the coordinator vetted the chord): then it keeps the chord, except when a registered
+    /// command already holds it (`.chordTaken(by:)` is noted and the chord dropped; the command is still added).
     @discardableResult
     public func register(_ d: CommandDescriptor, isEnabled: @escaping @MainActor () -> Bool = { true },
-                         run: @escaping @MainActor () -> Void) -> RegistrationResult {
+                         run: @escaping @MainActor () -> Void, keepsPluginShortcut: Bool = false) -> RegistrationResult {
         guard index[d.id] == nil else { return reject(d, .duplicateID) }
         var descriptor = d
         var droppedShortcut = false
+        var takenBy: String?
         if case .plugin = d.source {
-            if d.shortcut != nil { descriptor.shortcut = nil; droppedShortcut = true }
+            if let chord = d.shortcut {
+                if !keepsPluginShortcut {
+                    descriptor.shortcut = nil
+                    droppedShortcut = true
+                } else if let holder = storage.first(where: { $0.descriptor.shortcut == chord }) {
+                    descriptor.shortcut = nil
+                    takenBy = holder.descriptor.id
+                }
+            }
         } else if let chord = d.shortcut, let holder = storage.first(where: { $0.descriptor.shortcut == chord }) {
             return reject(d, .chordTaken(by: holder.descriptor.id))
         }
         index[d.id] = storage.count
         storage.append(RegisteredCommand(descriptor: descriptor, isEnabled: isEnabled, run: run))
         if droppedShortcut { rejections.append(Rejection(id: d.id, source: d.source, reason: .pluginShortcutDropped)) }
+        if let takenBy { rejections.append(Rejection(id: d.id, source: d.source, reason: .chordTaken(by: takenBy))) }
         changed()
         return .added
     }
 
     /// Adds several commands, each as `register` does, with one revision bump.
-    public func register(contentsOf items: [(descriptor: CommandDescriptor, isEnabled: @MainActor () -> Bool, run: @MainActor () -> Void)]) {
+    public func register(contentsOf items: [(descriptor: CommandDescriptor, isEnabled: @MainActor () -> Bool, run: @MainActor () -> Void)],
+                         keepsPluginShortcut: Bool = false) {
         let before = revision
-        for item in items { register(item.descriptor, isEnabled: item.isEnabled, run: item.run) }
+        for item in items { register(item.descriptor, isEnabled: item.isEnabled, run: item.run, keepsPluginShortcut: keepsPluginShortcut) }
         if revision - before > 1 { revision = before + 1 }
     }
 

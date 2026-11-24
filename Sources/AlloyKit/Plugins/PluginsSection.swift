@@ -11,6 +11,8 @@ struct PluginsSection: Component {
     let coordinator: PluginCoordinator
     @Environment(\.fileDialogs) var dialogs
     @State var installError: String?
+    @State var gitURL = ""
+    @State var gitTag = ""
 
     var content: some ElementGroup {
         let _ = BodyProbe.hit("PluginsSection")
@@ -27,6 +29,12 @@ struct PluginsSection: Component {
             }
             HStack(spacing: Pixels(8)) {
                 Button("Install\u{2026}") { install() }.accessibilityIdentifier("settings.plugins.install")
+            }
+            HStack(spacing: Pixels(8)) {
+                TextField("Git URL", text: $gitURL).accessibilityIdentifier("settings.plugins.install-git-url")
+                TextField("Tag", text: $gitTag).accessibilityIdentifier("settings.plugins.install-git-tag")
+                Button("Install from git") { installGit() }.disabled(coordinator.status.installingGit)
+                    .accessibilityIdentifier("settings.plugins.install-git")
             }
             if let installError {
                 Text(verbatim: installError).font(size: 11).foregroundColor(.errorInk)
@@ -57,6 +65,23 @@ struct PluginsSection: Component {
         }
     }
 
+    private func installGit() {
+        let coordinator = coordinator, url = gitURL.trimmingCharacters(in: .whitespaces), tag = gitTag.trimmingCharacters(in: .whitespaces)
+        let state = $installError
+        guard !url.isEmpty, !tag.isEmpty else {
+            installError = "Could not install: enter a git URL and a tag"
+            return
+        }
+        Task { @MainActor in
+            do {
+                try await coordinator.install(gitURL: url, tag: tag)
+                state.wrappedValue = nil
+            } catch {
+                state.wrappedValue = "Could not install: \(Self.describe(error))"
+            }
+        }
+    }
+
     static func describe(_ error: Error) -> String {
         switch error {
         case let e as PluginInstallError:
@@ -65,6 +90,10 @@ struct PluginsSection: Component {
             case .symlinkEscape(let p): return "\(p) points outside the plugin folder"
             case .alreadyInstalled: return "it is already installed from another source"
             case .io(let s): return s
+            case .git(let s): return "git failed: \(s)"
+            case .tooLarge: return "the repository is larger than 200 MB"
+            case .downgrade: return "that would install an older version"
+            case .needsCredentials: return "that URL needs a login, which Alloy does not ask for"
             }
         case let e as PluginError:
             switch e {
@@ -166,11 +195,19 @@ struct PluginRowView: Component {
                 .accessibilityElement(children: .contain)
                 .accessibilityIdentifier("settings.plugins.settings.\(id)")
             }
+            if case .git = row.source, !inert {
+                Button(Self.updateTitle(row.update)) { updateAction() }
+                    .disabled(Self.updateDisabled(row.update))
+                    .accessibilityIdentifier("\(prefix).update")
+                if case .failed(let why)? = row.update {
+                    Text(verbatim: "Could not check for updates: \(why)").font(size: 11).foregroundColor(.errorInk)
+                        .accessibilityIdentifier("\(prefix).update-error")
+                }
+            }
             if row.isScripted && !inert {
                 Button("Log") { toggleLog() }.accessibilityIdentifier("\(prefix).log")
                 if logOpen {
-                    Text(verbatim: logText.isEmpty ? "No output." : logText).font(size: 11).foregroundColor(.mutedInk)
-                        .accessibilityIdentifier("\(prefix).log-text")
+                    PluginLogView(text: logText, identifier: "\(prefix).log-text").equatable()
                 }
             }
             if confirmingRemove {
@@ -192,6 +229,36 @@ struct PluginRowView: Component {
         .onAppear { loadStoredSecrets() }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier(prefix)
+    }
+
+    // MARK: Update
+
+    static func updateTitle(_ update: PluginRowUpdate?) -> String {
+        switch update {
+        case nil, .failed?: "Check for update"
+        case .checking?: "Checking\u{2026}"
+        case .updating?: "Updating\u{2026}"
+        case .upToDate?: "Up to date"
+        case .available(let version)?: "Update to \(version)"
+        case .tagMoved?: "Tag moved; not installed. Check again"
+        }
+    }
+
+    /// Only a check or an update in flight disables the button; a moved tag can be checked again.
+    static func updateDisabled(_ update: PluginRowUpdate?) -> Bool { update == .checking || update == .updating }
+
+    private func updateAction() {
+        let coordinator = coordinator, id = row.id, failure = $failure
+        let apply: Bool
+        if case .available? = row.update { apply = true } else { apply = false }
+        Task { @MainActor in
+            do {
+                if apply { try await coordinator.applyUpdate(id) } else { await coordinator.checkForUpdate(id) }
+                failure.wrappedValue = nil
+            } catch {
+                failure.wrappedValue = "Could not update: \(PluginsSection.describe(error))"
+            }
+        }
     }
 
     // MARK: Secrets
@@ -264,13 +331,14 @@ struct PluginRowView: Component {
                     .accessibilityIdentifier("settings.plugins.grant.\(id).\(p.rawValue)")
             }
             if row.isScripted {
-                Text("Runs with your account's file access.").font(size: 11).foregroundColor(.mutedInk)
+                Text(coordinator.sandboxAvailable ? "Runs in a macOS sandbox limited to these permissions."
+                                                    : "Runs with your account's file access.").font(size: 11).foregroundColor(.mutedInk)
                     .accessibilityIdentifier("settings.plugins.enable-runs.\(id)")
-            } else {
-                ForEach(Array(row.commandsToRun.enumerated()), id: \.offset) { index, command in
-                    Text(verbatim: "Runs: \(command)").font(size: 11).foregroundColor(.mutedInk)
-                        .accessibilityIdentifier("settings.plugins.enable-runs.\(id).\(index)")
-                }
+            }
+            // The exact lines Alloy will start or type, whatever kind of plugin it is (these run unsandboxed).
+            ForEach(Array(row.commandsToRun.enumerated()), id: \.offset) { index, command in
+                Text(verbatim: "Runs: \(command)").font(size: 11).foregroundColor(.mutedInk)
+                    .accessibilityIdentifier("settings.plugins.enable-runs.\(id).\(index)")
             }
             HStack(spacing: Pixels(8)) {
                 Button("Enable and grant") { confirmEnable() }.accessibilityIdentifier("settings.plugins.enable-confirm.\(id)")

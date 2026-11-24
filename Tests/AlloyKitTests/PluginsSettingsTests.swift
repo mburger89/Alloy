@@ -1,6 +1,7 @@
 @testable import AlloyCore
 @testable import AlloyKit
 import AlloyPlugins
+import AlloyTestSupport
 import Foundation
 import MetalUI
 import MetalUITesting
@@ -130,12 +131,34 @@ import Testing
         #expect(try text(settings, "settings.plugins.grant.dev.example.servers.process.spawn") == "Run programs")
     }
 
+    @Test func taskPromptShowsTheQuotedLineThatWillBeTyped() async throws {
+        let p = PluginRig()
+        let source = p.source("dev.example.tasks", manifest: """
+        {"id":"dev.example.tasks","name":"Tasks","version":"1.0.0","permissions":["process.spawn"],
+         "contributes":{"taskCommands":[{"id":"t","title":"T","command":"npm","args":["run it"]}]}}
+        """)
+        let (_, settings) = try await open(p, picking: source)
+        try click(settings, "settings.plugins.install")
+        try await until(settings) { exists(settings, "settings.plugins.row.dev.example.tasks") }
+        settle(settings)
+        try click(settings, "settings.plugins.row.dev.example.tasks.toggle")
+        #expect(try text(settings, "settings.plugins.enable-runs.dev.example.tasks.0") == "Runs: 'npm' 'run it'")
+    }
+
+    @Test func tagMovedLetsTheUserCheckAgain() {
+        #expect(PluginRowView.updateDisabled(.tagMoved) == false)
+        #expect(PluginRowView.updateDisabled(.checking) && PluginRowView.updateDisabled(.updating))
+        #expect(!PluginRowView.updateDisabled(nil) && !PluginRowView.updateDisabled(.upToDate))
+        #expect(PluginRowView.updateTitle(.tagMoved).hasSuffix("Check again"))
+    }
+
     @Test func scriptedPromptSaysItRunsWithAccountAccess() async throws {
         let p = PluginRig()
         let (_, settings) = try await open(p, picking: todoSource(p))
         try await installTodo(p, settings)
         try click(settings, "settings.plugins.row.\(todo).toggle")
-        #expect(try text(settings, "settings.plugins.enable-runs.\(todo)") == "Runs with your account's file access.")
+        let expected = PluginSandbox.backendAvailable ? "Runs in a macOS sandbox limited to these permissions." : "Runs with your account's file access."
+        #expect(try text(settings, "settings.plugins.enable-runs.\(todo)") == expected)
     }
 
     @Test func removeAsksThenDeletes() async throws {
@@ -214,6 +237,49 @@ import Testing
         #expect(try text(settings, "settings.plugins.row.dev.example.gone.status") == "folder missing")
         #expect(exists(settings, "settings.plugins.row.dev.example.gone.remove"))
         #expect(!exists(settings, "settings.plugins.row.dev.example.gone.toggle"))
+    }
+
+    // MARK: Log
+
+    private func logRig() async throws -> (PluginRig, TestWindow) {
+        let p = PluginRig(pathDirs: [fakePluginDirectory, "/usr/bin", "/bin"])
+        try p.fake("dev.test.log", script: .object(["stderr": .string("hello world\n")]))
+        testCenter(for: p.rig.workspace).plugins = p.coordinator
+        let main = try alloyWindow(p.rig.workspace)
+        let settings = try main.openSettingsFromMenu()
+        try await settings.runUntil { exists(settings, "settings.plugins.row.dev.test.log") }
+        #expect(await p.coordinator.activate(plugin: "dev.test.log", .command))
+        for _ in 0..<300 where await p.coordinator.host?.stderrTail(of: "dev.test.log").contains("hello") != true {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        try click(settings, "settings.plugins.row.dev.test.log.log")
+        try await until(settings) { exists(settings, "settings.plugins.row.dev.test.log.log-text") }
+        settle(settings)
+        return (p, settings)
+    }
+
+    @Test func logTextIsSelectable() async throws {
+        let (p, settings) = try await logRig()
+        let log = try settings.element(identifier: "settings.plugins.row.dev.test.log.log-text")
+        try settings.click(log)
+        settings.typeKey("a", modifierFlags: .command)
+        settings.typeKey("c", modifierFlags: .command)
+        settle(settings)
+        let copied = settings.clipboardRepresentations.compactMap { String(bytes: $0.bytes, encoding: .utf8) }.joined()
+        #expect(copied.contains("hello world"), "clipboard: \(copied)")
+        await p.coordinator.shutdown()
+    }
+
+    @Test func logDoesNotRebuildWithSettings() async throws {
+        let (p, settings) = try await logRig()
+        let before = BodyProbe.count("PluginLogView")
+        #expect(before > 0)
+        let sectionBefore = BodyProbe.count("PluginsSection")
+        try click(settings, "settings.plugins.install")
+        settle(settings)
+        #expect(BodyProbe.count("PluginsSection") > sectionBefore, "the section did re-run")
+        #expect(BodyProbe.count("PluginLogView") == before, "log rebuilt with Settings")
+        await p.coordinator.shutdown()
     }
 
     // MARK: Guard

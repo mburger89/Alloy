@@ -6,6 +6,14 @@ public enum PluginInstallError: Error, Equatable {
     case symlinkEscape(String)
     case alreadyInstalled(from: PluginSource)
     case io(String)
+    /// git failed (its last stderr line, or a timeout).
+    case git(String)
+    /// The clone grew past the size cap.
+    case tooLarge
+    /// The update would install a version at or below the installed one.
+    case downgrade
+    /// The URL needs a login, and Alloy never prompts for one.
+    case needsCredentials
 }
 
 /// Copies a plugin folder into Alloy's plugin directory, validating it first, and removes installed plugins.
@@ -35,15 +43,26 @@ public struct PluginInstaller: Sendable {
         } catch {
             throw .io(error.localizedDescription)
         }
-        if let escaped = Self.firstEscapingLink(in: copy) { throw .symlinkEscape(escaped) }
-        let manifest: PluginManifest
-        switch PluginManifestLoader.load(folder: copy, pathDirs: pathDirs) {
-        case .success(let m): manifest = m
-        case .failure(let e): throw .badManifest(e)
-        }
+        let manifest = try validate(copy)
         if let existing = installed[manifest.id], !Self.sameSource(existing.source, chosen) {
             throw .alreadyInstalled(from: existing.source)
         }
+        try place(copy, as: manifest)
+        return manifest
+    }
+
+    /// Refuses a link that resolves outside `copy`, then loads and validates its manifest.
+    func validate(_ copy: URL) throws(PluginInstallError) -> PluginManifest {
+        if let escaped = Self.firstEscapingLink(in: copy) { throw .symlinkEscape(escaped) }
+        switch PluginManifestLoader.load(folder: copy, pathDirs: pathDirs) {
+        case .success(let m): return m
+        case .failure(let e): throw .badManifest(e)
+        }
+    }
+
+    /// Moves a validated staged folder to `plugins/<id>`, replacing an earlier copy.
+    func place(_ copy: URL, as manifest: PluginManifest) throws(PluginInstallError) {
+        let fm = FileManager.default
         let target = paths.plugins.appendingPathComponent(manifest.id)
         do {
             try fm.createDirectory(at: paths.plugins, withIntermediateDirectories: true)
@@ -55,7 +74,6 @@ public struct PluginInstaller: Sendable {
         } catch {
             throw .io(error.localizedDescription)
         }
-        return manifest
     }
 
     /// The same folder, compared after standardizing and resolving links on both sides.
@@ -74,7 +92,7 @@ public struct PluginInstaller: Sendable {
     public func remove(id: String) throws {
         guard !id.isEmpty, !id.contains("/"), !id.hasPrefix("."), !id.contains("..") else { return }
         let fm = FileManager.default
-        for url in [paths.plugins.appendingPathComponent(id), paths.data.appendingPathComponent(id)] where fm.fileExists(atPath: url.path) || (try? fm.destinationOfSymbolicLink(atPath: url.path)) != nil {
+        for url in [paths.plugins.appendingPathComponent(id), paths.plugins.appendingPathComponent(".\(id).previous"), paths.data.appendingPathComponent(id)] where fm.fileExists(atPath: url.path) || (try? fm.destinationOfSymbolicLink(atPath: url.path)) != nil {
             try fm.removeItem(at: url)
         }
     }

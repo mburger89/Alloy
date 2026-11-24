@@ -26,7 +26,7 @@ private func waitFor(_ timeout: Duration = .seconds(10), _ condition: @MainActor
     private func rig() -> (PluginRig, CommandCenter) {
         let workspaceRig = Rig()
         let center = testCenter(for: workspaceRig.workspace)
-        let p = PluginRig(rig: workspaceRig, pathDirs: [fakePluginDirectory, "/usr/bin", "/bin"], registry: center.registry)
+        let p = PluginRig(rig: workspaceRig, pathDirs: [fakePluginDirectory, "/usr/bin", "/bin"], registry: center.registry, center: center)
         return (p, center)
     }
 
@@ -149,14 +149,13 @@ private func waitFor(_ timeout: Duration = .seconds(10), _ condition: @MainActor
         await p.coordinator.shutdown()
     }
 
-    @Test func proposedShortcutIsNotBoundAndNoted() async throws {
+    @Test func clashingShortcutIsNotBoundAndNoted() async throws {
         let (p, center) = rig()
-        try p.fake(todo, contributes: todoCommands(#","shortcut":"cmd+shift+j""#))
+        try p.fake(todo, contributes: todoCommands(#","shortcut":"cmd+shift+p""#))
         let command = try #require(center.registry.command(id: "\(todo).add"))
         #expect(command.descriptor.shortcut == nil)
-        #expect(center.registry.rejections.contains { $0.id == "\(todo).add" && $0.reason == .pluginShortcutDropped })
         let note = try #require(p.row(todo)?.notes.first)
-        #expect(note.hasPrefix("Shortcut ") && note.hasSuffix(" not bound"), "\(note)")
+        #expect(note.hasPrefix("Shortcut ") && note.contains(" not bound: used by "), "\(note)")
         await p.coordinator.shutdown()
     }
 

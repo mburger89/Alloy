@@ -74,7 +74,7 @@ import Testing
     }
 
     @Test func scriptedSpawnPluginCannotBeEnabledWithoutBackend() async throws {
-        let p = PluginRig()
+        let p = PluginRig(sandbox: .missing)
         let dir = p.source("dev.example.script", manifest: """
         {"id":"dev.example.script","name":"Script","version":"1.0.0","main":{"command":"run.sh"},"permissions":["process.spawn"]}
         """, files: ["run.sh": "#!/bin/sh\n"])

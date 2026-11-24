@@ -60,9 +60,14 @@ public struct PluginSetting: Codable, Equatable, Sendable {
     public var enableOrder: Int
     /// Set when Alloy switched the plugin off after repeated crashes.
     public var disabledAfterCrashes: Bool
+    /// SHA-256 of the exact command lines the enable prompt showed (language-server and task commands). A plugin whose
+    /// manifest now yields another hash waits for the user's approval again. Nil in settings saved before this existed.
+    public var approvedCommandsHash: String?
 
     public init(enabled: Bool = false, version: String = "", source: PluginSource, grants: Set<PluginPermission> = [],
-                values: [String: JSONValue] = [:], enableOrder: Int = 0, disabledAfterCrashes: Bool = false) {
+                values: [String: JSONValue] = [:], enableOrder: Int = 0, disabledAfterCrashes: Bool = false,
+                approvedCommandsHash: String? = nil) {
+        self.approvedCommandsHash = approvedCommandsHash
         self.enabled = enabled
         self.version = version
         self.source = source
@@ -72,7 +77,7 @@ public struct PluginSetting: Codable, Equatable, Sendable {
         self.disabledAfterCrashes = disabledAfterCrashes
     }
 
-    private enum CodingKeys: String, CodingKey { case enabled, version, source, grants, values, enableOrder, disabledAfterCrashes }
+    private enum CodingKeys: String, CodingKey { case enabled, version, source, grants, values, enableOrder, disabledAfterCrashes, approvedCommandsHash }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -84,6 +89,7 @@ public struct PluginSetting: Codable, Equatable, Sendable {
         values = try c.decodeIfPresent([String: JSONValue].self, forKey: .values) ?? [:]
         enableOrder = try c.decodeIfPresent(Int.self, forKey: .enableOrder) ?? 0
         disabledAfterCrashes = try c.decodeIfPresent(Bool.self, forKey: .disabledAfterCrashes) ?? false
+        approvedCommandsHash = try c.decodeIfPresent(String.self, forKey: .approvedCommandsHash)
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -95,5 +101,6 @@ public struct PluginSetting: Codable, Equatable, Sendable {
         try c.encode(values, forKey: .values)
         try c.encode(enableOrder, forKey: .enableOrder)
         try c.encode(disabledAfterCrashes, forKey: .disabledAfterCrashes)
+        try c.encodeIfPresent(approvedCommandsHash, forKey: .approvedCommandsHash)
     }
 }

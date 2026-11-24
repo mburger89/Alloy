@@ -280,7 +280,7 @@ public final class ServerProcess: RPCByteChannel, ServerExitObserving, @unchecke
         #endif
     }
 
-    private static func resolve(_ command: String, path: String?) -> String? {
+    public static func resolve(_ command: String, path: String?) -> String? {
         let fm = FileManager.default
         if command.contains("/") { return fm.isExecutableFile(atPath: command) ? command : nil }
         for dir in (path ?? "").split(separator: ":") {

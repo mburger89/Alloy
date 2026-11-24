@@ -22,7 +22,8 @@ final class PluginRig {
 
     init(rig: Rig = Rig(), pathDirs: [String] = [], clock: any AutosaveClock = SystemAutosaveClock(),
          probe: any PluginProcessProbe = LiveProcessProbe(), limits: PluginLimits = PluginLimits(), scripted: Bool = true,
-         registry: CommandRegistry? = nil, secrets: any AgentSecretStore = InMemorySecretStore(), home: String? = nil) {
+         sandbox: PluginSandboxOverride = PassthroughSandbox.override,
+         registry: CommandRegistry? = nil, center: CommandCenter? = nil, secrets: any AgentSecretStore = InMemorySecretStore(), home: String? = nil) {
         self.rig = rig
         self.secrets = secrets
         sources = rig.root.appendingPathComponent("plugin-sources")
@@ -31,9 +32,10 @@ final class PluginRig {
         themes.stop()
         let workspace = rig.workspace
         coordinator = PluginCoordinator(paths: PluginPaths(appSupport: workspace.appSupport),
-                                        registry: registry ?? CommandRegistry(workspace: { workspace }), themes: themes, pathDirs: { pathDirs },
+                                        registry: center?.registry ?? registry ?? CommandRegistry(workspace: { workspace }), themes: themes, pathDirs: { pathDirs },
                                         clock: clock, probe: probe, limits: limits, scriptedPluginsSupported: scripted, secrets: secrets,
-                                        home: home ?? ProcessInfo.processInfo.environment["HOME"] ?? NSHomeDirectory())
+                                        home: home ?? ProcessInfo.processInfo.environment["HOME"] ?? NSHomeDirectory(), sandbox: sandbox)
+        center?.plugins = coordinator
         coordinator.bind(workspace)
     }
 
@@ -101,4 +103,14 @@ final class PluginRig {
     }
 
     func row(_ id: String) -> PluginRowState? { coordinator.status.rows.first { $0.id == id } }
+}
+
+/// Runs plugin processes as they are, so suites that watch a plugin's own log files need no sandbox profile. Only the
+/// sandbox suites run through the real backend.
+struct PassthroughSandbox: PluginSandboxBackend {
+    func wrap(executable: String, arguments: [String], profile: SandboxProfileInput) throws(PluginSandboxError)
+        -> (executable: String, arguments: [String]) { (executable, arguments) }
+
+    /// Handed to each coordinator or host the test builds; nothing global is replaced.
+    static var override: PluginSandboxOverride { .backend(PassthroughSandbox()) }
 }

@@ -65,6 +65,7 @@ final class TerminalPanelStore {
                 openFind: { [weak self] in self?.openFind() },
                 clearScrollback: { [weak self] in self?.clearScrollback() })
             workspace.onTerminalLayoutChanged = { [weak self] layout in self?.spawn(layout) }
+            workspace.runTerminalTask = { [weak self] title, line in self?.runTask(title: title, line: line) }
             workspace.addStopHook { await manager.shutdown() }
             onRestart = { [weak self] pane in
                 guard let self else { return }
@@ -88,6 +89,17 @@ final class TerminalPanelStore {
             workspace.terminalLayout.markSpawned(pane)
             if let input = workspace.takeTerminalStartupInput(pane) { manager.write(pane, Array(input.utf8)) }
         }
+    }
+
+    /// A plugin task: Code mode, the panel shown, a new tab titled `title` whose shell is typed `line` once it runs.
+    private func runTask(title: String, line: String) {
+        let pane = UUID()
+        var layout = workspace.terminalLayout
+        layout.addTab(cwd: workspace.terminalDefaultCwd, paneID: pane)
+        workspace.queueTerminalStartupInput(pane, line + "\n")
+        setTitle(title, for: pane)
+        if workspace.mode != .code { workspace.setMode(.code) }
+        workspace.terminalLayout = layout
     }
 
     func notice(of pane: UUID) -> String? { notices[pane] }

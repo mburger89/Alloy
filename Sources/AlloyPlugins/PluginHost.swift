@@ -17,6 +17,7 @@ public actor PluginHost {
     private let probe: any PluginProcessProbe
     private var baseEnvironment: [String: String]
     private let services: PluginHostServices
+    private let sandbox: PluginSandboxOverride
 
     private var configs: [String: PluginRuntimeConfig] = [:]
     private var runtimes: [String: PluginRuntime] = [:]
@@ -40,7 +41,7 @@ public actor PluginHost {
 
     public init(paths: PluginPaths, limits: PluginLimits = PluginLimits(), clock: any AutosaveClock = SystemAutosaveClock(),
                 probe: any PluginProcessProbe = LiveProcessProbe(), baseEnvironment: [String: String],
-                services: PluginHostServices = PluginHostServices(),
+                services: PluginHostServices = PluginHostServices(), sandbox: PluginSandboxOverride = .none,
                 secretProvider: @escaping @Sendable (PluginRuntimeConfig) -> [String: String] = { _ in [:] }) {
         self.secretProvider = secretProvider
         self.paths = paths
@@ -49,6 +50,7 @@ public actor PluginHost {
         self.probe = probe
         self.baseEnvironment = baseEnvironment
         self.services = services
+        self.sandbox = sandbox
         (events, eventSink) = AsyncStream.makeStream()
     }
 
@@ -252,6 +254,25 @@ public actor PluginHost {
 
     // MARK: - Starting
 
+    /// The programs the sandbox must allow to be executed besides the main file: the interpreter a `#!` script names, or for
+    /// `/usr/bin/env X` the `X` found on the plugin's PATH.
+    private static func shebangInterpreters(_ real: URL, path: String?) -> [URL] {
+        guard let handle = try? FileHandle(forReadingFrom: real) else { return [] }
+        defer { try? handle.close() }
+        guard let head = try? handle.read(upToCount: 256), head.starts(with: Data("#!".utf8)),
+              let line = String(decoding: head.dropFirst(2), as: UTF8.self).split(whereSeparator: \.isNewline).first
+        else { return [] }
+        let words = line.split(whereSeparator: { $0 == " " || $0 == "\t" }).map(String.init)
+        guard let first = words.first else { return [] }
+        var found = [PluginSandbox.canonical(URL(fileURLWithPath: first))]
+        if URL(fileURLWithPath: first).lastPathComponent == "env",
+           let target = words.dropFirst().first(where: { !$0.hasPrefix("-") && !$0.contains("=") }),
+           let resolved = ServerProcess.resolve(target, path: path) {
+            found.append(PluginSandbox.canonical(URL(fileURLWithPath: resolved)))
+        }
+        return found
+    }
+
     private func start(_ config: PluginRuntimeConfig, reason: ActivationReason) async -> Bool {
         let id = config.manifest.id
         guard let main = config.manifest.main else { return false }
@@ -269,11 +290,45 @@ public actor PluginHost {
         for (key, value) in secrets { environment[key] = value }
         // Every value seen this session stays redacted: clearing a secret, then failing a spawn, must not unmask the old one.
         secretValues[id, default: []].formUnion(secrets.values)
-        let command = main.command.contains("/") && !main.command.hasPrefix("/")
-            ? config.folder.appendingPathComponent(main.command).path : main.command
+        // A path is relative to the plugin folder, and so is a bare name that is a file there (else it is looked up on PATH).
+        let inFolder = config.folder.appendingPathComponent(main.command).path
+        let command = !main.command.hasPrefix("/") && (main.command.contains("/") || FileManager.default.fileExists(atPath: inFolder))
+            ? inFolder : main.command
+        var launchCommand = command
+        var launchArguments = main.args
+        if PluginSandbox.isRequired || PluginSandbox.backendAvailable(sandbox) {
+            guard let resolved = ServerProcess.resolve(command, path: environment["PATH"]) else {
+                setState(id, .failedToStart("Plugin command not found: \(command)"))
+                return false
+            }
+            guard let backend = PluginSandbox.backend(sandbox) else {
+                setState(id, .sandboxUnavailable("This Mac has no sandbox for plugins."))
+                return false
+            }
+            let program = PluginSandbox.canonical(URL(fileURLWithPath: resolved))
+            let input = SandboxProfileInput(
+                pluginFolder: PluginSandbox.canonical(config.folder), scratch: PluginSandbox.canonical(scratch),
+                executable: program, interpreters: Self.shebangInterpreters(program, path: environment["PATH"]),
+                projectRoot: root.map(PluginSandbox.canonical),
+                home: PluginSandbox.canonical(URL(fileURLWithPath: baseEnvironment["HOME"] ?? NSHomeDirectory())),
+                grants: config.grants)
+            do {
+                (launchCommand, launchArguments) = try backend.wrap(executable: program.path, arguments: main.args, profile: input)
+            } catch {
+                let why: String
+                switch error {
+                case .backendMissing: why = "This Mac has no sandbox for plugins."
+                case .unquotablePath: why = "A path of the plugin cannot be sandboxed."
+                case .grantTooBroad(let folder): why = "The plugin would need to read \(folder), which is too much of this Mac."
+                }
+                lastStderr[id] = "Alloy did not start this plugin: \(why)"
+                setState(id, .sandboxUnavailable(why))
+                return false
+            }
+        }
         let process: ServerProcess
         do {
-            process = try ServerProcess(executable: command, arguments: main.args, environment: environment,
+            process = try ServerProcess(executable: launchCommand, arguments: launchArguments, environment: environment,
                                         currentDirectory: config.folder, processGroup: true)
         } catch {
             let why: String

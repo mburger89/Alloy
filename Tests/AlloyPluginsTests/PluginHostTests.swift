@@ -73,7 +73,7 @@ struct PluginHostTests {
     }
 
     private func host(limits: PluginLimits = PluginLimits(), services: PluginHostServices = PluginHostServices()) -> PluginHost {
-        PluginHost(paths: paths, limits: limits, baseEnvironment: environment, services: services)
+        PluginHost(paths: paths, limits: limits, baseEnvironment: environment, services: services, sandbox: PassthroughSandbox.override)
     }
 
     private func log(_ folder: URL, _ name: String = "log.jsonl") -> [JSONValue] {

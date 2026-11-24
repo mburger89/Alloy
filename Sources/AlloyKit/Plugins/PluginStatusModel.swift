@@ -41,6 +41,17 @@ public enum PluginRowStatus: Equatable {
     }
 }
 
+/// What the last update check of a git plugin found.
+public enum PluginRowUpdate: Equatable {
+    case checking
+    /// The update is being downloaded and swapped in.
+    case updating
+    case upToDate
+    case available(version: String)
+    case tagMoved
+    case failed(String)
+}
+
 /// One installed plugin as Settings › Plugins shows it.
 public struct PluginRowState: Equatable {
     public var id: String
@@ -55,12 +66,16 @@ public struct PluginRowState: Equatable {
     public var isScripted: Bool
     /// The exact commands Alloy would launch for this plugin (servers and tasks), listed in the enable prompt.
     public var commandsToRun: [String]
+    /// The update check's answer; only for plugins installed from git.
+    public var update: PluginRowUpdate?
 }
 
 /// What the Plugins settings section reads. Only that section observes it; the coordinator writes it when a row changes.
 @MainActor @Observable
 public final class PluginStatusModel {
     public internal(set) var rows: [PluginRowState] = []
+    /// True while an install from git runs, so the button cannot start a second one.
+    public internal(set) var installingGit = false
 
     public init() {}
 

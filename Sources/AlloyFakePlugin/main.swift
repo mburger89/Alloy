@@ -21,9 +21,23 @@ import Foundation
 //   flood {method, params, perSecond, seconds, counter?}  notifications to Alloy after `initialized`; with `counter` the
 //                    params' `version` is the running count, so every message differs
 //   logEnv [names]   <log>.env receives {name: value} for those variables
+//   readFile "<path>"  reads the file at start; <log>.read gets `ok` or `denied`
+//   writeFile "<path>" creates the file at start; <log>.write gets `ok` or `denied`
+//   connect "<ip>:<port>"  TCP connect at start; <log>.connect gets `ok` or `denied`
+//   connectUnix "<path>"  Unix-domain socket connect at start; <log>.unix gets `ok` or `denied`
+//   resolve "<host>"  DNS lookup at start; <log>.resolve gets `ok` or `denied`
 //   stderr "text"    written to stderr after `initialized`
 //   stderrEnv [names] those variables' values written to stderr
 // Every received message is appended to --log as one JSON line. The process exits when stdin closes.
+
+/// Writes a small sidecar file atomically, or with plain POSIX calls where the atomic rename is refused (in the sandbox).
+func put(_ text: String, to path: String) {
+    if (try? text.write(toFile: path, atomically: true, encoding: .utf8)) != nil { return }
+    let fd = open(path, O_WRONLY | O_CREAT | O_TRUNC, 0o644)
+    guard fd >= 0 else { return }
+    _ = text.withCString { write(fd, $0, strlen($0)) }
+    close(fd)
+}
 
 final class Output: @unchecked Sendable {
     private let lock = NSLock()
@@ -132,6 +146,47 @@ struct FakePlugin {
         if script["stopReadingAfterInit"]?.boolValue == true { while true { Thread.sleep(forTimeInterval: 3600) } }
     }
 
+    static func connects(_ target: String) -> Bool {
+        let parts = target.split(separator: ":")
+        guard parts.count == 2, let port = UInt16(parts[1]) else { return false }
+        let fd = socket(AF_INET, SOCK_STREAM, 0)
+        guard fd >= 0 else { return false }
+        defer { close(fd) }
+        var address = sockaddr_in()
+        address.sin_family = sa_family_t(AF_INET)
+        address.sin_port = port.bigEndian
+        inet_pton(AF_INET, String(parts[0]), &address.sin_addr)
+        let result = withUnsafePointer(to: &address) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { connect(fd, $0, socklen_t(MemoryLayout<sockaddr_in>.size)) }
+        }
+        return result == 0
+    }
+
+    static func connectsUnix(_ path: String) -> Bool {
+        let fd = socket(AF_UNIX, SOCK_STREAM, 0)
+        guard fd >= 0 else { return false }
+        defer { close(fd) }
+        var address = sockaddr_un()
+        address.sun_family = sa_family_t(AF_UNIX)
+        let bytes = Array(path.utf8CString)
+        guard bytes.count <= MemoryLayout.size(ofValue: address.sun_path) else { return false }
+        withUnsafeMutableBytes(of: &address.sun_path) { raw in for (i, b) in bytes.enumerated() { raw[i] = UInt8(bitPattern: b) } }
+        let result = withUnsafePointer(to: &address) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { connect(fd, $0, socklen_t(MemoryLayout<sockaddr_un>.size)) }
+        }
+        return result == 0
+    }
+
+    static func resolves(_ host: String) -> Bool {
+        var hints = addrinfo()
+        hints.ai_family = AF_INET
+        hints.ai_socktype = SOCK_STREAM
+        var result: UnsafeMutablePointer<addrinfo>?
+        let status = getaddrinfo(host, "443", &hints, &result)
+        if let result { freeaddrinfo(result) }
+        return status == 0
+    }
+
     mutating func run() {
         let env = ProcessInfo.processInfo.environment
         if script["garbageStdout"]?.boolValue == true { FileHandle.standardOutput.write(Data("hello\n".utf8)) }
@@ -146,10 +201,30 @@ struct FakePlugin {
                 posix_spawn_file_actions_init(&actions)
                 for fd in [Int32(0), 1, 2] { posix_spawn_file_actions_addopen(&actions, fd, "/dev/null", O_RDWR, 0) }
                 if posix_spawn(&pid, "/bin/sleep", &actions, nil, argv, environ) == 0 {
-                    try? "\(pid)".write(toFile: logPath + ".child", atomically: true, encoding: .utf8)
+                    put("\(pid)", to: logPath + ".child")
+                } else {
+                    put("denied", to: logPath + ".child")
                 }
                 posix_spawn_file_actions_destroy(&actions)
                 for p in argv { free(p) }
+            }
+            if let path = script["readFile"]?.stringValue {
+                let ok = FileManager.default.contents(atPath: path) != nil
+                put((ok ? "ok" : "denied"), to: logPath + ".read")
+            }
+            if let path = script["writeFile"]?.stringValue {
+                let fd = open(path, O_WRONLY | O_CREAT | O_TRUNC, 0o644)
+                if fd >= 0 { close(fd) }
+                put((fd >= 0 ? "ok" : "denied"), to: logPath + ".write")
+            }
+            if let target = script["connect"]?.stringValue {
+                put((Self.connects(target) ? "ok" : "denied"), to: logPath + ".connect")
+            }
+            if let target = script["connectUnix"]?.stringValue {
+                put((Self.connectsUnix(target) ? "ok" : "denied"), to: logPath + ".unix")
+            }
+            if let host = script["resolve"]?.stringValue {
+                put((Self.resolves(host) ? "ok" : "denied"), to: logPath + ".resolve")
             }
             if let names = script["logEnv"]?.arrayValue?.compactMap(\.stringValue) {
                 var values: [String: JSONValue] = [:]

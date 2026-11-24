@@ -71,43 +71,23 @@ struct DecorationRig {
         return folder
     }
 
-    /// Ticks until `condition` holds. A window that went idle without observing the code view (MetalUI's `RX-S` lost
-    /// wake-up: a decoration change landing when no observation session covers the view dirties nothing, and a plain
-    /// redraw does not rebuild a retained view) is nudged with a one-point resize, which rebuilds everything and
-    /// re-arms it, whenever the condition has not held for a while. No sleeps decide the outcome; the deadline is a ceiling.
-    /// TEMPORARY: the nudge masks a MetalUI bug (CodeDecorations writes lost under retained prepaint in an `.equatable()`
-    /// group; it fails without the nudge, passes with METALUI_RETAINED_PREPAINT=0). Remove the resize once MetalUI fixes it.
+    /// Ticks until `condition` holds. Plain ticks only: a decoration write must reach the code view on its own
+    /// (MetalUI SB-AF). No sleeps decide the outcome; the deadline is a ceiling.
     func settle(_ condition: @MainActor () -> Bool) async -> Bool {
         let clock = ContinuousClock()
         let deadline = clock.now.advanced(by: .seconds(10))
-        var idleRounds = 0
-        var wide = false
         while clock.now < deadline {
             if condition() { return true }
             window.tick()
-            idleRounds += 1
-            if idleRounds % 15 == 0 {
-                wide.toggle()
-                window.resize(to: Size(width: Pixels(wide ? 1201 : 1200), height: Pixels(800)))
-            }
             try? await Task.sleep(for: .milliseconds(10))
         }
         return condition()
     }
 
-    /// The code views' frames (one per group), where the bars of their rows can be.
-    func codeFrames() -> [Bounds<Pixels>] {
-        workspace.codeLayout.tree.groupIDs.compactMap { (try? window.element(identifier: "code-group-\($0.uuidString)"))?.frame }
-    }
-
-    /// The 3 pt bars drawn in the code views' left half (y of each), top to bottom. Measured against the views' own frames,
-    /// not a fixed x, so the sidebar's width does not matter.
-    func bars() -> [Float] {
-        let frames = codeFrames().map { f in (minX: Float(f.minX.value), midX: Float((f.minX.value + f.maxX.value) / 2), minY: Float(f.minY.value), maxY: Float(f.maxY.value)) }
-        return window.allRects.filter { r in
-            r.bounds.size.width == 3 && r.bounds.size.height > 4 && r.bounds.size.height <= 40
-                && frames.contains { r.bounds.origin.x >= $0.minX && r.bounds.origin.x < $0.midX && r.bounds.origin.y >= $0.minY && r.bounds.origin.y < $0.maxY }
-        }.map { $0.bounds.origin.y }.sorted()
+    /// The rows of view `index` that paint a gutter bar, read back from the view's decorations (MetalUI CV-BZ).
+    func barRows(_ index: Int = 0) -> [Int] {
+        let decorations = views[index].decorations
+        return (0..<(doc.buffer.lineCount + 1)).filter { decorations.paintedLineDecoration(row: $0)?.gutterBar != nil }
     }
 }
 
@@ -120,7 +100,13 @@ struct DecorationRig {
         try await d.plugin(lint, items: #"[{"line":2,"gutterBar":"info"},{"line":4,"background":"warning","message":{"text":"look here","role":"warning"}}]"#)
         #expect(await d.settle { d.views[0].pluginOwnerNames == ["plugin.\(lint)"] })
         #expect(d.views[0].decorations.virtualLineCount == 1, "one message row")
-        #expect(await d.settle { d.bars().count == 2 }, "bar for the gutter bar line and the message row's bar: \(d.bars())")
+        let decorations = d.views[0].decorations
+        let owner = "plugin.\(lint)"
+        #expect(await d.settle { decorations.paintedLineDecoration(row: 2)?.gutterBar != nil && decorations.paintedLineDecoration(row: 4)?.background != nil })
+        let bar = try #require(decorations.paintedLineDecoration(row: 2)?.gutterBar)
+        #expect(bar.owner == owner && bar.lines == 2..<3, "\(bar)")
+        #expect(decorations.paintedLineDecoration(row: 4)?.backgroundOwner == owner)
+        #expect([0, 1, 3, 5, 6, 7].allSatisfy { decorations.paintedLineDecoration(row: $0) == nil }, "only the two decorated rows paint")
         await d.p.coordinator.shutdown()
     }
 
@@ -149,14 +135,16 @@ struct DecorationRig {
         let style = view.decorations.register(CodeStyle(underline: CodeUnderline(.line(.solid), color: red)))
         view.decorations.setHighlights([CodeStyleRun(range: 0..<5, style: style)], in: 0..<(1 << 40), layer: .diagnostics, asOf: version)
         view.decorations.setLineDecorations([CodeLineDecoration(lines: 1..<2, gutterBar: red)], asOf: version)
-        try #require(await d.settle { d.bars().count == 1 })
-        let alone = d.bars()
+        try #require(await d.settle { d.barRows() == [1] })
+        let alone = try #require(view.decorations.paintedLineDecoration(row: 1)?.gutterBar)
+        #expect(alone.color == red && alone.owner == nil)
         try await d.plugin(lint, items: #"[{"start":0,"end":5,"underline":"info"},{"line":1,"gutterBar":"info"}]"#)
         #expect(await d.settle { view.pluginOwnerNames == ["plugin.\(lint)"] })
         for _ in 0..<5 { d.window.tick(); await Task.yield() }
         let painted = view.decorations.paintedRuns(in: 0..<5)
         #expect(painted.first?.style.underline?.color == red, "the default owner's underline wins the shared bytes")
-        #expect(await d.settle { d.bars() == alone }, "one bar column on the shared row: \(alone) \(d.bars())")
+        #expect(await d.settle { d.barRows() == [1] && view.decorations.paintedLineDecoration(row: 1)?.gutterBar == alone },
+                "the default owner's bar wins the shared row: \(String(describing: view.decorations.paintedLineDecoration(row: 1)))")
         await d.p.coordinator.shutdown()
     }
 
@@ -187,9 +175,11 @@ struct DecorationRig {
         try await d.plugin(lint, items: #"[{"line":1,"background":"info","message":{"text":"hi","role":"info"}}]"#)
         let view = d.views[0]
         #expect(await d.settle { view.pluginOwnerNames == ["plugin.\(lint)"] })
+        #expect(await d.settle { view.decorations.paintedLineDecoration(row: 1)?.backgroundOwner == "plugin.\(lint)" })
         // Stopping the plugin (switching it off) removes its owner from every view.
         try d.p.coordinator.disable(lint)
         #expect(await d.settle { view.pluginOwnerNames.isEmpty && view.decorations.virtualLineCount == 0 })
+        #expect(view.decorations.paintedLineDecoration(row: 1) == nil, "the disabled plugin's tint is gone")
         #expect(d.p.coordinator.decorations.snapshots(for: "login.swift").isEmpty)
         // Closing the document drops what was set for it.
         try d.p.coordinator.enable(lint)
@@ -203,15 +193,9 @@ struct DecorationRig {
     @Test func editsShiftLineDecorations() async throws {
         let d = try await DecorationRig.make()
         try await d.plugin(lint, items: #"[{"line":1,"gutterBar":"info"},{"line":3,"gutterBar":"info"}]"#)
-        try #require(await d.settle { d.bars().count == 2 })
-        let before = d.bars()
-        try #require(before.count == 2)
-        let twoRows = before[1] - before[0]
+        try #require(await d.settle { d.barRows() == [1, 3] })
         d.doc.buffer.replace(0..<0, with: "a\nb\n")
-        try #require(await d.settle { d.bars().count == 2 && (d.bars().first ?? 0) > before[0] })
-        let after = d.bars()
-        try #require(after.count == 2)
-        #expect(abs(after[0] - (before[0] + twoRows / 2 * 2)) < 0.5, "bar moved two rows: \(before) -> \(after)")
+        #expect(await d.settle { d.barRows() == [3, 5] }, "bars moved two rows: \(d.barRows())")
         await d.p.coordinator.shutdown()
     }
 

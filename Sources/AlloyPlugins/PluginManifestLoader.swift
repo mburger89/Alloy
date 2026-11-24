@@ -255,11 +255,21 @@ public enum PluginManifestLoader {
             try onlyKeys(item, ["id", "title", "command", "args", "cwd"], "contributes.taskCommands")
             let id = try identifier(item["id"], "contributes.taskCommands.id")
             guard ids.insert(id).inserted else { throw PluginManifestError.duplicate("taskCommands.\(id)") }
-            let command = try string(item["command"], "contributes.taskCommands.command")
+            // These fields are typed into a terminal: a control character (Ctrl-U, Enter, Escape, ...) could rewrite or
+            // end the line, so none is accepted.
+            let command = try Self.plainText(try string(item["command"], "contributes.taskCommands.command"), "contributes.taskCommands.command")
             guard !command.isEmpty else { throw PluginManifestError.invalidField("contributes.taskCommands.command", "empty") }
-            c.taskCommands.append(PluginTaskSpec(id: id, title: try string(item["title"], "contributes.taskCommands.title"),
-                                                 command: command, args: try stringArray(item["args"], "contributes.taskCommands.args"),
-                                                 cwd: try optionalString(item["cwd"], "contributes.taskCommands.cwd")))
+            let title = try Self.plainText(try string(item["title"], "contributes.taskCommands.title"), "contributes.taskCommands.title")
+            let args = try stringArray(item["args"], "contributes.taskCommands.args")
+            for arg in args { _ = try Self.plainText(arg, "contributes.taskCommands.args") }
+            let cwd = try optionalString(item["cwd"], "contributes.taskCommands.cwd")
+            if let cwd {
+                _ = try Self.plainText(cwd, "contributes.taskCommands.cwd")
+                guard !cwd.hasPrefix("/"), !cwd.hasPrefix("~"), !(cwd.count > 1 && cwd.dropFirst().first == ":") else {
+                    throw PluginManifestError.invalidField("contributes.taskCommands.cwd", "a path relative to the project")
+                }
+            }
+            c.taskCommands.append(PluginTaskSpec(id: id, title: title, command: command, args: args, cwd: cwd))
         }
 
         ids = []
@@ -292,6 +302,14 @@ public enum PluginManifestLoader {
     private static func string(_ v: JSONValue?, _ field: String) throws -> String {
         guard let s = v?.stringValue else { throw PluginManifestError.invalidField(field, "a string is required") }
         return s
+    }
+
+    /// `text` unchanged, or an error when it holds a C0 control character or DEL.
+    private static func plainText(_ text: String, _ field: String) throws -> String {
+        if text.unicodeScalars.contains(where: { $0.value < 0x20 || $0.value == 0x7F }) {
+            throw PluginManifestError.invalidField(field, "control characters are not allowed")
+        }
+        return text
     }
 
     private static func optionalString(_ v: JSONValue?, _ field: String) throws -> String? {

@@ -59,7 +59,7 @@ struct PluginLifecycleTests {
 
     private func host(limits: PluginLimits = PluginLimits(), probe: any PluginProcessProbe = LiveProcessProbe(),
                       services: PluginHostServices = PluginHostServices()) -> PluginHost {
-        PluginHost(paths: paths, limits: limits, clock: clock, probe: probe, baseEnvironment: environment, services: services)
+        PluginHost(paths: paths, limits: limits, clock: clock, probe: probe, baseEnvironment: environment, services: services, sandbox: PassthroughSandbox.override)
     }
 
     private func log(_ folder: URL) -> [JSONValue] {

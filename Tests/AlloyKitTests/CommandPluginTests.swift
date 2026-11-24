@@ -74,13 +74,27 @@ import Testing
         let center = testCenter(for: rig.workspace)
         final class Box { var ran = 0 }
         let box = Box()
+        // Registered without the coordinator's vetting: the chord is dropped.
         center.registry.register(descriptor("fake.key", menu: .plugins, shortcut: "cmd+shift+j"), run: { box.ran += 1 })
         window.tick()
         window.typeKey("j", modifierFlags: [.command, .shift])
-        #expect(box.ran == 0, "a plugin shortcut must not fire")
+        #expect(box.ran == 0, "an unvetted plugin shortcut must not fire")
         #expect(menuItem(window, "menu-fake.key")?.shortcut == nil)
         #expect(center.registry.command(id: "fake.key")?.descriptor.shortcut == nil)
         #expect(center.registry.rejections.contains { $0.id == "fake.key" && $0.reason == .pluginShortcutDropped })
+        center.registry.unregister(source: fake)
+    }
+
+    @Test func vettedPluginShortcutIsKeptUnlessARegisteredCommandHoldsIt() async throws {
+        let rig = Rig()
+        _ = try alloyWindow(rig.workspace)
+        let center = testCenter(for: rig.workspace)
+        let free = descriptor("fake.free", shortcut: "ctrl+alt+cmd+j")
+        center.registry.register(free, run: {}, keepsPluginShortcut: true)
+        #expect(center.registry.command(id: "fake.free")?.descriptor.shortcut == free.shortcut)
+        center.registry.register(descriptor("fake.second", shortcut: "ctrl+alt+cmd+j"), run: {}, keepsPluginShortcut: true)
+        #expect(center.registry.command(id: "fake.second")?.descriptor.shortcut == nil)
+        #expect(center.registry.rejections.contains { $0.id == "fake.second" && $0.reason == .chordTaken(by: "fake.free") })
         center.registry.unregister(source: fake)
     }
 

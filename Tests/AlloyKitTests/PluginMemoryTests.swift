@@ -32,7 +32,8 @@ import Testing
             try await Task.sleep(for: .seconds(1))
             let drift = Footprint.mib - quietStart
             let before = Footprint.mib
-            let host = PluginHost(paths: paths, baseEnvironment: ["PATH": "\(fakePluginDirectory):/usr/bin:/bin", "HOME": root.path, "LANG": "en_US.UTF-8"])
+            let host = PluginHost(paths: paths, baseEnvironment: ["PATH": "\(fakePluginDirectory):/usr/bin:/bin", "HOME": root.path, "LANG": "en_US.UTF-8"],
+                                  sandbox: PassthroughSandbox.override)
             await host.configure(configs)
             for config in configs { #expect(await host.activate(config.manifest.id, .command)) }
             try await Task.sleep(for: .seconds(1))

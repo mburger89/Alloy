@@ -33,6 +33,32 @@ struct PluginManifestTests {
         #expect(m.contributes.languageServers["my-ls"]?.command == "ls")
     }
 
+    @Test func controlCharactersInTaskFieldsAreRejected() {
+        // Ctrl-U (0x15) would erase the typed line, Enter would end it, DEL and Escape edit it: none reaches a terminal.
+        let task = { (title: String, command: String, args: String, cwd: String) in
+            #""permissions":["process.spawn"],"contributes":{"taskCommands":[{"id":"t","title":"\#(title)","command":"\#(command)","args":[\#(args)],"cwd":"\#(cwd)"}]}"#
+        }
+        let clean = ("Build", "make", #""all""#, "sub")
+        #expect(failure(load(task(clean.0, clean.1, clean.2, clean.3))) == nil)
+        let bad: [(String, String, String, String, String)] = [
+            ("contributes.taskCommands.args", clean.0, clean.1, #""a\u0015b""#, clean.3),
+            ("contributes.taskCommands.args", clean.0, clean.1, #""ok","x\ny""#, clean.3),
+            ("contributes.taskCommands.command", clean.0, "ma\\u001bke", clean.2, clean.3),
+            ("contributes.taskCommands.title", "B\\u0007", clean.1, clean.2, clean.3),
+            ("contributes.taskCommands.cwd", clean.0, clean.1, clean.2, "s\\u007fub"),
+        ]
+        for (field, title, command, args, cwd) in bad {
+            #expect(failure(load(task(title, command, args, cwd))) == .invalidField(field, "control characters are not allowed"), "\(field)")
+        }
+    }
+
+    @Test func absoluteTaskCwdIsRejected() {
+        for cwd in ["/etc", "~/x", "C:/x"] {
+            let r = load(#""permissions":["process.spawn"],"contributes":{"taskCommands":[{"id":"t","title":"T","command":"make","cwd":"\#(cwd)"}]}"#)
+            #expect(failure(r) == .invalidField("contributes.taskCommands.cwd", "a path relative to the project"), "\(cwd)")
+        }
+    }
+
     @Test func validScriptedManifestLoads() throws {
         let r = load(#""main":{"command":"run.sh","args":["--x"]},"activationEvents":["onCommand:hi","onLanguage:swift","onStartup"],"contributes":{"commands":[{"id":"hi","title":"Hi","shortcut":"cmd+shift+h","menu":"plugins","when":"language:swift"}],"panels":[{"id":"p","title":"P"}],"mcpTools":[{"name":"look","description":"d","inputSchema":{"type":"object"}}]},"permissions":["mcp.tools"]"#) { dir in
             t.file("run.sh", in: dir, executable: true)

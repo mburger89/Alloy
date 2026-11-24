@@ -58,6 +58,15 @@ public final class PluginCoordinator {
     /// (see `PluginCoordinator+Commands`).
     var registeredCommands: [String: [PluginCommandSpec]] = [:]
     var commandNotes: [String: [String]] = [:]
+    /// The center whose registry holds the commands; its shortcut claims vet a plugin's chords (set by `CommandCenter.plugins`).
+    weak var center: CommandCenter?
+    /// Per command id, why its proposed shortcut was not bound (see `shortcutNote(for:)`).
+    var shortcutNotes: [String: String] = [:]
+    /// The plugin that owns each command id in `shortcutNotes` (an id is `<plugin id>.<command>`, and a plugin id may itself
+    /// be a prefix of another's, so ownership is never derived from the text).
+    var shortcutOwners: [String: String] = [:]
+    /// The task commands registered per plugin (see `PluginCoordinator+Tasks`).
+    var registeredTasks: [String: [PluginTaskSpec]] = [:]
     var languageCache: [String: String?] = [:]
     /// What plugins decorate open documents with (see `PluginCoordinator+Decorations`).
     let decorations = PluginDecorationStore()
@@ -90,6 +99,15 @@ public final class PluginCoordinator {
         if lines.count > Self.maxLogLines { lines.removeFirst(lines.count - Self.maxLogLines) }
         commandErrors[plugin] = lines
     }
+    /// Test seam: how git is run for installs and update checks.
+    var gitRunner: any PluginGitRunner = LivePluginGitRunner()
+    /// What the last update check found per plugin, and the update it offers (shown by the row's Update button).
+    private var updateStates: [String: PluginRowUpdate] = [:]
+    private var availableUpdates: [String: PluginUpdate] = [:]
+    /// Plugins whose new version has not started yet, with the settings entry to put back if it never does.
+    private var pendingPrevious: [String: PluginSetting] = [:]
+    /// Plugins whose update runs right now, and whether an install from git does: a second request is a no-op.
+    private var updatesInFlight: Set<String> = []
     private var catalog: [String: PluginCatalogEntry] = [:]
     private var appliedThemes: [ThemeEntry] = []
     private var appliedServers: [String: ServerConfigOverride] = [:]
@@ -111,6 +129,10 @@ public final class PluginCoordinator {
     private var staleCleaned = false
     /// False while Alloy cannot run scripted plugins end to end; then a plugin with `main` is listed but stays off.
     public let scriptedPluginsSupported: Bool
+    /// What stands in for the platform's sandbox backend (a test passes its own; production leaves `.none`).
+    public let sandbox: PluginSandboxOverride
+    /// Whether scripted plugins can run confined on this machine.
+    public var sandboxAvailable: Bool { PluginSandbox.backendAvailable(sandbox) }
     /// The enabled theme files the applied themes were loaded from.
     private var appliedThemeFiles: [ThemeFileRef]?
     /// Test seam: reads the theme files (counted by a test).
@@ -123,7 +145,9 @@ public final class PluginCoordinator {
                 clock: any AutosaveClock = SystemAutosaveClock(), probe: any PluginProcessProbe = LiveProcessProbe(),
                 limits: PluginLimits = PluginLimits(), scriptedPluginsSupported: Bool = false,
                 secrets: any AgentSecretStore = UnavailableSecretStore(),
-                home: String = ProcessInfo.processInfo.environment["HOME"] ?? NSHomeDirectory()) {
+                home: String = ProcessInfo.processInfo.environment["HOME"] ?? NSHomeDirectory(),
+                sandbox: PluginSandboxOverride = .none) {
+        self.sandbox = sandbox
         self.home = home
         self.secrets = secrets
         self.scriptedPluginsSupported = scriptedPluginsSupported
@@ -195,9 +219,18 @@ public final class PluginCoordinator {
     /// Scans the plugin folder off the main actor, then applies.
     public func activate() async {
         await cleanStaleGroups()
+        dropStalePreviousFolders()
         await rescan()
         recompute()
         startScriptedOnStartup()
+    }
+
+    /// A `.<id>.previous` folder an earlier run left behind (it quit before the new version started) is garbage now that no
+    /// update is pending.
+    private func dropStalePreviousFolders() {
+        guard pendingPrevious.isEmpty else { return }
+        let paths = paths
+        Task.detached { PluginGitInstaller.dropStalePrevious(paths: paths) }
     }
 
     /// Kills process groups an earlier Alloy left running, off the main actor, once, before anything can start.
@@ -289,7 +322,7 @@ public final class PluginCoordinator {
         }
         let store = secrets
         let host = PluginHost(paths: paths, limits: limits, clock: clock, probe: probe,
-                              baseEnvironment: Self.environment(pathDirs: [], home: home), services: services,
+                              baseEnvironment: Self.environment(pathDirs: [], home: home), services: services, sandbox: sandbox,
                               secretProvider: { config in Self.secretEnvironment(config.manifest, store) })
         let (stream, commands) = AsyncStream<HostCommand>.makeStream()
         let prior = retiring, pathDirs = pathDirs, home = home
@@ -347,7 +380,13 @@ public final class PluginCoordinator {
         if case .decorations(let id, let uri, let set) = event { applyDecorations(id: id, uri: uri, set: set); return }
         if handlePanelEvent(event) { return }
         if case .showMessage(let id, let type, let message) = event { showMessage(id: id, type: type, message: message); return }
-        if case .started(let id) = event { panelPluginStarted(id); pluginStartedForEvents(id); return }
+        if case .started(let id) = event { updateStarted(id); panelPluginStarted(id); pluginStartedForEvents(id); return }
+        if case .state(let id, let state) = event, pendingPrevious[id] != nil {
+            switch state {
+            case .crashed, .failedToStart, .disabledAfterCrashes, .sandboxUnavailable, .needsAPI: restorePreviousVersion(id)
+            default: break
+            }
+        }
         guard case .state(let id, let state) = event, appliedConfigs[id] != nil else { return }
         runStates[id] = state
         panelStateChanged(id, state)
@@ -375,7 +414,22 @@ public final class PluginCoordinator {
         catalog = Dictionary(entries.map { ($0.folderName, $0) }, uniquingKeysWith: { a, _ in a })
         scanned = true
         appliedThemeFiles = nil  // the files on disk may have changed under the same names
+        backfillCommandHashes()
         recompute()
+    }
+
+    /// Settings saved before commands were hashed: an enabled plugin whose manifest still has the version recorded at its
+    /// enabling is taken as unchanged since then, and its hash is stored. Any other plugin waits for approval.
+    private func backfillCommandHashes() {
+        guard let workspace else { return }
+        var s = workspace.settings
+        var changed = false
+        for (id, setting) in s.plugins where setting.enabled && setting.approvedCommandsHash == nil {
+            guard case .success(let m)? = catalog[id]?.manifest, m.version == setting.version, !Self.commandLines(m).isEmpty else { continue }
+            s.plugins[id]?.approvedCommandsHash = Self.commandsHash(m)
+            changed = true
+        }
+        if changed { try? workspace.updateSettings(s) }
     }
 
     // MARK: Actions
@@ -391,12 +445,126 @@ public final class PluginCoordinator {
         let manifest = try result.get()
         var s = workspace.settings
         var entry = s.plugins[manifest.id] ?? PluginSetting(source: .folder(path: folder.path))
+        // A reinstall over an enabled plugin keeps what the user approved, so changed commands ask again.
+        if let existing = s.plugins[manifest.id] { entry.approvedCommandsHash = approvedHash(for: manifest.id, existing) }
         entry.version = manifest.version
         entry.source = .folder(path: folder.path)
         s.plugins[manifest.id] = entry
         await rescan()
         try workspace.updateSettings(s)
         recompute()
+    }
+
+    /// Clones one tag of a git repository into the plugin directory. A new plugin starts disabled; a reinstall keeps its
+    /// settings.
+    public func install(gitURL: String, tag: String) async throws {
+        guard let workspace else { throw PluginError.noWorkspace }
+        guard !status.installingGit else { return }
+        status.installingGit = true
+        defer { status.installingGit = false }
+        let installer = gitInstaller()
+        let (manifest, commit) = try await installer.install(url: gitURL, tag: tag, installed: workspace.settings.plugins)
+        var s = workspace.settings
+        var entry = s.plugins[manifest.id] ?? PluginSetting(source: .git(url: gitURL, tag: tag, commit: commit))
+        if let existing = s.plugins[manifest.id] { entry.approvedCommandsHash = approvedHash(for: manifest.id, existing) }
+        entry.version = manifest.version
+        entry.source = .git(url: gitURL, tag: tag, commit: commit)
+        s.plugins[manifest.id] = entry
+        await rescan()
+        try workspace.updateSettings(s)
+        recompute()
+    }
+
+    private func gitInstaller() -> PluginGitInstaller {
+        PluginGitInstaller(paths: paths, runner: gitRunner, pathDirs: pathDirs())
+    }
+
+    /// Asks the remote for a newer tag (or a moved one) and shows the answer on the plugin's row.
+    public func checkForUpdate(_ id: String) async {
+        guard let setting = workspace?.settings.plugins[id], case .git(let url, _, _) = setting.source,
+              !updatesInFlight.contains(id) else { return }
+        updateStates[id] = .checking
+        recompute()
+        let result: PluginRowUpdate
+        do {
+            let found = try await gitInstaller().availableUpdate(for: setting, url: url)
+            availableUpdates[id] = found
+            switch found {
+            case .newer(_, let version, _)?: result = .available(version: version)
+            case .tagMoved?: result = .tagMoved
+            case nil: result = .upToDate
+            }
+        } catch {
+            availableUpdates[id] = nil
+            result = .failed(PluginsSection.describe(error))
+        }
+        updateStates[id] = result
+        recompute()
+    }
+
+    /// Installs the update the last check found. The old folder stays until the new version has started once; if it never
+    /// does, the old folder comes back. A new permission leaves the plugin waiting for the user's approval.
+    public func applyUpdate(_ id: String) async throws {
+        guard let workspace, let setting = workspace.settings.plugins[id], case .git(let url, _, _) = setting.source else { throw PluginError.unknownPlugin(id) }
+        // A second tap while the first runs would move `.previous` twice and lose the old version.
+        guard !updatesInFlight.contains(id) else { return }
+        guard let update = availableUpdates[id], case .newer(let tag, _, let commit) = update else { throw PluginError.unknownPlugin(id) }
+        updatesInFlight.insert(id)
+        defer { updatesInFlight.remove(id) }
+        availableUpdates[id] = nil
+        updateStates[id] = .updating
+        recompute()
+        let installer = gitInstaller()
+        let manifest: PluginManifest
+        do {
+            manifest = try await installer.update(id: id, to: update, url: url)
+        } catch {
+            updateStates[id] = nil
+            recompute()
+            throw error
+        }
+        pendingPrevious[id] = setting
+        var s = workspace.settings
+        var entry = setting
+        entry.approvedCommandsHash = approvedHash(for: id, setting)
+        entry.version = manifest.version
+        entry.source = .git(url: url, tag: tag, commit: commit)
+        s.plugins[id] = entry
+        updateStates[id] = .upToDate
+        try workspace.updateSettings(s)
+        await rescan()
+        recompute()
+        if appliedConfigs[id] != nil { activateAsync(id, .startup) } else { settleUpdate(id) }
+    }
+
+    /// The new version initialized: the old folder can go.
+    private func updateStarted(_ id: String) {
+        guard pendingPrevious[id] != nil else { return }
+        settleUpdate(id)
+    }
+
+    private func settleUpdate(_ id: String) {
+        pendingPrevious[id] = nil
+        let installer = gitInstaller()
+        Task.detached { installer.dropPrevious(id: id) }
+    }
+
+    /// The new version failed before it initialized: its folder is replaced by the old one and the old entry comes back.
+    private func restorePreviousVersion(_ id: String) {
+        guard let old = pendingPrevious.removeValue(forKey: id) else { return }
+        let installer = gitInstaller()
+        updateStates[id] = nil
+        Task { @MainActor in
+            await Task.detached { try? installer.restorePrevious(id: id) }.value
+            if var s = workspace?.settings, var entry = s.plugins[id] {
+                entry.version = old.version
+                entry.source = old.source
+                s.plugins[id] = entry
+                try? workspace?.updateSettings(s)
+            }
+            await rescan()
+            recompute()
+        }
     }
 
     /// Grants every permission the manifest declares and switches the plugin on.
@@ -412,12 +580,13 @@ public final class PluginCoordinator {
         guard manifest.apiVersion == PluginManifestLoader.apiVersion else { throw PluginError.needsAPI(manifest.apiVersion) }
         guard scriptedPluginsSupported || !manifest.isScripted else { throw PluginError.scriptedUnsupported }
         entry.version = manifest.version
-        guard !Self.needsSandbox(manifest) else { throw PluginError.sandboxUnavailable }
+        guard !needsSandbox(manifest) else { throw PluginError.sandboxUnavailable }
         var s = workspace.settings
         entry.enabled = true
         entry.grants = manifest.permissions
         entry.enableOrder = (s.plugins.values.map(\.enableOrder).max() ?? 0) + 1
         entry.disabledAfterCrashes = false
+        entry.approvedCommandsHash = Self.commandsHash(manifest)
         s.plugins[id] = entry
         try workspace.updateSettings(s)
     }
@@ -508,8 +677,24 @@ public final class PluginCoordinator {
 
     // MARK: Applying
 
-    private static func needsSandbox(_ m: PluginManifest) -> Bool {
-        m.isScripted && !PluginSandbox.backendAvailable && !m.permissions.isDisjoint(with: [.network, .processSpawn])
+    /// Whether the commands the manifest launches are the ones the user approved. A manifest with no such commands needs no
+    /// approval; with some, the stored hash must match (a missing one does not, until `adopt` fills it for a plugin whose
+    /// version has not changed since it was enabled).
+    private func commandsApproved(_ setting: PluginSetting, _ m: PluginManifest) -> Bool {
+        guard !Self.commandLines(m).isEmpty else { return true }
+        return setting.approvedCommandsHash == Self.commandsHash(m)
+    }
+
+    /// The hash an existing entry stands for, read before its folder is replaced: the stored one, else the one of the
+    /// manifest installed at the entry's version, else "" (which matches nothing, so changed commands ask again).
+    private func approvedHash(for id: String, _ setting: PluginSetting) -> String {
+        if let stored = setting.approvedCommandsHash { return stored }
+        if case .success(let old)? = catalog[id]?.manifest, old.version == setting.version { return Self.commandsHash(old) }
+        return ""
+    }
+
+    private func needsSandbox(_ m: PluginManifest) -> Bool {
+        m.isScripted && !sandboxAvailable && !m.permissions.isDisjoint(with: [.network, .processSpawn])
     }
 
     /// Recomputes the rows and applies what changed. Cheap and synchronous; the theme files are read only when the set of
@@ -528,11 +713,12 @@ public final class PluginCoordinator {
         var effective: Set<String> = []
         var configs: [PluginRuntimeConfig] = []
         var commandSpecs: [String: [PluginCommandSpec]] = [:]
+        var taskSpecs: [String: [PluginTaskSpec]] = [:]
         var panelSpecs: [(pluginID: String, panels: [PluginPanelSpec])] = []
         var mcpSpecs: [String: [PluginMCPToolSpec]] = [:]
         for id in order {
             guard let setting = plugins[id], setting.enabled, let entry = catalog[id], case .success(let m) = entry.manifest,
-                  scriptedPluginsSupported || !m.isScripted, m.apiVersion == PluginManifestLoader.apiVersion, !Self.needsSandbox(m), m.permissions.isSubset(of: setting.grants),
+                  scriptedPluginsSupported || !m.isScripted, m.apiVersion == PluginManifestLoader.apiVersion, !needsSandbox(m), m.permissions.isSubset(of: setting.grants), commandsApproved(setting, m),
                   !setting.disabledAfterCrashes else { continue }
             effective.insert(id)
             if m.isScripted {
@@ -544,6 +730,7 @@ public final class PluginCoordinator {
                     notes[id, default: []].append(Self.mcpRowNote)
                 }
             }
+            if !m.contributes.taskCommands.isEmpty { taskSpecs[id] = m.contributes.taskCommands }
             for ref in m.contributes.themes {
                 themeFiles.append((id, entry.folder.appendingPathComponent(ref.path)))
             }
@@ -557,7 +744,7 @@ public final class PluginCoordinator {
             }
         }
 
-        applyCommands(commandSpecs)
+        applyCommands(commandSpecs, tasks: taskSpecs)
         applyPanels(panelSpecs.sorted { $0.pluginID < $1.pluginID })
         applyMCPTools(mcpSpecs)
         for id in ids {
@@ -646,13 +833,13 @@ public final class PluginCoordinator {
                 state = .scriptedUnavailable
             } else if !hasEntry {
                 state = .notEnabled
-            } else if Self.needsSandbox(m) {
+            } else if needsSandbox(m) {
                 state = .sandboxUnavailable
             } else if setting.disabledAfterCrashes {
                 state = .disabledAfterCrashes
             } else if !setting.enabled {
                 state = .disabled
-            } else if !missing.isEmpty {
+            } else if !missing.isEmpty || !commandsApproved(setting, m) {
                 state = .needsPermissions(missing)
             } else if m.isScripted {
                 state = Self.rowStatus(runStates[id])
@@ -663,10 +850,16 @@ public final class PluginCoordinator {
                 guard let o = m.contributes.languageServers[sid], let c = o.command else { return nil }
                 return ([c] + (o.arguments ?? [])).joined(separator: " ")
             }
-            commands += m.contributes.taskCommands.map { ([$0.command] + $0.args).joined(separator: " ") }
-            return PluginRowState(id: id, name: m.name, version: m.version, source: setting.source, enabled: setting.enabled,
-                                  permissions: m.permissions.sorted(), status: state, notes: notes, settings: m.contributes.settings,
-                                  isScripted: m.isScripted, commandsToRun: commands)
+            commands += m.contributes.taskCommands.map { typedLine(of: $0) }
+            var notes = notes
+            if hasEntry, setting.enabled, !commandsApproved(setting, m) {
+                notes.append("The commands it runs changed. Switch it off and on to approve them.")
+            }
+            var row = PluginRowState(id: id, name: m.name, version: m.version, source: setting.source, enabled: setting.enabled,
+                                     permissions: m.permissions.sorted(), status: state, notes: notes, settings: m.contributes.settings,
+                                     isScripted: m.isScripted, commandsToRun: commands)
+            if case .git = setting.source { row.update = updateStates[id] }
+            return row
         }
     }
 }

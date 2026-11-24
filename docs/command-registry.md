@@ -36,7 +36,8 @@ is safe to call from inside one of that source's own commands. Built-ins live in
 ## Clash rule
 
 Built-ins register first and win. A repeated id is rejected. A built-in whose default chord another command holds is
-rejected. A plugin command is always added but its shortcut is dropped (MetalUI cannot yet show plugin shortcuts).
+rejected. A plugin command is always added; its shortcut is kept only when registered with `keepsPluginShortcut: true`
+(the plugin coordinator vetted it) and no registered command already holds it, else it is dropped.
 Every rejection is recorded in `registry.rejections`. At resolve time two commands on one chord (through overrides)
 leave the first with it and list both in `keymap.conflicts`.
 
@@ -131,9 +132,13 @@ A plugin registers through the same `registry.register` with `source: .plugin(id
   generated when the bar is evaluated and is absent while no command is placed in it; a plugin that registers after
   launch shows up at the next evaluation, with no observation.
 - Clash behaviour: a plugin can never replace or shadow a built-in. A repeated id (a built-in's or another plugin's) is
-  rejected with `.duplicateID`. A plugin's shortcut is always dropped (the command is still added and the drop is
-  recorded as `.pluginShortcutDropped` in `registry.rejections`), so a plugin cannot take a built-in's chord either.
-  The shortcut stays dropped until MetalUI can show plugin shortcuts (gap G4: standard-menu shortcuts).
+  rejected with `.duplicateID`. A plugin's shortcut is dropped (recorded as `.pluginShortcutDropped`) unless it is
+  registered with `keepsPluginShortcut: true`. The plugin coordinator sets that only after `ShortcutClashes` found no
+  claim at all on the chord (registry holders with the user's overrides, standard menu items, system-reserved keys, code
+  view keys including soft ones); otherwise the chord is dropped and the Settings › Plugins row notes
+  `Shortcut <chord> not bound: used by <title>` (`used by the system` for reserved keys). A registered command that
+  already holds a kept chord records `.chordTaken(by:)` and the chord is dropped. A bound chord binds `.menu` in the
+  Plugins menu, else `.global`. Chords are vetted again (one revision bump) when the user's keybindings change.
 - Contract: `register`, `unregister` and every closure run on the main actor, and `run` must return promptly (start a
   `Task` for slow work). A command may call `unregister(source:)` for its own source from inside `run`. Registering costs
   one `GlobalKeys` re-run and no `AlloyScreen` re-run; a registered plugin adds nothing to an idle frame.
