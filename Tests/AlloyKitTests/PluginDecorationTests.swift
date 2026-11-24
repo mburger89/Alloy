@@ -99,9 +99,14 @@ struct DecorationRig {
         let d = try await DecorationRig.make()
         try await d.plugin(lint, items: #"[{"line":2,"gutterBar":"info"},{"line":4,"background":"warning","message":{"text":"look here","role":"warning"}}]"#)
         #expect(await d.settle { d.views[0].pluginOwnerNames == ["plugin.\(lint)"] })
-        #expect(d.views[0].decorations.virtualLineCount == 1, "one message row")
         let decorations = d.views[0].decorations
         let owner = "plugin.\(lint)"
+        #expect(await d.settle { !decorations.paintedVirtualRows(at: .after(line: 4)).isEmpty })
+        let message = decorations.paintedVirtualRows(at: .after(line: 4))
+        #expect(message.count == 1 && decorations.virtualLineCount == 1, "one message row: \(message)")
+        #expect(message.first?.owner == owner && message.first?.lines == ["look here"], "\(message)")
+        #expect(message.first?.gutterBar == PluginColorRole.warning.ink && message.first?.background == PluginColorRole.warning.tint, "\(message)")
+        #expect(decorations.paintedVirtualRows(at: .after(line: 2)).isEmpty, "only the message's gap paints a row")
         #expect(await d.settle { decorations.paintedLineDecoration(row: 2)?.gutterBar != nil && decorations.paintedLineDecoration(row: 4)?.background != nil })
         let bar = try #require(decorations.paintedLineDecoration(row: 2)?.gutterBar)
         #expect(bar.owner == owner && bar.lines == 2..<3, "\(bar)")
@@ -176,10 +181,13 @@ struct DecorationRig {
         let view = d.views[0]
         #expect(await d.settle { view.pluginOwnerNames == ["plugin.\(lint)"] })
         #expect(await d.settle { view.decorations.paintedLineDecoration(row: 1)?.backgroundOwner == "plugin.\(lint)" })
+        #expect(await d.settle { view.decorations.paintedVirtualRows(at: .after(line: 1)).first?.owner == "plugin.\(lint)" })
+        #expect(view.decorations.paintedVirtualRows(at: .after(line: 1)).first?.lines == ["hi"])
         // Stopping the plugin (switching it off) removes its owner from every view.
         try d.p.coordinator.disable(lint)
         #expect(await d.settle { view.pluginOwnerNames.isEmpty && view.decorations.virtualLineCount == 0 })
         #expect(view.decorations.paintedLineDecoration(row: 1) == nil, "the disabled plugin's tint is gone")
+        #expect(view.decorations.paintedVirtualRows(at: .after(line: 1)).isEmpty, "the disabled plugin's message row is gone")
         #expect(d.p.coordinator.decorations.snapshots(for: "login.swift").isEmpty)
         // Closing the document drops what was set for it.
         try d.p.coordinator.enable(lint)
