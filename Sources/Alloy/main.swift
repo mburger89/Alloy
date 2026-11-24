@@ -8,8 +8,9 @@ import MetalUI
 
 StartupTrace.mark("main-entered")
 
-// Usage: Alloy [<project-dir> [<file-to-open>]]. Without arguments the last opened project is used,
-// else an open-folder panel asks. "/" and the home directory are never a project root.
+// Usage: Alloy [<project-dir> [<file-to-open>]] or Alloy <file>. A single file opens in its enclosing git
+// repository, else in its folder. Without arguments the last opened project is used, else an open-folder panel
+// asks. "/" and the home directory are never a project root.
 // ALLOY_DATA_DIR (set by the benchmark) replaces Application Support for settings, ledgers and sessions.
 let appSupport = AlloySettings.appSupportDirectory(default: FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0])
 try? AlloySettings.ensureSupportDirectory(appSupport: appSupport)

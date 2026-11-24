@@ -4,10 +4,11 @@ import Testing
 
 @Suite struct ProjectChoiceTests {
     private let home = "/home/me"
-    private let dirs: Set<String> = ["/work/proj", "/work", "/home/me/code/app", "/home/me", "/", "/other"]
+    private var dirs: Set<String> = ["/work/proj", "/work", "/home/me/code/app", "/home/me", "/", "/other"]
 
     private var links: [String: String] = [:]
     private var existing: Set<String> = []
+    private var gitDirs: Set<String> = []
 
     private func resolve(_ args: [String], last: String? = nil, cwd: String = "/work") -> ProjectChoice {
         detailed(args, last: last, cwd: cwd).choice
@@ -16,8 +17,10 @@ import Testing
     private func detailed(_ args: [String], last: String? = nil, cwd: String = "/work") -> (choice: ProjectChoice, reason: String?) {
         let settings = AlloySettings(lastProjectPath: last)
         let links = links, existing = existing
+        let git = gitDirs
         return ProjectChoice.resolveDetailed(arguments: args, settings: settings, isDirectory: { dirs.contains($0) }, home: home, cwd: cwd,
-                                             resolveSymlinks: { links[$0] ?? $0 }, fileExists: { existing.contains($0) })
+                                             resolveSymlinks: { links[$0] ?? $0 }, fileExists: { existing.contains($0) },
+                                             gitEntryExists: { git.contains($0) })
     }
 
     @Test func symlinkToHomeOrRootIsRejected() {
@@ -107,5 +110,45 @@ import Testing
         defer { try? FileManager.default.removeItem(at: dir) }
         try AlloySettings(lastProjectPath: "/work/proj").save(appSupport: dir)
         #expect(AlloySettings.load(appSupport: dir).lastProjectPath == "/work/proj")
+    }
+
+    @Test func singleFileOpensInEnclosingGitRepo() {
+        var t = self
+        t.existing = ["/work/repo/src/a/b.csv"]
+        t.dirs.insert("/work/repo")
+        t.gitDirs = ["/work/repo/.git"]
+        #expect(t.resolve(["/work/repo/src/a/b.csv"]) == .open(root: URL(fileURLWithPath: "/work/repo"), file: "src/a/b.csv"))
+    }
+
+    @Test func singleFileWithoutGitOpensInParent() {
+        var t = self
+        t.existing = ["/work/loose/data.csv"]
+        t.dirs.insert("/work/loose")
+        #expect(t.resolve(["/work/loose/data.csv"]) == .open(root: URL(fileURLWithPath: "/work/loose"), file: "data.csv"))
+    }
+
+    @Test func singleFileInHomeAsks() {
+        var t = self
+        t.existing = ["/home/me/notes.txt"]
+        t.gitDirs = ["/home/me/.git"]
+        let r = t.detailed(["/home/me/notes.txt"])
+        #expect(r.choice == .askUser)
+        #expect(r.reason?.contains("inside a project folder") == true)
+    }
+
+    @Test func relativeSingleFileResolvesAgainstCwd() {
+        var t = self
+        t.existing = ["/work/repo/src/x.csv"]
+        t.dirs.insert("/work/repo")
+        t.gitDirs = ["/work/repo/.git"]
+        #expect(t.resolve(["x.csv"], cwd: "/work/repo/src") == .open(root: URL(fileURLWithPath: "/work/repo"), file: "src/x.csv"))
+    }
+
+    @Test func singleFileInNestedReposPicksNearest() {
+        var t = self
+        t.existing = ["/work/outer/inner/f.txt"]
+        t.dirs.formUnion(["/work/outer", "/work/outer/inner"])
+        t.gitDirs = ["/work/outer/.git", "/work/outer/inner/.git"]
+        #expect(t.resolve(["/work/outer/inner/f.txt"]) == .open(root: URL(fileURLWithPath: "/work/outer/inner"), file: "f.txt"))
     }
 }

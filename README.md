@@ -189,11 +189,11 @@ notes work as for Claude Code, and agent secrets, which you can enter in Setting
 
 ```sh
 swift build -c release
-.build/release/Alloy <project-dir> [file]
+.build/release/Alloy <project-dir> [file]   # or: .build/release/Alloy <file>
 swift test
 ```
 
-- `<project-dir>` is the project; `file` (optional) opens in the code panel at launch. With no arguments Alloy reopens
+- `<project-dir>` is the project; `file` (optional) opens in the code panel at launch. A single `<file>` opens in its enclosing git repository, else in its folder. With no arguments Alloy reopens
   the last project, or asks for a folder. `/` and your home folder itself are never accepted as a project.
 - To work on several repositories at once, launch Alloy once per repository (for example
   `.build/release/Alloy ~/src/app &` and `.build/release/Alloy ~/src/api &`). Each window keeps its own sessions,
