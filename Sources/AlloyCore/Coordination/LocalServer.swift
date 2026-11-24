@@ -23,7 +23,9 @@ public actor LocalServer {
         public init() {}
     }
 
-    private let tools: [MCPTool]
+    private var tools: [MCPTool]
+    /// How many times `setPluginTools` ran (tests pin that a tool call never rebuilds the list).
+    public private(set) var pluginToolSetCount = 0
     private let limits: Limits
     private let onListenerFailure: (@Sendable (Error) -> Void)?
     private let report: (@Sendable (String) -> Void)?
@@ -136,6 +138,29 @@ public actor LocalServer {
         tokenToSession[token] = session
         return token
     }
+
+    /// Replaces every tool whose scope is `.plugin` with `tools` (any of them with another tool's name is dropped).
+    public func setPluginTools(_ tools: [any MCPTool]) {
+        pluginToolSetCount += 1
+        var kept = self.tools.filter { if case .plugin = $0.scope { false } else { true } }
+        var names = Set(kept.map(\.name))
+        for tool in tools {
+            guard case .plugin = tool.scope, tool.inputSchema["type"]?.stringValue == "object",
+                  names.insert(tool.name).inserted else { continue }
+            kept.append(tool)
+        }
+        self.tools = kept
+    }
+
+    /// Drops `scope` from every live session's scopes at once; a later call of a tool in it is refused.
+    public func removeScope(_ scope: MCPToolScope) {
+        for (session, scopes) in sessionScopes where scopes.contains(scope) {
+            sessionScopes[session] = scopes.subtracting([scope])
+        }
+    }
+
+    /// The scopes a session's token grants now (nil without a token).
+    public func scopes(for session: UUID) -> Set<MCPToolScope>? { sessionScopes[session] }
 
     /// Sets the closure that answers hooks. Until one is set every hook is answered `{}`.
     public func setHookHandler(_ handler: @escaping HookHandler) { hookHandler = handler }

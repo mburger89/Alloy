@@ -11,13 +11,15 @@ import Foundation
 //   initializeResult the result of `initialize` (default {apiVersion: 1})
 //   afterInitialized [{method, params, id?}] sent to Alloy after `initialized` (a request when `id` is set); the answers are
 //                    logged like any received message
+//   onReceive        {"<method>": [{method, params, id?}]} sent to Alloy each time a message with that method arrives
 //   crashAfter n     exit(1) after n received messages
 //   exitOnInitialize exit(1) on `initialize` without answering
 //   garbageStdout    write "hello\n" before any frame
 //   ignoreSigterm    ignore SIGTERM and stdin EOF (only SIGKILL ends the process)
 //   spawnChild       start `sleep 600` in the same group; its pid goes to <log>.child
 //   stopReadingAfterInit  after `initialized`, never read stdin again
-//   flood {method, params, perSecond, seconds}  notifications to Alloy after `initialized`
+//   flood {method, params, perSecond, seconds, counter?}  notifications to Alloy after `initialized`; with `counter` the
+//                    params' `version` is the running count, so every message differs
 //   logEnv [names]   <log>.env receives {name: value} for those variables
 //   stderr "text"    written to stderr after `initialized`
 //   stderrEnv [names] those variables' values written to stderr
@@ -92,29 +94,36 @@ struct FakePlugin {
         }
     }
 
+    func send(_ item: JSONValue) {
+        guard let method = item["method"]?.stringValue else { return }
+        var message: [String: JSONValue] = ["jsonrpc": .string("2.0"), "method": .string(method)]
+        if let params = item["params"] { message["params"] = params }
+        if let id = item["id"] { message["id"] = id }
+        out.send(.object(message))
+    }
+
     mutating func afterInitialized() {
         if let name = script["stderr"]?.stringValue { FileHandle.standardError.write(Data(name.utf8)) }
         let env = ProcessInfo.processInfo.environment
         for name in script["stderrEnv"]?.arrayValue?.compactMap(\.stringValue) ?? [] {
             FileHandle.standardError.write(Data("\(name)=\(env[name] ?? "")\n".utf8))
         }
-        for item in script["afterInitialized"]?.arrayValue ?? [] {
-            guard let method = item["method"]?.stringValue else { continue }
-            var message: [String: JSONValue] = ["jsonrpc": .string("2.0"), "method": .string(method)]
-            if let params = item["params"] { message["params"] = params }
-            if let id = item["id"] { message["id"] = id }
-            out.send(.object(message))
-        }
+        for item in script["afterInitialized"]?.arrayValue ?? [] { send(item) }
         if let flood = script["flood"], let method = flood["method"]?.stringValue {
             let perSecond = max(1, flood["perSecond"]?.intValue ?? 1)
             let seconds = flood["seconds"]?.doubleValue ?? 1
             let params = flood["params"]
+            let counter = flood["counter"]?.boolValue == true
             let out = self.out
             Thread.detachNewThread {
                 let deadline = Date().addingTimeInterval(seconds)
+                var count = 0
                 while Date() < deadline {
                     var message: [String: JSONValue] = ["jsonrpc": .string("2.0"), "method": .string(method)]
-                    if let params { message["params"] = params }
+                    if var p = params {
+                        if counter, case .object(var o) = p { count += 1; o["version"] = .number(Double(count)); p = .object(o) }
+                        message["params"] = p
+                    }
                     out.send(.object(message))
                     Thread.sleep(forTimeInterval: 1.0 / Double(perSecond))
                 }
@@ -168,6 +177,7 @@ struct FakePlugin {
                     } else if method == "initialized" {
                         afterInitialized()
                     }
+                    for item in script["onReceive"]?[method]?.arrayValue ?? [] { send(item) }
                 }
                 received += 1
                 if let limit = script["crashAfter"]?.intValue, received >= limit { exit(1) }

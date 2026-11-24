@@ -20,12 +20,12 @@ public var fakePluginDirectory: String { URL(fileURLWithPath: fakePluginPath).de
 @discardableResult
 public func writeFakePlugin(id: String, in plugins: URL, permissions: [String] = [], activation: [String] = [],
                             contributes: JSONValue = .object([:]), script: JSONValue = .object([:]),
-                            apiVersion: Int = 1) throws -> URL {
+                            apiVersion: Int = 1, name: String? = nil) throws -> URL {
     let folder = plugins.appendingPathComponent(id)
     try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
     let manifest: JSONValue = .object([
         "id": .string(id),
-        "name": .string(id),
+        "name": .string(name ?? id),
         "version": .string("1.0.0"),
         "apiVersion": .number(Double(apiVersion)),
         "main": .object(["command": .string("AlloyFakePlugin"),

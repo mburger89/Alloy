@@ -39,12 +39,18 @@ extension Workspace {
         // Shared notes: the same local server and per-session token as a Claude session gets.
         var mcp: ACPMCPDescriptor?
         var guidance: String?
-        if settings.shareKnowledge, let token = await mcpToken(for: s.id, scopes: [.shared]), let url = serverURL {
+        // The server is also offered when only a plugin scope applies (then without the guidance text).
+        var scopes: Set<MCPToolScope> = settings.shareKnowledge ? [.shared] : []
+        scopes.formUnion(pluginToolScopes())
+        if !scopes.isEmpty, let token = await mcpToken(for: s.id, scopes: scopes), let url = serverURL {
             mcp = ACPMCPDescriptor(name: "alloy", url: url.absoluteString, token: token)
-            guidance = Guidance.text(shareKnowledge: settings.shareKnowledge, shareAcrossProjects: settings.shareAcrossProjects)
+            if settings.shareKnowledge {
+                guidance = Guidance.text(shareKnowledge: settings.shareKnowledge, shareAcrossProjects: settings.shareAcrossProjects)
+            }
         }
         if stoppedDuringLaunch.contains(s.id) || isShuttingDown { markStopped(s); return }
         s.beginProcess()
+        sessionRunEnded.remove(s.id)
         let sessionID = s.id
         var configuration = ACPLaunchConfiguration(
             agent: definition, executable: executable, arguments: args, projectDirectory: projectRoot,
@@ -52,7 +58,7 @@ extension Workspace {
             env: env, loginPATH: login, mcp: mcp, systemPrompt: guidance,
             fileService: ACPSessionFiles(workspace: self, session: s.id, root: projectRoot))
         configuration.history = ACPHistory(directory: acpHistoryDirectory, sessionID: s.id)
-        configuration.autoAllowAlloyTools = mcp != nil && !settings.askBeforeSharedNotes
+        configuration.autoAllowAlloyTools = mcp != nil && settings.shareKnowledge && !settings.askBeforeSharedNotes
         configuration.leadingContext = { [weak self] in await self?.takeACPOverlapContext(for: sessionID) }
         let transport = factory(configuration)
         let stream: AsyncStream<ProcessEvent>

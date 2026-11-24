@@ -93,6 +93,8 @@ struct PluginRowView: Component {
     @State var failure: String?
     @State var logOpen = false
     @State var logText = ""
+    @State var storedSecrets: Set<String> = []
+    @State var secretDrafts: [String: String] = [:]
 
     private static let grantText: [PluginPermission: String] = [
         .projectRead: "Read files in this project",
@@ -187,8 +189,68 @@ struct PluginRowView: Component {
                 Text(verbatim: failure).font(size: 11).foregroundColor(.errorInk).accessibilityIdentifier("settings.plugins.error")
             }
         }
+        .onAppear { loadStoredSecrets() }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier(prefix)
+    }
+
+    // MARK: Secrets
+
+    private func loadStoredSecrets() {
+        guard row.settings.contains(where: { if case .secret = $0.type { true } else { false } }) else { return }
+        let coordinator = coordinator, id = row.id, stored = $storedSecrets
+        Task { @MainActor in stored.wrappedValue = await coordinator.storedSecretKeys(for: id) }
+    }
+
+    private func saveSecret(_ key: String) {
+        let value = secretDrafts[key] ?? ""
+        guard !value.isEmpty else { return }
+        // The typed value leaves state before the Keychain is touched.
+        secretDrafts[key] = nil
+        do {
+            try coordinator.setSecret(value, key: key, for: row.id)
+            storedSecrets.insert(key)
+            failure = nil
+        } catch {
+            failure = "Could not save the secret: \(PluginsSection.describe(error))"
+        }
+    }
+
+    private func removeSecret(_ key: String) {
+        do {
+            try coordinator.clearSecret(key: key, for: row.id)
+            storedSecrets.remove(key)
+            failure = nil
+        } catch {
+            failure = "Could not remove the secret: \(PluginsSection.describe(error))"
+        }
+    }
+
+    private func secretControl(_ spec: PluginSettingSpec, id: String) -> some ElementGroup {
+        let key = spec.key, pluginID = row.id
+        let draftBinding = Binding<String>(get: { secretDrafts[key] ?? "" }, set: { secretDrafts[key] = $0 })
+        return VStack(alignment: .leading, spacing: Pixels(4)) {
+            Text(verbatim: spec.title).font(size: 11).foregroundColor(.mutedInk)
+            if !coordinator.secretsAvailable {
+                Text("Secrets need the Keychain, which is unavailable here.").font(size: 11).foregroundColor(.warningInk)
+                    .accessibilityIdentifier("settings.plugins.secret-unavailable.\(pluginID).\(key)")
+            } else {
+                if storedSecrets.contains(key) {
+                    HStack(spacing: Pixels(8)) {
+                        Text("Stored in your Keychain").font(size: 11).foregroundColor(.mutedInk)
+                            .accessibilityIdentifier("settings.plugins.secret-stored.\(pluginID).\(key)")
+                        Button("Remove") { removeSecret(key) }
+                            .accessibilityIdentifier("settings.plugins.secret-remove.\(pluginID).\(key)")
+                    }
+                }
+                SecureField(spec.title, text: draftBinding)
+                    .onSubmit { saveSecret(key) }
+                    .accessibilityIdentifier(id)
+                Button("Save") { saveSecret(key) }
+                    .disabled((secretDrafts[key] ?? "").isEmpty)
+                    .accessibilityIdentifier("settings.plugins.secret-save.\(pluginID).\(key)")
+            }
+        }
     }
 
     // MARK: Enable prompt
@@ -314,6 +376,8 @@ struct PluginRowView: Component {
                         if let d = Double(text), d.isFinite { save(.number(d), key) }
                     }
                     .accessibilityIdentifier(id)
+            case .secret:
+                secretControl(spec, id: id)
             case .enumeration(let options):
                 Text(verbatim: spec.title).font(size: 11).foregroundColor(.mutedInk)
                 Picker(spec.title, selection: Binding(get: { Self.text(stored(spec)) }, set: { save(.string($0), key) })) {

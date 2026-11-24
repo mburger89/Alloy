@@ -12,6 +12,7 @@ final class PluginRig {
     let sources: URL
     let coordinator: PluginCoordinator
     let themes: ThemeController
+    let secrets: any AgentSecretStore
 
     @MainActor final class Host: ThemeHost {
         var lightTheme: Theme = .light
@@ -20,16 +21,19 @@ final class PluginRig {
     }
 
     init(rig: Rig = Rig(), pathDirs: [String] = [], clock: any AutosaveClock = SystemAutosaveClock(),
-         probe: any PluginProcessProbe = LiveProcessProbe(), limits: PluginLimits = PluginLimits(), scripted: Bool = true) {
+         probe: any PluginProcessProbe = LiveProcessProbe(), limits: PluginLimits = PluginLimits(), scripted: Bool = true,
+         registry: CommandRegistry? = nil, secrets: any AgentSecretStore = InMemorySecretStore(), home: String? = nil) {
         self.rig = rig
+        self.secrets = secrets
         sources = rig.root.appendingPathComponent("plugin-sources")
         try? FileManager.default.createDirectory(at: sources, withIntermediateDirectories: true)
         themes = ThemeController(workspace: rig.workspace, host: Host(), watcher: nil)
         themes.stop()
         let workspace = rig.workspace
         coordinator = PluginCoordinator(paths: PluginPaths(appSupport: workspace.appSupport),
-                                        registry: CommandRegistry(workspace: { workspace }), themes: themes, pathDirs: { pathDirs },
-                                        clock: clock, probe: probe, limits: limits, scriptedPluginsSupported: scripted)
+                                        registry: registry ?? CommandRegistry(workspace: { workspace }), themes: themes, pathDirs: { pathDirs },
+                                        clock: clock, probe: probe, limits: limits, scriptedPluginsSupported: scripted, secrets: secrets,
+                                        home: home ?? ProcessInfo.processInfo.environment["HOME"] ?? NSHomeDirectory())
         coordinator.bind(workspace)
     }
 
@@ -83,8 +87,9 @@ final class PluginRig {
     /// Returns its folder; the fake logs every message to `log.jsonl` there.
     @discardableResult
     func fake(_ id: String, script: JSONValue = .object([:]), permissions: [String] = [], activation: [String] = [],
-              enable: Bool = true) throws -> URL {
-        let folder = try writeFakePlugin(id: id, in: paths.plugins, permissions: permissions, activation: activation, script: script)
+              contributes: JSONValue = .object([:]), enable: Bool = true, name: String? = nil) throws -> URL {
+        let folder = try writeFakePlugin(id: id, in: paths.plugins, permissions: permissions, activation: activation,
+                                         contributes: contributes, script: script, name: name)
         let workspace = rig.workspace
         var s = workspace.settings
         s.plugins[id] = PluginSetting(source: .folder(path: folder.path))

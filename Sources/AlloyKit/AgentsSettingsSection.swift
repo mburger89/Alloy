@@ -46,7 +46,6 @@ struct AgentsSettingsSection: Component {
     var content: some ElementGroup {
         let workspace = workspace
         let defs = workspace.agentDefinitions()
-        let defaultID = workspace.settings.defaultAgentID ?? ""
         let choices = [Choice(id: "", name: "Claude")] + workspace.installedAgents.map { Choice(id: $0.id, name: $0.name) }
         VStack(alignment: .leading, spacing: Pixels(8)) {
             Text("Agents").font(size: 12).foregroundColor(.mutedInk).accessibilityIdentifier("settings-agents-heading")

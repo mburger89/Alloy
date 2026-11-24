@@ -3,7 +3,7 @@
 A plugin is a folder with an `alloy-plugin.json` manifest. There are two tiers:
 
 - **Declarative** (no `main`): themes, language-server configs, settings and task commands. Nothing of the plugin runs inside Alloy's process; language servers and task commands are launched by Alloy itself.
-- **Scripted** (has `main`): an out-of-process JSON-RPC child that adds commands, panels and MCP tools, and can use the events and project access its permissions allow. **Not yet available:** this Alloy lists scripted plugins in Settings › Plugins as "Scripted plugins arrive in a later Alloy version"; their toggle is off, nothing of them starts (`onStartup` included) and their declarative contributions stay off too. The scripted sections below (commands, panels, MCP tools, decorations, events) describe what is coming.
+- **Scripted** (has `main`): an out-of-process JSON-RPC child that adds commands, panels and MCP tools, and can use the events and project access its permissions allow.
 
 Plugins live in Alloy's application-support folder under `Alloy/Plugins/<plugin id>/`; the folder name must equal the plugin id. Hidden folders (`.running`, `.staging`) and `*.previous` update backups are not plugins.
 
@@ -43,11 +43,11 @@ The file is a UTF-8 JSON object of at most 256 KiB. Unknown keys are errors, so 
 | --- | --- | --- |
 | `themes` | `[{path}]`; relative `.json` path inside the folder | |
 | `languageServers` | `{<server id>: <server override>}`; ids match `^[a-z0-9-]{1,64}$`; the value is the same object `settings.json` accepts under `languageServers` | `process.spawn` |
-| `settings` | `[{key, title, type: "bool"\|"string"\|"number"\|"enum", options?, default?}]`; keys match `^[A-Za-z][A-Za-z0-9_.-]{0,63}$`; `options` is a non-empty string array, enum only | |
-| `commands` | (not yet available) `[{id, title, shortcut?, menu?: "plugins", when?}]` | `main` |
+| `settings` | `[{key, title, type: "bool"\|"string"\|"number"\|"enum"\|"secret", options?, default?, env?}]` (see Secret settings); keys match `^[A-Za-z][A-Za-z0-9_.-]{0,63}$`; `options` is a non-empty string array, enum only | |
+| `commands` | `[{id, title, shortcut?, menu?: "plugins", when?}]`; registered as `<plugin id>.<id>` in the command palette (category: the plugin's name) and, with `menu: "plugins"`, in the Plugins menu. `when` is `always`, `codeMode`, `editorFocused` or `language:<id>`. A `shortcut` is not bound yet; Settings › Plugins notes it. Running one starts the plugin and sends the request `commands/execute {command: "<id>"}`; an error answer goes to the plugin's log | `main` |
 | `taskCommands` | `[{id, title, command, args?, cwd?}]` | `process.spawn` |
-| `panels` | (not yet available) `[{id, title}]` | `main` |
-| `mcpTools` | (not yet available) `[{name, description, inputSchema}]`; names match `^[a-z0-9_]{1,40}$`; `inputSchema.type` is `"object"` | `main`, `mcp.tools` |
+| `panels` | `[{id, title}]`; each is a tab in the Code sidebar (see Panels) | `main` |
+| `mcpTools` | `[{name, description, inputSchema}]` (see MCP tools); names match `^[a-z0-9_]{1,40}$`; `inputSchema.type` is `"object"` | `main`, `mcp.tools` |
 
 Command, task and panel ids match `^[A-Za-z0-9_-]{1,64}$` and are unique within their kind. A `shortcut` is a chord such as `cmd+shift+h` (the Keyboard settings format). `when` is `always` (default), `codeMode`, `editorFocused` or `language:<id>`.
 
@@ -72,7 +72,7 @@ A plugin's declared settings (switch, text, number or choice) appear in a Settin
 
 ## Lifecycle and handshake
 
-Not yet available: scripted plugins (and with them commands, panels, MCP tools, decorations and events) arrive in a later Alloy version; this section and the two after it describe the host that is built and tested but not switched on.
+Scripted plugins run today. Until the sandbox exists, permissions are enforced at the protocol only: a plugin process runs with your account's file access and can read or write whatever you can, whatever it was granted.
 
 A scripted plugin's process starts only when one of its activation events fires (never at Alloy launch unless it asks for `onStartup`). It runs as the leader of its own process group, in the plugin's folder, with a minimal environment: `PATH`, `HOME`, `LANG`, `TMPDIR` (the plugin's scratch folder), `ALLOY_PLUGIN_ID` and the plugin's own secret variables. Messages are `Content-Length` framed JSON-RPC 2.0 over stdin and stdout; stderr is kept for the log.
 
@@ -97,3 +97,93 @@ A request to a method the plugin holds no grant for (`document/text` and `projec
 Each scripted plugin's row in Settings › Plugins has a **Log** button that expands a disclosure under the row with the tail of the plugin's stderr and the last error Alloy recorded (a crash count, "disabled after repeated crashes", a failed start). The text is redacted before it is shown: each known secret value, `Bearer` tokens, `sk-`, `ghp_`, `github_pat_`, `xox*-` and `AKIA` keys, and any run of 32 or more base64-like characters become `‹redacted›`. Collapsing the disclosure removes it.
 
 A plugin Alloy switches off after three crashes is saved as disabled (`enabled: false`, `disabledAfterCrashes: true`) and listed as "disabled after crashes" until the user switches it on again. At launch Alloy starts at most three `onStartup` plugins, in the order they were enabled, once the saved layout is back. A change to a plugin's settings value reaches a running plugin as the notification `settings/changed {values}`; a changed permission restarts it at its next activation. On quit every plugin group is stopped (stdin closed, SIGTERM, SIGKILL after two seconds) in parallel.
+
+## Decorations
+
+A plugin paints open documents with the notification `decorations/set {uri, version, items}`. `uri` is the file URI of a document that is open in Alloy (a URI that is not open, or lies outside the project, is dropped, never buffered); `version` is the buffer version the line numbers and byte offsets refer to (Alloy shifts line items through later edits and drops the set if its edit log no longer reaches back). Each call replaces everything that plugin set for the document; an empty `items` clears it.
+
+Line items:
+
+- `line` (0-based), optional `endLine` (exclusive, greater than `line`).
+- `background` and `gutterBar`: a colour role.
+- `marker`: `{text, role}` drawn in the gutter; `text` is one or two characters.
+- `message`: `{text, role}` shown as a read-only row under the line; `text` is one line of at most 200 characters (longer text is cut, a line break ends it). Rows are not shown in a side-by-side comparison.
+
+Range items: `start` and `end` (UTF-8 byte offsets, `start <= end`), with `underline` and/or `tint` (a colour role).
+
+A colour role is one of `info`, `warning`, `error`, `success`, `accent`, `muted`; Alloy maps each to a theme colour, so decorations follow the theme. A plugin cannot name a literal colour.
+
+An item with a negative line, an inverted range, an unknown role, a marker that is not one or two characters, or nothing to draw is dropped and the rest of the set still paints. A set holds at most 500 items (line items first, then ranges); the rest are ignored. Plugin decorations sit below Alloy's own (diff, diagnostics, git), so on a shared row or byte range Alloy's tint, bar, marker and underline win. Every open view of a document shows the same set.
+
+Alloy applies at most one set per document per plugin every 0.25 s, and only when it differs from the one before. A plugin's decorations are removed when its process stops, it is switched off or removed, or the document closes.
+
+## Panels
+
+Each entry of `contributes.panels` adds a tab (puzzle-piece icon, labelled with the panel's title) after Git in the Code sidebar's tab row, for as long as the plugin is enabled. A panel that is not selected has no element and no task. Selecting the tab starts the plugin if needed, then sends the notification `panel/opened {panelId}`; leaving it sends `panel/closed {panelId}`. A plugin with a panel on screen is not idle-stopped. If the plugin's process ends while its panel is shown, the panel shows "Plugin stopped" above the last tree; when the plugin is running again Alloy sends `panel/opened` once more.
+
+The plugin draws with the notification `panel/render {panelId, tree}`. `tree` is one node; every node is an object with a `type` and a `key`. A `key` is unique within the panel (a duplicate rejects the whole tree). Alloy keys the widgets by `key`, so a new tree keeps focus and scroll. A tree that is rejected (duplicate key, unknown widget or role, more than 300 elements, nested deeper than 16 levels) is not shown; the reason goes to the plugin's log and the previous tree stays.
+
+| `type` | Fields |
+| --- | --- |
+| `text` | `text`, optional `role` (a colour role, as in decorations) |
+| `button` | `title` |
+| `toggle` | `title`, `isOn` (default false) |
+| `textField` | `placeholder`, `text` |
+| `picker` | `title`, `options: [{value, title}]`, `selection` (a value) |
+| `list` | `rows: [node]` |
+| `vstack`, `hstack` | `children: [node]` |
+| `divider` | none |
+
+Widgets send the notification `panel/event {panelId, key, kind, value?}`: a button sends `click`; a toggle sends `changed` with a Boolean; a picker sends `changed` with the chosen `value`; a text field sends `changed` with its whole text once 0.3 s after typing stops (never per keystroke) and `submit` with its text on Return (a pending `changed` goes first). While a text field has focus, Alloy owns its text: a new tree never overwrites it. Widgets carry the accessibility ids `plugin.panel.<plugin id>.<key>` and the panel `plugin.panel.<plugin id>.<panel id>`.
+
+## Events, `document/text` and messages
+
+Alloy sends these as notifications, never requests, and only to plugins that are running. An event never starts a plugin; the one exception is `onLanguage:<id>`, which starts the plugin when a document of that language opens. A plugin that activates on `onLanguage` needs `project.read`: without it the plugin hears no document events and the language never starts it.
+
+With `project.read`:
+
+- `document/opened {uri, languageId, version}` when a document opens. When a plugin starts, it receives `document/opened` for every document that is already open.
+- `document/saved {uri, version}` after a save wrote the file.
+- `document/closed {uri}` when the last tab holding the document closes.
+- `document/renamed` is reserved and never sent in v1 (Alloy has no rename and does not pair moves); a moved-away document gets `document/closed` when its tab closes.
+
+`uri` is a `file://` URI and `version` is the buffer version. There is no per-keystroke event: a plugin that needs the text asks for it.
+
+`document/text {uri}` (request, `project.read`) answers `{text, version}` for an open document, or error `-32012` ("not open").
+
+With `sessions.read`:
+
+- `session/turnEnded {sessionId, isError, agent}` when a session's turn ends.
+- `session/ended {sessionId, agent}` once per process run, when the session's process ends or is stopped.
+- `claude/toolUsed {sessionId, toolName, paths}` after a tool ran (PostToolUse); `paths` are the project-relative files the tool named.
+
+`agent` is `"claude"` for Alloy's own backend, otherwise the agent's id.
+
+`window/showMessage {type, message}` (notification from the plugin; `type` is `info`, `warning` or `error`) shows a notice prefixed with the plugin's name. At most one notice per five seconds per plugin; extra messages are dropped and noted in the plugin's log.
+
+## Project files and state
+
+Paths are project-relative. An absolute path, a `..` component, or a symlink that resolves outside the project is refused with `outsideProject`.
+
+- `project/read {path}` (needs `project.read`) returns `{text}`, the file as it is on disk (UTF-8). It fails with `-32012` and `data: {reason}` where reason is `binary`, `tooLarge` (over 16 MB) or `missing`. Files under `.claude` and `.git` can be read.
+- `project/write {path, text}` (needs `project.write`) writes the file atomically, creating folders as needed, and returns `{}`. Alloy does not touch the open buffer: its file watcher sees an outside edit and reloads a clean buffer. A refusal is error `-32010` ("write refused") with `data: {reason}`:
+  - `dirty`: the file is open with unsaved edits.
+  - `claudeEditing`: a Claude Code session has a pending change to the file.
+  - `outsideProject`: see above.
+  - `protectedPath`: the path is, or resolves into, a `.claude` or `.git` folder (writing git hooks would turn a write into code execution).
+- `state/get {key}` returns `{value}` (`null` when absent). `state/set {key, value}` stores a JSON value (`null` deletes it) and returns `{}`. State is per plugin and per project, kept in Alloy's per-project store, written one second after the last change and on quit. All of a plugin's state is limited to 64 KiB; past that `state/set` fails with `-32011` ("state too large") and changes nothing. State needs no permission.
+
+## MCP tools
+
+A plugin holding `mcp.tools` that lists `contributes.mcpTools` offers them to agent sessions through Alloy's MCP server. The tools are known from the manifest, so listing them starts nothing. Each is named `p_<short>_<name>`, where `<short>` is the first six hex digits of the 64-bit FNV-1a hash of the plugin id (offset `0xcbf29ce484222325`, prime `0x100000001b3`, over the UTF-8 bytes); `dev.example.todo` gives `c73409`, so its `notes_search` tool is `p_c73409_notes_search`.
+
+- `mcp/call {tool, arguments}` (Alloy to plugin) runs the tool; `tool` is the manifest name without the prefix. Answer `{text, isError?}`. Alloy starts the plugin for the call. A call not answered within 10 s, or answered with an error, reaches the agent as an error result ("The plugin did not answer in time." or "The plugin failed: <message>").
+- Every session started while the grant holds sees the tools. A session started earlier sees them after it restarts (Settings › Plugins says so on the plugin's row). Claude Code and ACP sessions both get them; an ACP session gets Alloy's MCP server for a plugin tool even with shared notes off.
+- Plugin tools are never pre-approved: the agent asks before each use, whatever the notes setting says.
+- Disabling the plugin, removing it or revoking `mcp.tools` takes the tools from every running session at once; a later call is refused as an unknown tool.
+
+## Secret settings
+
+A setting of `type: "secret"` holds a value such as an API token: `{"key": "token", "title": "API token", "type": "secret", "env": "TODO_TOKEN"}`. `env` is required, matches `^[A-Z][A-Z0-9_]{0,63}$`, and is none of `PATH`, `HOME`, `LANG`, `TMPDIR`, `SHELL`, `USER`; it does not start with `ALLOY_`, `DYLD_` or `LD_`. A secret has no `default`.
+
+Settings shows a secret as a secure field with Save. A stored one shows "Stored in your Keychain" with Remove; the field is empty again after Save. Where there is no Keychain the row says so and nothing can be stored. The value lives only in the Keychain (service `dev.alloy.plugin-secret`, account `<plugin id>/<key>`), never in `settings.json`, in the plugin's state, in `initialize.settings` or `settings/changed`, or in any protocol message. Alloy reads it when it starts the plugin and passes it as the environment variable `env`. Alloy hides every secret value in the plugin's log. Saving or removing a secret stops the running process; it starts again with the new value at its next activation. Removing the plugin deletes all of its secrets.

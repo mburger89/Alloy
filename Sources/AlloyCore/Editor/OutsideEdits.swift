@@ -429,6 +429,11 @@ extension Workspace {
         doc.buffer.isReadOnly = true
     }
 
+    /// A message from a plugin, in the same strip as the other workspace notices.
+    public func postPluginNotice(_ text: String, kind: NoticeKind) {
+        notify(path: nil, kind: kind, text: text)
+    }
+
     /// Adds a message about the user's work, keeping the newest `noticeLimit`.
     func notify(path: String?, kind: NoticeKind, text: String) {
         notices.append(Notice(path: path, kind: kind, text: text))

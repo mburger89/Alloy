@@ -359,8 +359,9 @@ public final class ServerProcess: RPCByteChannel, ServerExitObserving, @unchecke
         if let group = processGroupID {
             kill(-group, SIGTERM)
             if await waitForExit(grace) {
-                // The leader is gone; sweep any descendant that ignored SIGTERM.
-                kill(-group, SIGKILL)
+                // The leader is gone; sweep any descendant that ignored SIGTERM. A group with no member left may have
+                // its id reused by an unrelated process, so only a group that still exists is signalled.
+                if kill(-group, 0) == 0 { kill(-group, SIGKILL) }
                 return
             }
             kill(-group, SIGKILL)

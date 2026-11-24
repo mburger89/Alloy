@@ -29,13 +29,20 @@ public actor PluginHost {
     private var streaks: [String: Int] = [:]
     private var disabled: Set<String> = []
     private var restartTasks: [String: Task<Void, Never>] = [:]
+    private var restartReasons: [String: ActivationReason] = [:]
     private var timeouts: [String: Int] = [:]
     private var openPanels: Set<String> = []
     private var samplerTask: Task<Void, Never>?
+    /// Decoration hop state per (plugin, uri): what was last emitted, when, and the timer of a deferred emit.
+    private struct DecorationKey: Hashable { var id: String; var uri: String }
+    private var emitted: [DecorationKey: (set: PluginDecorationSet, time: Double)] = [:]
+    private var deferred: [DecorationKey: (set: PluginDecorationSet, task: Task<Void, Never>)] = [:]
 
     public init(paths: PluginPaths, limits: PluginLimits = PluginLimits(), clock: any AutosaveClock = SystemAutosaveClock(),
                 probe: any PluginProcessProbe = LiveProcessProbe(), baseEnvironment: [String: String],
-                services: PluginHostServices = PluginHostServices()) {
+                services: PluginHostServices = PluginHostServices(),
+                secretProvider: @escaping @Sendable (PluginRuntimeConfig) -> [String: String] = { _ in [:] }) {
+        self.secretProvider = secretProvider
         self.paths = paths
         self.limits = limits
         self.clock = clock
@@ -62,8 +69,33 @@ public actor PluginHost {
 
     public func state(of id: String) -> PluginRunState { states[id] ?? .notStarted }
 
-    public func stderrTail(of id: String) -> String { runtimes[id]?.process.stderrTail ?? lastStderr[id] ?? "" }
+    /// The plugin's stderr tail with its secret values hidden.
+    public func stderrTail(of id: String) -> String {
+        PluginLogRedactor.redact(runtimes[id]?.process.stderrTail ?? lastStderr[id] ?? "", secrets: Array(secretValues[id] ?? []))
+    }
     private var lastStderr: [String: String] = [:]
+
+    /// `text` with the plugin's secret values and token shapes hidden.
+    public func redact(_ text: String, for id: String) -> String {
+        PluginLogRedactor.redact(text, secrets: Array(secretValues[id] ?? []))
+    }
+
+    /// Forgets what was emitted or is waiting to be emitted for `uri` (one plugin's, or every plugin's when `plugin` is nil), so
+    /// a document that closes and opens again paints the identical set its plugin sends again.
+    public func forgetDecorations(plugin: String?, uri: String) {
+        for key in emitted.keys where key.uri == uri && (plugin == nil || key.id == plugin) { emitted[key] = nil }
+        for (key, entry) in deferred where key.uri == uri && (plugin == nil || key.id == plugin) {
+            entry.task.cancel()
+            deferred[key] = nil
+        }
+    }
+
+    /// Test observability: how many uris hold emit memory (emitted or deferred).
+    public var decorationMemoryCount: Int { Set(emitted.keys).union(deferred.keys).count }
+    /// Reads a plugin's secret values (the Keychain) at spawn; the host runs off the main actor.
+    private let secretProvider: @Sendable (PluginRuntimeConfig) -> [String: String]
+    /// Every secret value each plugin started with this session, for log redaction.
+    private var secretValues: [String: Set<String>] = [:]
 
     /// Replaces the environment plugins start with (the app resolves the login shell's PATH off the main actor).
     public func setBaseEnvironment(_ environment: [String: String]) { baseEnvironment = environment }
@@ -123,6 +155,10 @@ public actor PluginHost {
             timeouts[id] = 0
             return answer
         } catch let error as JSONRPCError {
+            // The plugin was stopped (disabled, removed, workspace change) while this request was out: it is cancelled, not failed.
+            if error.code == JSONRPCError.connectionClosed.code, runtimes[id]?.generation != runtime.generation {
+                throw JSONRPCError(code: JSONRPCError.requestCancelled, message: "Cancelled")
+            }
             if error.code == JSONRPCError.timedOut.code {
                 timeouts[id, default: 0] += 1
                 if timeouts[id, default: 0] >= limits.timeoutsToRestart { timeouts[id] = 0; await crash(runtime) }
@@ -160,6 +196,12 @@ public actor PluginHost {
         let old = root
         if let old { await notify(Array(runtimes.keys), "workspace/closed", .object(["root": .string(Self.fileURI(old))])) }
         cancelInflight()
+        // A crash restart scheduled for a project-bound reason must not fire into the next project.
+        for (id, reason) in restartReasons where reason.isProjectBound {
+            restartTasks.removeValue(forKey: id)?.cancel()
+            restartReasons[id] = nil
+            setState(id, .stopped)
+        }
         for (id, runtime) in runtimes where runtime.lastActivation.isProjectBound { await stop(id) }
         root = newRoot
         if let newRoot {
@@ -170,6 +212,7 @@ public actor PluginHost {
     public func stop(_ id: String) async {
         if let pending = starting[id] { _ = await pending.value }
         restartTasks.removeValue(forKey: id)?.cancel()
+        restartReasons[id] = nil
         guard let runtime = runtimes.removeValue(forKey: id) else { return }
         await terminate(runtime)
         cancelInflight(for: id)
@@ -179,6 +222,7 @@ public actor PluginHost {
     public func shutdown() async {
         for task in restartTasks.values { task.cancel() }
         restartTasks = [:]
+        restartReasons = [:]
         for id in Array(starting.keys) { _ = await starting[id]?.value }
         // In parallel: one plugin that ignores SIGTERM costs the grace period once, not once per plugin.
         await withTaskGroup(of: Void.self) { group in
@@ -220,7 +264,11 @@ public actor PluginHost {
         var environment = baseEnvironment
         environment["TMPDIR"] = scratch.path
         environment["ALLOY_PLUGIN_ID"] = id
-        for (key, value) in config.secretEnvironment { environment[key] = value }
+        var secrets = config.secretEnvironment
+        for (key, value) in secretProvider(config) { secrets[key] = value }
+        for (key, value) in secrets { environment[key] = value }
+        // Every value seen this session stays redacted: clearing a secret, then failing a spawn, must not unmask the old one.
+        secretValues[id, default: []].formUnion(secrets.values)
         let command = main.command.contains("/") && !main.command.hasPrefix("/")
             ? config.folder.appendingPathComponent(main.command).path : main.command
         let process: ServerProcess
@@ -259,7 +307,32 @@ public actor PluginHost {
             }
         }
         let sink = eventSink
-        await connection.onNotification { method, params in
+        let cap = limits.maxDecorations
+        let inbox = runtime.decorationInbox
+        let maxElements = limits.maxPanelElements
+        await connection.onNotification { [weak self] method, params in
+            if method == "decorations/set" {
+                // Parsed here, in arrival order; the host emits the newest per uri once per hop.
+                if let params, let parsed = PluginDecorationSet.parse(params, cap: cap),
+                   inbox.put(uri: parsed.uri, parsed.set) {
+                    Task { await self?.drainDecorations(id: id, generation: gen) }
+                }
+                return
+            }
+            if method == "panel/render" {
+                guard let panelID = params?["panelId"]?.stringValue, let tree = params?["tree"] else { return }
+                switch PluginPanelTree.parse(tree, maxElements: maxElements) {
+                case .success(let parsed): sink.yield(.panel(id: id, panelID: panelID, tree: parsed))
+                case .failure(let error): sink.yield(.panelRejected(id: id, panelID: panelID, reason: error.description))
+                }
+                return
+            }
+            if method == "window/showMessage" {
+                guard let text = params?["message"]?.stringValue, !text.isEmpty else { return }
+                let type = params?["type"]?.stringValue ?? "info"
+                sink.yield(.showMessage(id: id, type: ["info", "warning", "error"].contains(type) ? type : "info", message: text))
+                return
+            }
             sink.yield(.notification(id: id, method: method, params: params))
         }
         await connection.onRequest { [weak self] method, params in
@@ -321,6 +394,47 @@ public actor PluginHost {
         }
     }
 
+    // MARK: - Decorations
+
+    /// Emits each pending uri's newest set: at once when the last emit for it is a hop old, else after the rest of the hop.
+    /// A set equal to the last emitted one is not emitted again.
+    private func drainDecorations(id: String, generation gen: Int) {
+        guard let runtime = runtimes[id], runtime.generation == gen else { return }
+        let now = clock.now
+        for (uri, set) in runtime.decorationInbox.take() {
+            let key = DecorationKey(id: id, uri: uri)
+            if let old = deferred.removeValue(forKey: key) { old.task.cancel() }
+            let wait = (emitted[key]?.time).map { $0 + limits.decorationHop - now } ?? 0
+            if wait <= 0 {
+                emitDecorations(key, set, at: now)
+            } else {
+                let task = Task { [weak self] in
+                    guard let clock = self?.clock else { return }
+                    do { try await clock.sleep(until: now + wait) } catch { return }
+                    await self?.flushDecorations(key, generation: gen)
+                }
+                deferred[key] = (set, task)
+            }
+        }
+    }
+
+    private func flushDecorations(_ key: DecorationKey, generation gen: Int) {
+        guard let entry = deferred.removeValue(forKey: key), runtimes[key.id]?.generation == gen else { return }
+        emitDecorations(key, entry.set, at: clock.now)
+    }
+
+    private func emitDecorations(_ key: DecorationKey, _ set: PluginDecorationSet, at now: Double) {
+        guard emitted[key]?.set != set else { return }
+        emitted[key] = (set, now)
+        eventSink.yield(.decorations(id: key.id, uri: key.uri, set: set))
+    }
+
+    /// Forgets what a plugin's decorations did (its process ended): the next run starts with a clean slate.
+    private func clearDecorations(for id: String) {
+        for key in emitted.keys where key.id == id { emitted[key] = nil }
+        for (key, entry) in deferred where key.id == id { entry.task.cancel(); deferred[key] = nil }
+    }
+
     // MARK: - Crashes and restarts
 
     private func crash(id: String, generation gen: Int) async {
@@ -353,6 +467,7 @@ public actor PluginHost {
         let delay = limits.backoff.isEmpty ? 0 : limits.backoff[min(streak - 1, limits.backoff.count - 1)]
         let reason = runtime.lastActivation
         restartTasks[id]?.cancel()
+        restartReasons[id] = reason
         restartTasks[id] = Task { [weak self] in
             guard let clock = self?.clock else { return }
             do { try await clock.sleep(until: clock.now + delay) } catch { return }
@@ -362,6 +477,7 @@ public actor PluginHost {
 
     private func restart(_ id: String, _ reason: ActivationReason) async {
         restartTasks[id] = nil
+        restartReasons[id] = nil
         _ = await activate(id, reason)
     }
 
@@ -455,13 +571,15 @@ public actor PluginHost {
         Task { await process.close(); closed.set() }
         for _ in 0..<20 where !closed.isSet { try? await Task.sleep(for: .milliseconds(5)) }
         await runtime.process.stop(grace: limits.stopGrace)
-        // The leader may have left on stdin EOF while a descendant lives on.
-        if let group = runtime.process.processGroupID { kill(-group, SIGKILL) }
+        // The leader may have left on stdin EOF while a descendant lives on. Signal only a group that still has members:
+        // with the leader reaped and nobody left, the id may already belong to an unrelated process.
+        if let group = runtime.process.processGroupID, kill(-group, 0) == 0 { kill(-group, SIGKILL) }
         await runtime.connection.close()
         runtime.idleTask?.cancel()
         runtime.idleTask = nil
         recordRunning()
         syncSampler()
+        clearDecorations(for: runtime.id)
     }
 
     private func recordRunning() {

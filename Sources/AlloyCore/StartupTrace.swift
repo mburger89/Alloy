@@ -5,7 +5,7 @@ import Foundation
 /// Bool check: no formatting, no clock, no syscall.
 public enum StartupTrace {
     /// Read once, on the first mark.
-    nonisolated(unsafe) public static let isEnabled: Bool = getenv("ALLOY_STARTUP_TRACE").map { String(cString: $0) == "1" } ?? false
+    public static let isEnabled: Bool = getenv("ALLOY_STARTUP_TRACE").map { String(cString: $0) == "1" } ?? false
     private static let shared = Recorder(enabled: isEnabled, now: Recorder.millisecondsSinceProcessStart) { line in
         fputs(line + "\n", stderr)
     }

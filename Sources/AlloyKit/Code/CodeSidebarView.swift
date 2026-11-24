@@ -24,7 +24,12 @@ struct CodeSidebarView: Component, Equatable {
         let coordinator = workspace.gitServices as? GitCoordinator
         let stored = workspace.codeLayout.sidebarTab
         // A saved Git tab in a folder that is not a repository shows Files.
-        let selected: SidebarTab = (stored == .git && coordinator == nil) ? .files : stored
+        let builtin: SidebarTab = (stored == .git && coordinator == nil) ? .files : stored
+        // A selected plugin panel shows over the stored tab; one whose plugin is gone falls back to it.
+        let plugins = workspace.pluginServices as? PluginCoordinator
+        let panelTabs = plugins?.panels.tabs ?? []
+        let panel = workspace.codeLayout.pluginPanel.flatMap { key in panelTabs.first { $0.key == key } }
+        let selected: SidebarTab? = panel == nil ? builtin : nil
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 0) {
                 tabButton(.files, symbol: "folder", label: "Files", selected: selected)
@@ -32,12 +37,16 @@ struct CodeSidebarView: Component, Equatable {
                 if coordinator != nil {
                     tabButton(.git, symbol: "arrow.triangle.branch", label: "Git", selected: selected)
                 }
+                ForEach(panelTabs, id: \.key) { tab in pluginTabButton(tab, selected: panel == tab) }
                 Spacer()
             }
             .padding(inset(codeSidebarTabRowInset.x, codeSidebarTabRowInset.y))
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("code-sidebar-tabs")
-            if selected == .git, let coordinator {
+            if let panel, let plugins {
+                PluginPanelView(model: plugins.panels.model(panel.pluginID, panel.panelID),
+                                send: plugins.panelSender(panel.pluginID, panel.panelID)).equatable()
+            } else if selected == .git, let coordinator {
                 GitTab(coordinator: coordinator).equatable()
             } else if selected == .search {
                 SearchView(workspace: workspace)
@@ -49,9 +58,10 @@ struct CodeSidebarView: Component, Equatable {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    @ElementBuilder private func tabButton(_ tab: SidebarTab, symbol: String, label: String, selected: SidebarTab) -> some ElementGroup {
+    @ElementBuilder private func tabButton(_ tab: SidebarTab, symbol: String, label: String, selected: SidebarTab?) -> some ElementGroup {
         let workspace = workspace
         Button {
+            workspace.codeLayout.pluginPanel = nil
             workspace.codeLayout.sidebarTab = tab
         } label: {
             Image(systemName: symbol).font(.system(size: codeSidebarTabIconSize)).padding(codeSidebarTabPadding)
@@ -61,5 +71,19 @@ struct CodeSidebarView: Component, Equatable {
         .accessibilityLabel(label)
         .accessibilityAddTraits(selected == tab ? .isSelected : [])
         .accessibilityIdentifier("code-sidebar-tab-\(tab.rawValue)")
+    }
+
+    @ElementBuilder private func pluginTabButton(_ tab: PluginPanelTab, selected: Bool) -> some ElementGroup {
+        let workspace = workspace
+        Button {
+            workspace.codeLayout.pluginPanel = tab.key
+        } label: {
+            Image(systemName: "puzzlepiece.extension").font(.system(size: codeSidebarTabIconSize)).padding(codeSidebarTabPadding)
+                .foregroundColor(Self.tabInk(selected: selected))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(tab.title)
+        .accessibilityAddTraits(selected ? .isSelected : [])
+        .accessibilityIdentifier("code-sidebar-tab-plugin-\(tab.pluginID)-\(tab.panelID)")
     }
 }

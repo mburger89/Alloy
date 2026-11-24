@@ -18,6 +18,9 @@ private enum HostCommand: Sendable {
     case activate(String, ActivationReason, reply: (@Sendable (Bool) -> Void)?)
     case notify([String], String, JSONValue?)
     case workspace(URL?)
+    case setPanelOpen(String, Bool)
+    case forgetDecorations(plugin: String?, uri: String)
+    case stop(String)
     case shutdown
 }
 
@@ -45,29 +48,68 @@ public final class PluginCoordinator {
     public var pickFolder: (@MainActor () async -> URL?)?
 
     private let paths: PluginPaths
-    private let registry: CommandRegistry
+    /// The home directory plugin processes start with (tests point it at a temporary one).
+    private let home: String
+    let registry: CommandRegistry
     private let themes: ThemeController?
     private let pathDirs: @Sendable () -> [String]
-    private weak var workspace: Workspace?
+    weak var workspace: Workspace?
+    /// The command specs registered per plugin, the row notes registration produced and the language ids already looked up
+    /// (see `PluginCoordinator+Commands`).
+    var registeredCommands: [String: [PluginCommandSpec]] = [:]
+    var commandNotes: [String: [String]] = [:]
+    var languageCache: [String: String?] = [:]
+    /// What plugins decorate open documents with (see `PluginCoordinator+Decorations`).
+    let decorations = PluginDecorationStore()
+    /// The panel tabs and trees (see `PluginCoordinator+Panels`).
+    let panels: PluginPanelStore
+    /// Plugins whose process went down while a panel was open; the next start re-sends `panel/opened`.
+    var panelWasDown: Set<String> = []
+    /// When each plugin last posted a `window/showMessage` notice (clock time), for the toast interval.
+    var lastToast: [String: Double] = [:]
+    /// The bound project's plugin state (created on first use, flushed on shutdown and when the workspace changes).
+    var stateStore: PluginStateStore?
+    var stateStoreWorkspace: ObjectIdentifier?
+    /// The MCP tool specs per plugin the server currently serves, the workspace they went to and the last server update.
+    var appliedMCP: [String: [PluginMCPToolSpec]] = [:]
+    var mcpWorkspace: ObjectIdentifier?
+    var mcpUpdate: Task<Void, Never>?
+    /// Test seam: how each command run ended, as the plugin's error code (nil: answered).
+    var commandOutcomes: [(plugin: String, command: String, code: Int?)] = [] {
+        didSet { if commandOutcomes.count > Self.maxLogLines { commandOutcomes.removeFirst(commandOutcomes.count - Self.maxLogLines) } }
+    }
+    /// What each plugin's inline Log shows besides its stderr: dropped messages, rejected panel trees, failed commands. At
+    /// most `maxLogLines` per plugin, newest last; written only through `appendLog`.
+    private(set) var commandErrors: [String: [String]] = [:]
+    static let maxLogLines = 50
+
+    /// Adds a line to the plugin's log (token shapes hidden now, its secret values when the log is read), keeping the newest 50.
+    func appendLog(plugin: String, _ line: String) {
+        var lines = commandErrors[plugin] ?? []
+        lines.append(PluginLogRedactor.redact(line))
+        if lines.count > Self.maxLogLines { lines.removeFirst(lines.count - Self.maxLogLines) }
+        commandErrors[plugin] = lines
+    }
     private var catalog: [String: PluginCatalogEntry] = [:]
     private var appliedThemes: [ThemeEntry] = []
     private var appliedServers: [String: ServerConfigOverride] = [:]
     private weak var appliedLSP: LSPCoordinator?
-    private let clock: any AutosaveClock
+    let clock: any AutosaveClock
     private let probe: any PluginProcessProbe
-    private let limits: PluginLimits
+    /// Where plugin secrets live (Keychain service `dev.alloy.plugin-secret`); a value is read only by the host at spawn.
+    public let secrets: any AgentSecretStore
+    let limits: PluginLimits
     private var hostPump: HostPump?
     /// The previous host's wind-down; the next host waits for it so two hosts never own one plugin's processes.
     private var retiring: Task<Void, Never>?
-    private var appliedConfigs: [String: PluginRuntimeConfig] = [:]
+    var appliedConfigs: [String: PluginRuntimeConfig] = [:]
     private var runStates: [String: PluginRunState] = [:]
     private var scriptedOrder: [String] = []
     private var scanned = false
     private var startupNoted = false
     private var startupRan = false
     private var staleCleaned = false
-    /// False until Alloy can run scripted plugins end to end (their commands, panels and tools); then a plugin with `main`
-    /// is listed but stays off.
+    /// False while Alloy cannot run scripted plugins end to end; then a plugin with `main` is listed but stays off.
     public let scriptedPluginsSupported: Bool
     /// The enabled theme files the applied themes were loaded from.
     private var appliedThemeFiles: [ThemeFileRef]?
@@ -79,7 +121,11 @@ public final class PluginCoordinator {
 
     public init(paths: PluginPaths, registry: CommandRegistry, themes: ThemeController?, pathDirs: @escaping @Sendable () -> [String],
                 clock: any AutosaveClock = SystemAutosaveClock(), probe: any PluginProcessProbe = LiveProcessProbe(),
-                limits: PluginLimits = PluginLimits(), scriptedPluginsSupported: Bool = false) {
+                limits: PluginLimits = PluginLimits(), scriptedPluginsSupported: Bool = false,
+                secrets: any AgentSecretStore = UnavailableSecretStore(),
+                home: String = ProcessInfo.processInfo.environment["HOME"] ?? NSHomeDirectory()) {
+        self.home = home
+        self.secrets = secrets
         self.scriptedPluginsSupported = scriptedPluginsSupported
         self.paths = paths
         self.registry = registry
@@ -88,7 +134,11 @@ public final class PluginCoordinator {
         self.clock = clock
         self.probe = probe
         self.limits = limits
+        panels = PluginPanelStore(debounce: limits.textFieldDebounce)
     }
+
+    /// Whether the plugin is one the host currently runs for (enabled, granted and not retired).
+    func isActive(_ id: String) -> Bool { appliedConfigs[id] != nil }
 
     /// The host; it exists only while at least one effectively enabled scripted plugin does.
     var host: PluginHost? { hostPump?.host }
@@ -99,7 +149,16 @@ public final class PluginCoordinator {
         PluginCoordinator(paths: PluginPaths(appSupport: appSupport), registry: center.registry, themes: themes, pathDirs: {
             (ClaudeLocator.loginShell().path ?? ProcessInfo.processInfo.environment["PATH"] ?? "")
                 .split(separator: ":").map(String.init)
-        }, scriptedPluginsSupported: false)
+        }, scriptedPluginsSupported: true, secrets: systemSecretStore(service: Self.pluginSecretService))
+    }
+
+    /// The Keychain service plugin secrets use.
+    public static var pluginSecretService: String {
+        #if canImport(Security)
+        KeychainSecretStore.pluginService
+        #else
+        "dev.alloy.plugin-secret"
+        #endif
     }
 
     /// Valid manifests of the installed plugin folders.
@@ -115,6 +174,16 @@ public final class PluginCoordinator {
         self.workspace = workspace
         workspace.pluginServices = self
         workspace.onPluginsChanged = { [weak self] _ in self?.recompute() }
+        workspace.pluginToolScopes = { [weak self] in self?.pluginToolScopes ?? [] }
+        if let previous, previous !== workspace {
+            decorations.removeAll()
+            if let store = stateStore { Task { await store.flush() } }
+            stateStore = nil
+            stateStoreWorkspace = nil
+        }
+        installDocumentEvents(on: workspace)
+        installPanelSelection(on: workspace)
+        installSessionEvents(on: workspace)
         workspace.addStopHook { [weak self, weak workspace] in
             guard let self, let workspace, self.workspace === workspace else { return }
             await self.shutdown()
@@ -162,6 +231,7 @@ public final class PluginCoordinator {
     public func shutdown() async {
         retire()
         await retiring?.value
+        await stateStore?.flush()
     }
 
     /// The plugin's stderr tail (secrets and token shapes redacted) and the last error the host reported.
@@ -175,8 +245,30 @@ public final class PluginCoordinator {
         case .needsAPI(let v)?: lines.append("Last error: needs plugin API v\(v)")
         default: break
         }
-        return lines.filter { !$0.isEmpty }.joined(separator: "\n")
+        lines += commandErrors[id] ?? []
+        let text = lines.filter { !$0.isEmpty }.joined(separator: "\n")
+        guard let host = hostPump?.host else { return text }
+        return await host.redact(text, for: id)
     }
+
+    /// Sends one notification to the plugin if it runs (the ordered pump keeps it behind earlier commands).
+    func notifyPlugin(_ id: String, _ method: String, _ params: JSONValue?) {
+        hostPump?.commands.yield(.notify([id], method, params))
+    }
+
+    /// Sends one notification to every running plugin among `ids`; the host encodes the body once.
+    func notifyPlugins(_ ids: [String], _ method: String, _ params: JSONValue?) {
+        guard !ids.isEmpty else { return }
+        hostPump?.commands.yield(.notify(ids, method, params))
+    }
+
+    /// The host stops remembering what it emitted for `uri` (the document closed or was not open).
+    func forgetDecorations(plugin: String? = nil, uri: String) { hostPump?.commands.yield(.forgetDecorations(plugin: plugin, uri: uri)) }
+
+    func setPanelOpen(_ id: String, _ open: Bool) { hostPump?.commands.yield(.setPanelOpen(id, open)) }
+
+    /// Starts the plugin without waiting for it.
+    func activateAsync(_ id: String, _ reason: ActivationReason) { hostPump?.commands.yield(.activate(id, reason, reply: nil)) }
 
     /// Starts the plugin's process now (test seam; later tasks activate through events). True when it runs afterwards.
     func activate(plugin id: String, _ reason: ActivationReason) async -> Bool {
@@ -191,13 +283,20 @@ public final class PluginCoordinator {
     // MARK: Host
 
     private func makeHostPump() -> HostPump {
-        let host = PluginHost(paths: paths, limits: limits, clock: clock, probe: probe, baseEnvironment: Self.environment(pathDirs: []))
+        let services = PluginHostServices { [weak self] id, method, params in
+            guard let self else { return .failure(JSONRPCError(code: JSONRPCError.requestCancelled, message: "Cancelled")) }
+            return await self.answerRequest(from: id, method, params)
+        }
+        let store = secrets
+        let host = PluginHost(paths: paths, limits: limits, clock: clock, probe: probe,
+                              baseEnvironment: Self.environment(pathDirs: [], home: home), services: services,
+                              secretProvider: { config in Self.secretEnvironment(config.manifest, store) })
         let (stream, commands) = AsyncStream<HostCommand>.makeStream()
-        let prior = retiring, pathDirs = pathDirs
+        let prior = retiring, pathDirs = pathDirs, home = home
         let pump = Task.detached {
             await prior?.value
             // The login shell's PATH can block, so it is resolved here, before the first command.
-            await host.setBaseEnvironment(Self.environment(pathDirs: pathDirs()))
+            await host.setBaseEnvironment(Self.environment(pathDirs: pathDirs(), home: home))
             loop: for await command in stream {
                 switch command {
                 case .configure(let configs): await host.configure(configs)
@@ -206,6 +305,9 @@ public final class PluginCoordinator {
                     reply?(ok)
                 case .notify(let ids, let method, let params): await host.notify(ids, method, params)
                 case .workspace(let root): await host.setWorkspace(root: root)
+                case .setPanelOpen(let id, let open): await host.setPanelOpen(id, open)
+                case .forgetDecorations(let plugin, let uri): await host.forgetDecorations(plugin: plugin, uri: uri)
+                case .stop(let id): await host.stop(id)
                 case .shutdown:
                     await host.shutdown()
                     break loop
@@ -222,10 +324,10 @@ public final class PluginCoordinator {
         return HostPump(host: host, commands: commands, pump: pump, events: events)
     }
 
-    private nonisolated static func environment(pathDirs: [String]) -> [String: String] {
+    private nonisolated static func environment(pathDirs: [String], home: String) -> [String: String] {
         let env = ProcessInfo.processInfo.environment
         return ["PATH": pathDirs.isEmpty ? "/usr/bin:/bin" : pathDirs.joined(separator: ":"),
-                "HOME": env["HOME"] ?? NSHomeDirectory(), "LANG": env["LANG"] ?? "en_US.UTF-8"]
+                "HOME": home, "LANG": env["LANG"] ?? "en_US.UTF-8"]
     }
 
     /// Closes the host: it stops every plugin, then ends its tasks. `hasHost` is false at once.
@@ -234,14 +336,25 @@ public final class PluginCoordinator {
         hostPump = nil
         appliedConfigs = [:]
         runStates = [:]
+        lastToast = [:]
+        decorations.removeAll()
         old.commands.yield(.shutdown)
         old.commands.finish()
         retiring = Task { await old.pump.value; await old.events.value }
     }
 
     private func handle(_ event: PluginHostEvent) {
+        if case .decorations(let id, let uri, let set) = event { applyDecorations(id: id, uri: uri, set: set); return }
+        if handlePanelEvent(event) { return }
+        if case .showMessage(let id, let type, let message) = event { showMessage(id: id, type: type, message: message); return }
+        if case .started(let id) = event { panelPluginStarted(id); pluginStartedForEvents(id); return }
         guard case .state(let id, let state) = event, appliedConfigs[id] != nil else { return }
         runStates[id] = state
+        panelStateChanged(id, state)
+        switch state {
+        case .running, .starting, .notStarted: break
+        default: decorations.remove(pluginID: id)   // a stopped, crashed or disabled plugin shows nothing
+        }
         if state == .disabledAfterCrashes {
             try? mutate(id) { $0.enabled = false; $0.disabledAfterCrashes = true }
         }
@@ -320,7 +433,11 @@ public final class PluginCoordinator {
         guard s.plugins.removeValue(forKey: id) != nil || catalog[id] != nil else { throw PluginError.unknownPlugin(id) }
         try workspace.updateSettings(s)
         let installer = PluginInstaller(paths: paths, pathDirs: [])
-        try await Task.detached { try installer.remove(id: id) }.value
+        let store = secrets
+        try await Task.detached {
+            try installer.remove(id: id)
+            try store.deleteAll(agent: id)
+        }.value
         catalog[id] = nil
         recompute()
     }
@@ -330,7 +447,54 @@ public final class PluginCoordinator {
     }
 
     public func setValue(_ value: JSONValue?, key: String, for id: String) throws {
+        // A secret never lands in settings.json.
+        if case .success(let m)? = catalog[id]?.manifest,
+           m.contributes.settings.contains(where: { $0.key == key && Self.isSecret($0) }) { throw PluginError.badManifest("\(key) is a secret setting") }
         try mutate(id) { $0.values[key] = value }
+    }
+
+    private static func isSecret(_ spec: PluginSettingSpec) -> Bool {
+        if case .secret = spec.type { true } else { false }
+    }
+
+    /// The environment variables of a plugin's secret settings, read from the store (Keychain; call off the main actor).
+    nonisolated static func secretEnvironment(_ manifest: PluginManifest, _ store: any AgentSecretStore) -> [String: String] {
+        var out: [String: String] = [:]
+        for spec in manifest.contributes.settings {
+            guard case .secret(let env) = spec.type, let value = try? store.get(agent: manifest.id, variable: spec.key),
+                  !value.isEmpty else { continue }
+            out[env] = value
+        }
+        return out
+    }
+
+    private func requireSecret(_ key: String, _ id: String) throws {
+        guard case .success(let m)? = catalog[id]?.manifest else { throw PluginError.unknownPlugin(id) }
+        guard m.contributes.settings.contains(where: { $0.key == key && Self.isSecret($0) }) else {
+            throw PluginError.badManifest("\(key) is not a secret setting")
+        }
+    }
+
+    /// Whether secrets can be kept here (the Keychain exists).
+    public var secretsAvailable: Bool { secrets.isAvailable }
+
+    /// The keys of the plugin's stored secrets, never their values; read off the main actor.
+    public func storedSecretKeys(for id: String) async -> Set<String> {
+        let store = secrets
+        return await Task.detached { Set((try? store.names(agent: id)) ?? []) }.value
+    }
+
+    /// Stores the secret and stops the plugin's process; the next activation starts it with the new value.
+    public func setSecret(_ value: String, key: String, for id: String) throws {
+        try requireSecret(key, id)
+        try secrets.set(value, agent: id, variable: key)
+        hostPump?.commands.yield(.stop(id))
+    }
+
+    public func clearSecret(key: String, for id: String) throws {
+        try requireSecret(key, id)
+        try secrets.delete(agent: id, variable: key)
+        hostPump?.commands.yield(.stop(id))
     }
 
     private func mutate(_ id: String, _ change: (inout PluginSetting) -> Void) throws {
@@ -363,6 +527,9 @@ public final class PluginCoordinator {
         var notes: [String: [String]] = [:]
         var effective: Set<String> = []
         var configs: [PluginRuntimeConfig] = []
+        var commandSpecs: [String: [PluginCommandSpec]] = [:]
+        var panelSpecs: [(pluginID: String, panels: [PluginPanelSpec])] = []
+        var mcpSpecs: [String: [PluginMCPToolSpec]] = [:]
         for id in order {
             guard let setting = plugins[id], setting.enabled, let entry = catalog[id], case .success(let m) = entry.manifest,
                   scriptedPluginsSupported || !m.isScripted, m.apiVersion == PluginManifestLoader.apiVersion, !Self.needsSandbox(m), m.permissions.isSubset(of: setting.grants),
@@ -370,6 +537,12 @@ public final class PluginCoordinator {
             effective.insert(id)
             if m.isScripted {
                 configs.append(PluginRuntimeConfig(manifest: m, folder: entry.folder, grants: setting.grants, values: setting.values))
+                if !m.contributes.commands.isEmpty { commandSpecs[id] = m.contributes.commands }
+                if !m.contributes.panels.isEmpty { panelSpecs.append((id, m.contributes.panels)) }
+                if !m.contributes.mcpTools.isEmpty, setting.grants.contains(.mcpTools) {
+                    mcpSpecs[id] = m.contributes.mcpTools
+                    notes[id, default: []].append(Self.mcpRowNote)
+                }
             }
             for ref in m.contributes.themes {
                 themeFiles.append((id, entry.folder.appendingPathComponent(ref.path)))
@@ -384,10 +557,14 @@ public final class PluginCoordinator {
             }
         }
 
+        applyCommands(commandSpecs)
+        applyPanels(panelSpecs.sorted { $0.pluginID < $1.pluginID })
+        applyMCPTools(mcpSpecs)
         for id in ids {
             // A folder with no settings entry is listed as not enabled.
             let setting = plugins[id] ?? PluginSetting(source: .folder(path: catalog[id]?.folder.path ?? ""))
-            rows.append(row(id: id, setting: setting, hasEntry: plugins[id] != nil, effective: effective.contains(id), notes: notes[id] ?? []))
+            rows.append(row(id: id, setting: setting, hasEntry: plugins[id] != nil, effective: effective.contains(id),
+                            notes: (notes[id] ?? []) + (commandNotes[id] ?? [])))
         }
         status.update(rows)
         applyScripted(configs)
@@ -407,6 +584,7 @@ public final class PluginCoordinator {
         let lsp = workspace?.languageServices as? LSPCoordinator
         if servers != appliedServers || lsp !== appliedLSP {
             appliedServers = servers
+            languageCache = [:]
             appliedLSP = lsp
             lsp?.setPluginServers(servers)
         }
@@ -421,6 +599,7 @@ public final class PluginCoordinator {
         guard next != appliedConfigs, let commands = hostPump?.commands else { return }
         let previous = appliedConfigs
         appliedConfigs = next
+        for id in previous.keys where next[id] == nil { decorations.remove(pluginID: id) }
         runStates = runStates.filter { next[$0.key] != nil }
         commands.yield(.configure(configs))
         for config in configs {

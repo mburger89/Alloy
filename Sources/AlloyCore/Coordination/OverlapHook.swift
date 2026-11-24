@@ -56,7 +56,19 @@ extension Workspace {
     /// The server's handler: hops to the main actor, and does nothing for a request whose deadline already passed.
     func answerHook(_ request: HookRequest, _ caller: MCPCaller) async -> HookReply {
         guard !Task.isCancelled, !isShuttingDown else { return HookReply() }
-        return handleHook(request, caller: caller)
+        let reply = handleHook(request, caller: caller)
+        noteToolUsed(request, caller: caller)
+        return reply
+    }
+
+    /// PostToolUse only: tells plugins which project files the tool named. Only enqueues; nothing here waits on a plugin.
+    private func noteToolUsed(_ request: HookRequest, caller: MCPCaller) {
+        guard request.event == .postToolUse, let onSessionEvent, let s = session(caller.sessionID) else { return }
+        var paths: [String] = []
+        for key in ["file_path", "notebook_path"] {
+            if let raw = request.toolInput[key]?.stringValue, let rel = hookRelativePath(raw), !paths.contains(rel) { paths.append(rel) }
+        }
+        onSessionEvent(.toolUsed(sessionID: s.id, toolName: request.toolName, paths: paths))
     }
 
     /// PreToolUse: register the session's change, then tell it about overlaps it has not heard of. PostToolUse:

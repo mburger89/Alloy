@@ -23,6 +23,8 @@ public struct PluginThemeRef: Equatable, Sendable {
 public enum PluginSettingType: Equatable, Sendable {
     case bool, string, number
     case enumeration([String])
+    /// Kept in the Keychain and handed to the plugin's process as the environment variable `env`.
+    case secret(env: String)
 }
 
 public struct PluginSettingSpec: Equatable, Sendable {

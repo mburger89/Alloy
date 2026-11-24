@@ -20,4 +20,13 @@ public enum Guidance {
     public static let alloyToolNames = notesToolNames + coordinationToolNames
     /// The same tools without the Claude `mcp__alloy__` prefix, for agents that name them their own way.
     public static let alloyToolShortNames = alloyToolNames.map { String($0.dropFirst("mcp__alloy__".count)) }
+
+    /// Whether a permission request's tool name (as the agent shows it) is one of Alloy's pre-approved tools of the
+    /// server named `server`. A plugin tool (`p_<6 hex>_<name>`) never is, even when its name ends in a notes tool's.
+    public static func isAlloyToolTitle(_ title: String, server: String) -> Bool {
+        let t = title.lowercased()
+        guard t.contains(server.lowercased()) else { return false }
+        if t.range(of: "(?<![a-z0-9])p_[0-9a-f]{6}_", options: .regularExpression) != nil { return false }
+        return alloyToolShortNames.contains { t.contains($0) }
+    }
 }

@@ -60,6 +60,12 @@ public final class CodeLayout {
         didSet { if sidebarTab != oldValue { onSidebarTabChange?() } }
     }
     @ObservationIgnored var onSidebarTabChange: (() -> Void)?
+    /// The plugin panel the sidebar shows (`"<pluginID>/<panelID>"`), over the stored tab; nil shows the stored tab. Not
+    /// persisted. Selecting a built-in tab clears it. A change runs `onPluginPanelChange(old, new)`.
+    public var pluginPanel: String? {
+        didSet { if pluginPanel != oldValue { onPluginPanelChange?(oldValue, pluginPanel) } }
+    }
+    @ObservationIgnored public var onPluginPanelChange: (@MainActor (String?, String?) -> Void)?
     /// Runs when `focus(_:)` names a group (the workspace tracks which pane was focused last).
     @ObservationIgnored var onFocus: ((UUID) -> Void)?
     /// How the groups are split; leaves are the keys of `groups`.

@@ -11,8 +11,9 @@ public struct MCPCaller: Sendable {
     }
 }
 
-/// Which sessions may see a tool: `.shared` tools go to every session, `.theme` tools only to theme-making sessions.
-public enum MCPToolScope: String, Sendable, Hashable { case shared, theme }
+/// Which sessions may see a tool: `.shared` tools go to every session, `.theme` tools only to theme-making sessions and
+/// `.plugin(id)` tools only to sessions started while that plugin's `mcp.tools` grant held.
+public enum MCPToolScope: Hashable, Sendable { case shared, theme, plugin(String) }
 
 public struct MCPToolResult: Sendable, Equatable {
     public let text: String

@@ -150,4 +150,26 @@ struct PluginManifestTests {
         #expect(failure(load(#""contributes":{"themes":[{"path":"../t.json"}]}"#)) != nil)
         #expect(failure(load(#""contributes":{"themes":[{"path":"t.txt"}]}"#)) != nil)
     }
+
+    private func secret(_ item: String) -> Result<PluginManifest, PluginManifestError> {
+        load(#""contributes":{"settings":[\#(item)]}"#)
+    }
+
+    @Test func secretSettingParses() throws {
+        let m = try secret(#"{"key":"token","title":"API token","type":"secret","env":"TODO_TOKEN"}"#).get()
+        #expect(m.contributes.settings.first?.type == .secret(env: "TODO_TOKEN"))
+        #expect(m.contributes.settings.first?.defaultValue == nil)
+    }
+
+    @Test func secretWithReservedEnvIsRejected() {
+        for env in ["PATH", "HOME", "LANG", "TMPDIR", "SHELL", "USER", "ALLOY_TOKEN", "DYLD_X", "LD_PRELOAD", "lower", "1ABC", ""] {
+            #expect(failure(secret(#"{"key":"t","title":"T","type":"secret","env":"\#(env)"}"#)) != nil, "env \(env)")
+        }
+        #expect(failure(secret(#"{"key":"t","title":"T","type":"secret"}"#)) != nil, "env is required")
+        #expect(failure(secret(#"{"key":"t","title":"T","type":"string","env":"X"}"#)) != nil, "env only for secrets")
+    }
+
+    @Test func secretWithDefaultIsRejected() {
+        #expect(failure(secret(#"{"key":"t","title":"T","type":"secret","env":"TODO_TOKEN","default":"x"}"#)) != nil)
+    }
 }

@@ -2,9 +2,10 @@ import Foundation
 import Testing
 
 /// Only `ThemeSkillInstaller` may build a path under `.claude` for writing; `TranscriptFile` reads the CLI's
-/// transcripts there and never writes.
+/// transcripts there and never writes. `PluginWriteRefusal` names the folder only to refuse plugin writes into it.
 @Suite struct ThemeSkillGuardTests {
-    static let allowedIn: Set<String> = ["AlloyCore/Themes/ThemeSkillInstaller.swift", "AlloyCore/Chat/TranscriptFile.swift"]
+    static let allowedIn: Set<String> = ["AlloyCore/Themes/ThemeSkillInstaller.swift", "AlloyCore/Chat/TranscriptFile.swift",
+                                         "AlloyCore/Plugins/PluginWriteRefusal.swift"]
     static let pattern = #"["~/]\.claude[/"]"#
 
     static func offences(in text: String) -> [String] {

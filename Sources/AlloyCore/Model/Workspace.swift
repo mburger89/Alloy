@@ -542,6 +542,14 @@ public final class Workspace {
     @ObservationIgnored private var exitedWhileDraining: Set<UUID> = []
     /// Called after a save wrote a document to disk and marked it saved, with the project-relative path.
     @ObservationIgnored public var onSaved: (@MainActor (String) -> Void)?
+    /// Called when a document finishes opening, is saved, or is closed by its last holder (the plugin coordinator listens).
+    @ObservationIgnored public var onDocumentEvent: (@MainActor (DocumentEvent) -> Void)?
+    /// Called for session and tool events plugins may hear of (the plugin coordinator listens). Handlers only enqueue.
+    @ObservationIgnored public var onSessionEvent: (@MainActor (SessionPluginEvent) -> Void)?
+    /// Sessions whose current process run already reported `ended`.
+    @ObservationIgnored var sessionRunEnded: Set<UUID> = []
+    /// The project-relative paths of the open documents, sorted.
+    public var openDocumentPaths: [String] { documents.keys.sorted() }
     /// Called when a settings update changed the language-server overrides.
     @ObservationIgnored public var onLanguageServersChanged: (@MainActor ([String: ServerConfigOverride]) -> Void)?
     /// Run concurrently at the end of `stopAll()`: whatever else must stop before the app quits (the language
@@ -599,7 +607,7 @@ public final class Workspace {
                 makeTransport: @escaping TransportFactory = { ClaudeProcess(configuration: $0) },
                 makeACPTransport: ACPTransportFactory? = nil,
                 agentDefinitions: @escaping @Sendable () -> [AgentDefinition] = { AgentPresets.all },
-                agentSecrets: any AgentSecretStore = KeychainSecretStore(),
+                agentSecrets: any AgentSecretStore = systemSecretStore(),
                 agentDetector: AgentDetector = AgentDetector(),
                 loginPATH: @escaping @Sendable () -> String? = { nil },
                 now: @escaping () -> Date = Date.init,
@@ -639,6 +647,21 @@ public final class Workspace {
 
     // MARK: Local server
 
+    /// The MCP tools enabled plugins offer; kept for the next server start and pushed to a running one.
+    @ObservationIgnored private var pluginMCPTools: [any MCPTool] = []
+    /// The plugin scopes a session launched now holds (set by the plugin coordinator; none without plugins).
+    @ObservationIgnored public var pluginToolScopes: @MainActor () -> Set<MCPToolScope> = { [] }
+
+    public func setPluginMCPTools(_ tools: [any MCPTool]) async {
+        pluginMCPTools = tools
+        await localServer?.setPluginTools(tools)
+    }
+
+    /// Takes `.plugin(id)` from every live token at once.
+    public func revokePluginScope(_ id: String) async {
+        await localServer?.removeScope(.plugin(id))
+    }
+
     /// Test seam: makes the next server start fail, as a busy or denied listener would.
     @ObservationIgnored package var failServerStartForTesting = false
 
@@ -648,7 +671,7 @@ public final class Workspace {
         guard !isShuttingDown else { return }
         let task = Task { @MainActor [weak self] in
             guard let self else { return }
-            let server = LocalServer(tools: notesTools + coordinationTools + themeTools, onListenerFailure: { [weak self] error in
+            let server = LocalServer(tools: notesTools + coordinationTools + themeTools + pluginMCPTools, onListenerFailure: { [weak self] error in
                 Task { @MainActor in await self?.listenerFailed(error) }
             }, report: { [weak self] message in
                 Task { @MainActor in self?.report(message) }
@@ -662,6 +685,8 @@ public final class Workspace {
                 if isShuttingDown { await server.stop(); return }
                 localServer = server
                 serverURL = url
+                // The plugin tools may have changed while the listener was starting.
+                if !pluginMCPTools.isEmpty { await server.setPluginTools(pluginMCPTools) }
             } catch {
                 report("Shared notes are unavailable: \(error.localizedDescription)")
             }
@@ -1029,10 +1054,12 @@ public final class Workspace {
         // Sharing needs the server and this session's token; without either the session launches as if sharing were off.
         var scopes: Set<MCPToolScope> = settings.shareKnowledge ? [.shared] : []
         if s.purpose == .theme { scopes.insert(.theme) }
+        scopes.formUnion(pluginToolScopes())
         let shared = scopes.contains(.shared), theme = scopes.contains(.theme)
         let token = scopes.isEmpty ? nil : await mcpToken(for: s.id, scopes: scopes)
         if stoppedDuringLaunch.contains(s.id) || isShuttingDown { markStopped(s); return }
         s.beginProcess()
+        sessionRunEnded.remove(s.id)
         // The CLI keeps the model on a fork but starts it in the default permission mode (probed): a fork's
         // process gets the mode the fork inherited, whether it is new, woken or relaunched before its first turn.
         if forkFrom != nil, let mode = s.permissionMode.flatMap(PermissionMode.init(rawValue:)),
@@ -1178,7 +1205,17 @@ public final class Workspace {
         themeWorkshop?.themeSessionEnded(id)
     }
 
+    /// The id plugins hear for a session's backend: `claude`, or the ACP agent definition id.
+    func pluginAgent(of s: Session) -> String { s.backend.agentID ?? "claude" }
+
+    /// Reports the end of the session's process run to plugins, once per run.
+    func noteRunEnded(_ s: Session) {
+        guard sessionRunEnded.insert(s.id).inserted else { return }
+        onSessionEvent?(.ended(sessionID: s.id, agent: pluginAgent(of: s)))
+    }
+
     func markStopped(_ s: Session) {
+        noteRunEnded(s)
         noteThemeSessionEnded(s.id)
         pendingRelaunch.remove(s.id)
         turnPending.remove(s.id)
@@ -1215,6 +1252,9 @@ public final class Workspace {
         case .message(.systemInit), .message(.result), .exited: turnPending.remove(s.id)
         default: break
         }
+        if case .message(.result(let r)) = event {
+            onSessionEvent?(.turnEnded(sessionID: s.id, isError: r.isError, agent: pluginAgent(of: s)))
+        }
         sessionMayBeIdle(s)
         trackShellWindows(event, session: s)
         trackReads(event, session: s)
@@ -1225,6 +1265,7 @@ public final class Workspace {
         }
         if case .message(.controlCancel(let rid)) = event { promptInputs.removeValue(forKey: rid) }
         if case .exited = event {
+            noteRunEnded(s)
             pendingRelaunch.remove(s.id)
             cancelACPFsApprovals(session: s.id)
             noteThemeSessionEnded(s.id)
@@ -1639,6 +1680,7 @@ public final class Workspace {
         await entry.transport.terminate()
         sessionLaunchFiles.remove(sessionID: id)
         if let s = session(id) {
+            noteRunEnded(s)
             s.transcript.finalizeStreaming()
             s.transcript.interruptRunningTools()
             s.transcript.cancelPendingPermissions()
@@ -1811,6 +1853,7 @@ public final class Workspace {
             latestFold.removeValue(forKey: path)
             ensureSelectionStates(forInstalled: path)
             if state == .editable { autosave.watch(doc) { [weak self] d in self?.documents[d.path] === d } }
+            onDocumentEvent?(.opened(path: path, version: Int(buffer.version)))
         }
     }
 
@@ -1835,6 +1878,7 @@ public final class Workspace {
         autosave.unwatch(path)
         tabMessages.removeValue(forKey: path)
         syncGeneration.removeValue(forKey: path)
+        onDocumentEvent?(.closed(path: path))
     }
 
     /// Moves a tab as a drag does: `tabs.insert(tabs.remove(at: from), at: to)`. Out-of-range indexes do nothing.
@@ -1946,6 +1990,7 @@ public final class Workspace {
                                      group: pendingGroup.removeValue(forKey: path) ?? group)
                 doc.markSaved(snapshot: snap, stamp: stamp)
                 onSaved?(path)
+                onDocumentEvent?(.saved(path: path, version: Int(doc.buffer.version)))
                 search.noteChanged(path)
                 return
             }
@@ -2415,6 +2460,8 @@ public final class Workspace {
     private var ledgerURL: URL { ProjectLedger.storeURL(projectRoot: projectRoot, appSupport: appSupport) }
     var notesURL: URL { storeDirectory.appendingPathComponent("notes.json") }
     var storeDirectory: URL { ledgerURL.deletingLastPathComponent() }
+    /// The project's per-project store (ledger, notes, plugin state), under Alloy's application-support folder.
+    public var projectStoreDirectory: URL { storeDirectory }
     var readsURL: URL { storeDirectory.appendingPathComponent("reads.json") }
     private var sessionsURL: URL { storeDirectory.appendingPathComponent("sessions.json") }
 

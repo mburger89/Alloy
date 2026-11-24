@@ -1,7 +1,9 @@
 import AlloyCore
 import AlloyHighlight
+import AlloyPlugins
 import Foundation
 import MetalUI
+import MetalUICodeBuffer
 import AlloyLSP
 import Observation
 
@@ -671,6 +673,76 @@ final class OpenDocumentView {
         }
     }
 
+    // MARK: Plugin decorations
+
+    /// The plugins whose decorations this view shows, by id.
+    @ObservationIgnored private(set) var pluginOwners: Set<String> = []
+    /// Test observability: the owner names this view applied plugin decorations under.
+    var pluginOwnerNames: [String] { pluginOwners.sorted().map { Self.pluginOwner($0).name } }
+    @ObservationIgnored private var pluginStyles: [PluginStyleKey: CodeStyleID] = [:]
+
+    private struct PluginStyleKey: Hashable { var role: PluginColorRole; var tint: Bool; var underline: Bool }
+
+    nonisolated static func pluginOwner(_ id: String) -> CodeDecorationOwner { CodeDecorationOwner("plugin.\(id)", priority: -10) }
+
+    private func pluginStyle(_ role: PluginColorRole, tint: Bool = false, underline: Bool = false) -> CodeStyleID {
+        let key = PluginStyleKey(role: role, tint: tint, underline: underline)
+        if let id = pluginStyles[key] { return id }
+        let style = CodeStyle(foreground: tint || underline ? nil : role.ink, background: tint ? role.tint : nil,
+                              underline: underline ? CodeUnderline(.line(.solid), color: role.ink) : nil)
+        let id = decorations.register(style)
+        pluginStyles[key] = id
+        return id
+    }
+
+    /// Paints what plugins decorate this document with, one owner per plugin below every Alloy owner. A plugin missing from
+    /// `snapshots` loses its decorations. Items outside the text are dropped, the rest paint. The old-text pane gets none.
+    func applyPluginDecorations(_ snapshots: [(pluginID: String, set: PluginDecorationSet)]) {
+        guard !closed else { return }
+        let live = Set(snapshots.filter { !$0.set.isEmpty }.map(\.pluginID))
+        for id in pluginOwners.subtracting(live) { decorations.removeDecorations(of: Self.pluginOwner(id)) }
+        pluginOwners = live
+        let buffer = document.buffer
+        let sideBySide = workspace?.presentation(of: document.path, in: pane) == .sideBySide
+        for (id, set) in snapshots where live.contains(id) {
+            let owner = Self.pluginOwner(id)
+            let version = UInt64(max(0, set.version))
+            let current = version == buffer.version
+            let lineCount = buffer.lineCount, byteCount = buffer.utf8Count
+            var marks: [CodeLineDecoration] = []
+            var rows: [CodeVirtualRow] = []
+            for item in set.lines where item.line < lineCount {
+                let end = max(item.line + 1, item.endLine ?? item.line + 1)
+                if item.background != nil || item.gutterBar != nil || item.marker != nil {
+                    marks.append(CodeLineDecoration(
+                        lines: item.line..<end, gutterBar: item.gutterBar?.ink, background: item.background?.tint,
+                        gutterMarker: item.marker.map { CodeGutterMarker($0.text, color: $0.role.ink) }))
+                }
+                if let message = item.message, !sideBySide {
+                    rows.append(CodeVirtualRow(anchor: .after(line: item.line), lines: [message.text],
+                                               styleRuns: [[CodeStyleRun(range: 0..<message.text.utf8.count,
+                                                                         style: pluginStyle(message.role))]],
+                                               gutterBar: message.role.ink, background: message.role.tint))
+                }
+            }
+            decorations.setLineDecorations(marks, asOf: version, owner: owner)
+            decorations.setVirtualRows(rows, asOf: version, owner: owner)
+            var runs: [CodeStyleRun] = []
+            for item in set.ranges where !current || item.end <= byteCount {
+                // Where both are given, the tint carries the underline: one run, one style.
+                if let tint = item.tint, let underline = item.underline {
+                    let style = decorations.register(CodeStyle(background: tint.tint, underline: CodeUnderline(.line(.solid), color: underline.ink)))
+                    runs.append(CodeStyleRun(range: item.start..<item.end, style: style))
+                } else if let tint = item.tint {
+                    runs.append(CodeStyleRun(range: item.start..<item.end, style: pluginStyle(tint, tint: true)))
+                } else if let underline = item.underline {
+                    runs.append(CodeStyleRun(range: item.start..<item.end, style: pluginStyle(underline, underline: true)))
+                }
+            }
+            decorations.setHighlights(runs, in: 0..<(1 << 40), layer: .diagnostics, asOf: version, owner: owner)
+        }
+    }
+
     // MARK: Diagnostics
 
     /// The diagnostics of this document changed: paints the tint, and the rows together with the diff's.
@@ -882,6 +954,8 @@ final class CodePanelStore {
         }.first
     }
     private var views: [ViewKey: OpenDocumentView] = [:]
+    /// What plugins decorate documents with, once a plugin coordinator is bound to the workspace.
+    private var pluginDecorations: PluginDecorationStore?
     /// The CSV table models of the views shown as a table; made when the presentation becomes `.table`, closed when it leaves.
     private var tables: [ViewKey: CSVTableHandle] = [:]
     private var servicesByPath: [String: DocumentServices] = [:]
@@ -895,6 +969,14 @@ final class CodePanelStore {
     /// Connects the store to the workspace's language-server coordinator, if one is installed. Idempotent.
     func attach(workspace: Workspace) {
         installIntelHooks(workspace: workspace)
+        if let plugins = workspace.pluginServices as? PluginCoordinator, pluginDecorations !== plugins.decorations {
+            pluginDecorations = plugins.decorations
+            plugins.decorations.applyHandler = { [weak self] path in
+                guard let self else { return }
+                let snapshots = plugins.decorations.snapshots(for: path)
+                for (key, view) in views where key.path == path { view.applyPluginDecorations(snapshots) }
+            }
+        }
         if foldCoordinator == nil {
             let engine = engine
             let folds = FoldCoordinator(sources: .production(engine: engine, lsp: { [weak self] in self?.lsp }))
@@ -1126,6 +1208,7 @@ final class CodePanelStore {
         view.actionService = codeActionService
         view.renameService = renameService
         views[key] = view
+        if let snapshots = pluginDecorations?.snapshots(for: path), !snapshots.isEmpty { view.applyPluginDecorations(snapshots) }
     }
 
     /// The view of `document` in `pane`, once ``ensureView(for:in:)`` has made it.

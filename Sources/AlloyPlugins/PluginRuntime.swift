@@ -42,6 +42,38 @@ public enum PluginHostEvent: Sendable {
     case state(id: String, PluginRunState)
     case started(id: String)
     case notification(id: String, method: String, params: JSONValue?)
+    /// The plugin's latest decorations for `uri`, at most one per uri per `decorationHop` and only when they changed.
+    case decorations(id: String, uri: String, set: PluginDecorationSet)
+    /// The plugin's newest tree for one of its panels.
+    case panel(id: String, panelID: String, tree: PluginPanelTree)
+    /// A `panel/render` whose tree was refused (the reason goes to the plugin's log).
+    case panelRejected(id: String, panelID: String, reason: String)
+    /// A `window/showMessage` of the plugin; `type` is `info`, `warning` or `error`.
+    case showMessage(id: String, type: String, message: String)
+}
+
+/// Holds a plugin's newest `decorations/set` per uri between the connection's callback (any thread, in arrival order) and the
+/// host actor's next hop. `put` says whether a drain still has to be scheduled.
+final class PluginDecorationInbox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var pending: [String: PluginDecorationSet] = [:]
+    private var scheduled = false
+
+    func put(uri: String, _ set: PluginDecorationSet) -> Bool {
+        lock.withLock {
+            pending[uri] = set
+            if scheduled { return false }
+            scheduled = true
+            return true
+        }
+    }
+
+    func take() -> [String: PluginDecorationSet] {
+        lock.withLock {
+            defer { pending = [:]; scheduled = false }
+            return pending
+        }
+    }
 }
 
 /// How the app answers a plugin's requests. Called only for methods the plugin holds the grant for.
@@ -77,6 +109,9 @@ final class PluginRuntime: @unchecked Sendable {
     private let lock = NSLock()
     private var message: Double
     private var sampled: Double
+
+    /// The latest `decorations/set` per uri, written from the connection's callback and drained by the host's hop.
+    let decorationInbox = PluginDecorationInbox()
 
     init(id: String, generation: Int, process: ServerProcess, connection: JSONRPCConnection, lastActivation: ActivationReason,
          now: Double) {

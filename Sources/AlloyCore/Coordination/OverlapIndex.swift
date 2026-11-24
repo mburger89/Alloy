@@ -61,6 +61,9 @@ public final class OverlapIndex {
     /// Registers (or replaces) a session's pending change, keyed by its tool call id.
     public func propose(_ change: ProposedChange) { proposals[change.toolUseID] = change }
 
+    /// Whether a session has a pending change to `path` (project-relative).
+    public func hasProposal(path: String) -> Bool { proposals.values.contains { $0.range.path == path } }
+
     /// Drops a proposal: the tool finished (PostToolUse or tool_result) or failed.
     public func resolve(toolUseID: String) { proposals[toolUseID] = nil }
 

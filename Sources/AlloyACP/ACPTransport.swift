@@ -401,9 +401,8 @@ public actor ACPTransport: SessionTransport {
 
     /// Whether a permission request is about one of Alloy's own tools (notes and coordination), by the name the agent shows.
     private func isAlloyTool(_ title: String) -> Bool {
-        guard let server = configuration.mcp?.name.lowercased() else { return false }
-        let t = title.lowercased()
-        return t.contains(server) && Guidance.alloyToolShortNames.contains { t.contains($0) }
+        guard let server = configuration.mcp?.name else { return false }
+        return Guidance.isAlloyToolTitle(title, server: server)
     }
 
     private func answerPermission(_ rid: String, allow: Bool, updated: [JSONValue]?) async {

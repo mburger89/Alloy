@@ -150,6 +150,9 @@ public final class LSPCoordinator {
     /// The registry the coordinator routes with (tests read the effective servers from it).
     var effectiveRegistry: ServerRegistry { registry }
 
+    /// The LSP language id of a path when a server covers it.
+    func languageID(forPath path: String) -> String? { registry.languageID(forPath: path) }
+
     /// Replaces the servers enabled plugins contribute and rebuilds the registry (a no-op when they did not change).
     func setPluginServers(_ servers: [String: ServerConfigOverride]) {
         guard servers != pluginServers else { return }

@@ -1,5 +1,7 @@
 import Foundation
+#if canImport(Security)
 import Security
+#endif
 
 /// Where agent secrets live. Real storage is the Keychain only; nothing here ever writes a file.
 public protocol AgentSecretStore: Sendable {
@@ -25,19 +27,26 @@ public struct SecretStoreError: Error, LocalizedError, Equatable {
     public var errorDescription: String? { "The Keychain refused the request (status \(status))." }
 }
 
+#if canImport(Security)
 /// Generic-password items, service `dev.alloy.agent-secret`, account `<agent id>/<VARIABLE_NAME>`, readable only
 /// while the Mac is unlocked and never copied to another device.
 public final class KeychainSecretStore: AgentSecretStore, @unchecked Sendable {
     public static let service = "dev.alloy.agent-secret"
+    /// Plugin secrets: account `<plugin id>/<setting key>`.
+    public static let pluginService = "dev.alloy.plugin-secret"
+    public let serviceName: String
     /// A keychain other than the default (tests use a throwaway file); nil means the user's default keychain.
     private let keychain: SecKeychain?
 
-    public init(keychain: SecKeychain? = nil) { self.keychain = keychain }
+    public init(service: String = KeychainSecretStore.service, keychain: SecKeychain? = nil) {
+        serviceName = service
+        self.keychain = keychain
+    }
 
     private func account(_ agent: String, _ variable: String) -> String { "\(agent)/\(variable)" }
 
     private func base(account: String? = nil) -> [String: Any] {
-        var q: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: Self.service]
+        var q: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: serviceName]
         if let account { q[kSecAttrAccount as String] = account }
         if let keychain { q[kSecMatchSearchList as String] = [keychain] }
         return q
@@ -103,6 +112,27 @@ public final class KeychainSecretStore: AgentSecretStore, @unchecked Sendable {
             guard s == errSecSuccess || s == errSecItemNotFound else { throw SecretStoreError(status: s) }
         }
     }
+}
+
+#endif
+
+/// Stands in where there is no Keychain: nothing can be stored.
+public struct UnavailableSecretStore: AgentSecretStore {
+    public init() {}
+    public var isAvailable: Bool { false }
+    public func set(_ value: String, agent: String, variable: String) throws { throw SecretStoreError(status: -1) }
+    public func get(agent: String, variable: String) throws -> String? { nil }
+    public func delete(agent: String, variable: String) throws {}
+    public func deleteAll(agent: String) throws {}
+}
+
+/// The platform's secret store: the Keychain where there is one, else a store that holds nothing.
+public func systemSecretStore(service: String? = nil) -> any AgentSecretStore {
+    #if canImport(Security)
+    KeychainSecretStore(service: service ?? KeychainSecretStore.service)
+    #else
+    UnavailableSecretStore()
+    #endif
 }
 
 /// Memory only: the fake store for tests (and a stand-in while the Keychain is unavailable).

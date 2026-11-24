@@ -6,6 +6,13 @@ public enum PluginManifestLoader {
     public static let maxBytes = 256 * 1024
     public static let apiVersion = 1
 
+    /// A secret's environment variable: upper case, and never one Alloy or the loader owns.
+    static func isAllowedSecretEnv(_ name: String) -> Bool {
+        guard name.range(of: #"^[A-Z][A-Z0-9_]{0,63}$"#, options: .regularExpression) != nil else { return false }
+        if ["PATH", "HOME", "LANG", "TMPDIR", "SHELL", "USER"].contains(name) { return false }
+        return !["ALLOY_", "DYLD_", "LD_"].contains { name.hasPrefix($0) }
+    }
+
     private static let topKeys: Set<String> = ["id", "name", "version", "apiVersion", "description", "main", "permissions",
                                                "activationEvents", "contributes"]
     private static let contributionKeys: Set<String> = ["themes", "languageServers", "settings", "commands", "taskCommands",
@@ -180,7 +187,7 @@ public enum PluginManifestLoader {
 
         var keys: Set<String> = []
         for item in try objects(obj["settings"], "contributes.settings") {
-            try onlyKeys(item, ["key", "title", "type", "options", "default"], "contributes.settings")
+            try onlyKeys(item, ["key", "title", "type", "options", "default", "env"], "contributes.settings")
             let key = try string(item["key"], "contributes.settings.key")
             guard key.range(of: #"^[A-Za-z][A-Za-z0-9_.-]{0,63}$"#, options: .regularExpression) != nil else {
                 throw PluginManifestError.invalidField("contributes.settings.key", key)
@@ -188,7 +195,9 @@ public enum PluginManifestLoader {
             guard keys.insert(key).inserted else { throw PluginManifestError.duplicate("settings.\(key)") }
             let title = try string(item["title"], "contributes.settings.title")
             let type: PluginSettingType
-            switch try string(item["type"], "contributes.settings.type") {
+            let typeName = try string(item["type"], "contributes.settings.type")
+            if item["env"] != nil, typeName != "secret" { throw PluginManifestError.invalidField("contributes.settings.env", "only for secret settings") }
+            switch typeName {
             case "bool": type = .bool
             case "string": type = .string
             case "number": type = .number
@@ -196,6 +205,11 @@ public enum PluginManifestLoader {
                 let options = try stringArray(item["options"], "contributes.settings.options")
                 guard !options.isEmpty else { throw PluginManifestError.invalidField("contributes.settings.options", "empty") }
                 type = .enumeration(options)
+            case "secret":
+                let env = try string(item["env"], "contributes.settings.env")
+                guard Self.isAllowedSecretEnv(env) else { throw PluginManifestError.invalidField("contributes.settings.env", env) }
+                guard item["default"] == nil else { throw PluginManifestError.invalidField("contributes.settings.default", "a secret has no default") }
+                type = .secret(env: env)
             case let other: throw PluginManifestError.invalidField("contributes.settings.type", other)
             }
             c.settings.append(PluginSettingSpec(key: key, title: title, type: type, defaultValue: item["default"]))

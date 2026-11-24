@@ -125,7 +125,7 @@ final class FoldCoordinator {
         let wait = debounce
         entry.timer = Task { [weak self, weak entry] in
             // One task sleeps through a burst: on waking it sleeps on if a later edit moved the deadline.
-            while let self, let entry, !Task.isCancelled {
+            while let entry, !Task.isCancelled {
                 let deadline = entry.lastEdit + wait
                 do { try await clock.sleep(until: deadline) } catch { return }
                 if Task.isCancelled { return }
