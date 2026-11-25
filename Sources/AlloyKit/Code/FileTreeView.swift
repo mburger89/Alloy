@@ -84,6 +84,8 @@ struct FileTreeNodeRow: Component {
 struct FileTreeLabel: Component, Equatable {
     let workspace: Workspace
     let entry: FileTreeEntry
+    /// `.increased` on a selected row, focused or not, `.standard` otherwise: only the old and the new row re-run on a selection change.
+    @Environment(\.backgroundProminence) var prominence
 
     nonisolated static func == (a: Self, b: Self) -> Bool { a.workspace === b.workspace && a.entry == b.entry }
 
@@ -94,7 +96,7 @@ struct FileTreeLabel: Component, Equatable {
         let gitStatus = (workspace.gitServices as? GitCoordinator)?.tree.cell(for: entry.path).status
         // A selected row's name takes the primary text colour, as on the sessions list's selection: a git colour
         // (orange for untracked) does not hold contrast on the selection fill. The change dot stays.
-        let selected = workspace.fileTreeSelection == entry.path
+        let selected = prominence == .increased
         HStack(spacing: fileTreeRowGap) {
             Image(systemName: entry.isFolder ? "folder" : "doc").font(.system(size: fileTreeIconSize)).foregroundColor(.mutedInk)
             Text(verbatim: entry.name).font(size: fileTreeFontSize).foregroundColor(Self.nameColor(gitStatus, selected: selected))

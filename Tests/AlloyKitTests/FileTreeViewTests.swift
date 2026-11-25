@@ -288,4 +288,43 @@ import Testing
         #expect(after.toRgba() == git.toRgba(), "deselected, the git colour returns")
         withExtendedLifetime(coordinator) {}
     }
+
+    /// A selection change re-runs the old and the new row's label and no other: the label reads the row's background
+    /// prominence, not the workspace's selection. (Before: every visible label re-ran.)
+    @Test func aSelectionChangeRerunsOnlyTheOldAndTheNewLabel() async throws {
+        let paths = (0..<50).map { "f\($0 < 10 ? "0" : "")\($0).txt" }
+        let (rig, window) = try await treeWindow(paths)
+        let visible = rowPaths(window)
+        #expect(visible.count >= 20, "a tree of \(visible.count) visible rows")
+        window.click(at: try center(window, "f03.txt")); await settle(window)
+        #expect(rig.workspace.fileTreeSelection == "f03.txt")
+        let before = BodyProbe.count("FileTreeLabel")
+        window.click(at: try center(window, "f07.txt")); await settle(window)
+        #expect(rig.workspace.fileTreeSelection == "f07.txt")
+        let reruns = BodyProbe.count("FileTreeLabel") - before
+        #expect(reruns == 2, "\(reruns) labels re-ran for one selection change over \(visible.count) visible rows")
+    }
+
+    /// Divergence 244: a selected row reads `.increased` whether or not the list is focused, so its name keeps the
+    /// selection text colour when focus is elsewhere.
+    @Test func selectedButUnfocusedRowKeepsTheSelectionTextColour() async throws {
+        let rig = Rig()
+        try write(rig, ["tracked.txt"])
+        try git(rig.root, "init", "-q", "-b", "main")
+        try git(rig.root, "add", "-A"); try git(rig.root, "commit", "-qm", "init")
+        try write(rig, ["fresh.txt"])
+        let coordinator = GitCoordinator.install(on: rig.workspace)
+        await coordinator.service.refreshNow()
+        await rig.workspace.restoreUIState()
+        rig.workspace.setMode(.code)
+        let window = try alloyWindow(rig.workspace)
+        try await window.runUntil { rig.workspace.fileTree.snapshot.children(of: "").count == 2 }
+        for _ in 0..<8 { window.tick(); await Task.yield() }
+        let plain = try #require(try nameColors(window, "tracked.txt").last)
+        let git = try #require(try nameColors(window, "fresh.txt").last)
+        rig.workspace.fileTreeSelection = "fresh.txt"; await settle(window)   // selected without a click: the list never took focus
+        let selected = try #require(try nameColors(window, "fresh.txt").last)
+        #expect(selected.toRgba() == plain.toRgba() && selected.toRgba() != git.toRgba(), "selected, not focused: selection text colour")
+        withExtendedLifetime(coordinator) {}
+    }
 }
