@@ -8,10 +8,10 @@ import Testing
 
 @MainActor
 @Suite struct ComposerSizeTests {
-    private func rigWithSession() async -> (Rig, Session, TestWindow) {
+    private func rigWithSession() async throws -> (Rig, Session, TestWindow) {
         let rig = Rig()
         let session = await rig.workspace.newSession(name: "A")
-        let window = try! alloyWindow(rig.workspace)
+        let window = try alloyWindow(rig.workspace)
         return (rig, session, window)
     }
 
@@ -31,19 +31,19 @@ import Testing
     }
 
     @Test func emptyDraftIsOneLineHigh() async throws {
-        let (_, _, window) = await rigWithSession()
+        let (_, _, window) = try await rigWithSession()
         #expect(try height("composer", window) == 16)
         #expect(try height("composer-box", window) == 16 + 12)
     }
 
     @Test func threeLinesAreThreeLinesHigh() async throws {
-        let (_, _, window) = await rigWithSession()
+        let (_, _, window) = try await rigWithSession()
         try type(lines: 3, window: window)
         #expect(try height("composer", window) == 48)
     }
 
     @Test func fortyLinesAreCappedAtEightAndKeepAcceptingText() async throws {
-        let (_, _, window) = await rigWithSession()
+        let (_, _, window) = try await rigWithSession()
         try type(lines: 40, window: window)
         #expect(try height("composer", window) == 128)
         #expect(try height("composer-box", window) == 128 + 12)
@@ -54,7 +54,7 @@ import Testing
     }
 
     @Test func oneLongWrappedLineGrowsTheBox() async throws {
-        let (_, _, window) = await rigWithSession()
+        let (_, _, window) = try await rigWithSession()
         try window.focus(window.element(identifier: "composer"))
         window.typeText(String(repeating: "word ", count: 120))
         window.tick(); window.tick()
@@ -65,7 +65,7 @@ import Testing
     }
 
     @Test func aVeryLongWrappedLineCapsAt128AndScrolls() async throws {
-        let (_, _, window) = await rigWithSession()
+        let (_, _, window) = try await rigWithSession()
         try window.focus(window.element(identifier: "composer"))
         window.typeText(String(repeating: "word ", count: 2_000))
         window.tick(); window.tick()
@@ -74,7 +74,7 @@ import Testing
     }
 
     @Test func textIsInsetFromTheBorderAndSendSitsOnTheBottomEdge() async throws {
-        let (_, _, window) = await rigWithSession()
+        let (_, _, window) = try await rigWithSession()
         let box = try window.element(identifier: "composer-box").frame
         let editor = try window.element(identifier: "composer").frame
         #expect(editor.origin.x.value - box.origin.x.value >= 8)

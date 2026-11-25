@@ -68,7 +68,8 @@ public struct ProjectLedger: Codable, Sendable, Equatable {
     public func changedFiles() -> [ChangedFile] {
         files.keys.sorted().compactMap { path in
             var authors: [Author] = []
-            for e in files[path]!.edits where e.state == .live && !authors.contains(e.author) { authors.append(e.author) }
+            guard let edits = files[path]?.edits else { return nil }
+            for e in edits where e.state == .live && !authors.contains(e.author) { authors.append(e.author) }
             return authors.isEmpty ? nil : ChangedFile(path: path, authors: authors)
         }
     }

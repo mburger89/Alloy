@@ -209,6 +209,12 @@ swift test
 - The absolute timing bounds of `OverlapIndexTests` (the relative ones always run) need `ALLOY_PERF=1`, on a quiet
   machine: `ALLOY_PERF=1 swift test --filter OverlapIndexTests`.
 
+- Linting: `swiftlint lint --strict` must exit 0 with no violations; CI (`.github/workflows/lint.yml`) blocks on it.
+  The pinned version is SwiftLint 0.65.1 (`brew install swiftlint` gives the same). The rules are in
+  `.swiftlint.yml`; `Tests/.swiftlint.yml` only relaxes `force_unwrapping`, because a force unwrap in a test fails
+  that test and cannot crash the app. There is no baseline. Where a force unwrap is provably safe, use
+  `// swiftlint:disable:next force_unwrapping` with a one-line reason.
+
 - To package an app bundle: `scripts/bundle-macos.sh [--version X.Y.Z --build N]` produces `build/Alloy.app` (bundle id
   `com.unicornlabs.Alloy`), signed ad hoc by default. `--version` and `--build` set `CFBundleShortVersionString` and
   `CFBundleVersion`. Set `ALLOY_SIGN_IDENTITY` (the older `CODESIGN_IDENTITY` still works) to sign for distribution

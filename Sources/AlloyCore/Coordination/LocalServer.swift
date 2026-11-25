@@ -109,6 +109,7 @@ public actor LocalServer {
             self.listener = nil
             throw error
         }
+        // swiftlint:disable:next force_unwrapping - an http URL with an integer port always parses
         return URL(string: "http://127.0.0.1:\(port)/mcp")!
     }
 

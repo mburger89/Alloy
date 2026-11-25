@@ -51,7 +51,7 @@ enum DiagnosticDecorations {
                     result.append((start..<offset, current))
                 }
             }
-            for i in 0..<3 { active[i] += deltas[offset]![i] }
+            if let delta = deltas[offset] { for i in 0..<3 { active[i] += delta[i] } }
             current = active.firstIndex { $0 > 0 }.flatMap { Severity(rawValue: $0 + 1) }
             start = offset
         }
@@ -76,7 +76,7 @@ enum DiagnosticDecorations {
             layout.lines.append(CodeLineDecoration(lines: run.rows, gutterBar: bar))
         }
         for row in worst.keys.sorted() {
-            let severity = worst[row]!
+            guard let severity = worst[row] else { continue }
             if let open = run, open.rows.upperBound == row, open.severity == severity {
                 run = (open.rows.lowerBound..<(row + 1), severity)
             } else {
@@ -86,7 +86,8 @@ enum DiagnosticDecorations {
         }
         flush()
         for row in messages.keys.sorted().prefix(maxVirtualRows) {
-            let distinct = distinctMessages(messages[row]!)
+            guard let rowMessages = messages[row] else { continue }
+            let distinct = distinctMessages(rowMessages)
             guard let tint = color(distinct[0].severity) else { continue }
             var lines = distinct.prefix(maxMessagesPerRow).map(rowText)
             if distinct.count > maxMessagesPerRow { lines.append("+\(distinct.count - maxMessagesPerRow) more") }

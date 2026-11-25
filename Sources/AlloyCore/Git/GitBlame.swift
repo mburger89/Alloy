@@ -56,8 +56,9 @@ public enum GitBlameParser {
             }
             let parts = line.split(separator: " ", omittingEmptySubsequences: false)
             if parts.count >= 3, isHash(parts[0]), let final = Int(parts[2]), Int(parts[1]) != nil {
-                currentHash = String(parts[0]); currentFinal = final
-                if metas[currentHash!] == nil { metas[currentHash!] = Meta() }
+                let hash = String(parts[0])
+                currentHash = hash; currentFinal = final
+                if metas[hash] == nil { metas[hash] = Meta() }
             } else if let h = currentHash {
                 if line.hasPrefix("author ") { metas[h]?.author = String(line.dropFirst(7)) }
                 else if line.hasPrefix("author-time ") { metas[h]?.time = Double(line.dropFirst(12)) ?? 0 }

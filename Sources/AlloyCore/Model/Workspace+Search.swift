@@ -170,7 +170,8 @@ extension Workspace {
     func liveEdits(group: UUID) -> [(path: String, ids: [UUID])] {
         ensureLoaded()
         return ledger.files.keys.sorted().compactMap { path in
-            let ids = ledger.files[path]!.edits.filter { $0.group == group && $0.state == .live }.map(\.id)
+            guard let edits = ledger.files[path]?.edits else { return nil }
+            let ids = edits.filter { $0.group == group && $0.state == .live }.map(\.id)
             return ids.isEmpty ? nil : (path, ids)
         }
     }

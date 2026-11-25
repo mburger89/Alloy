@@ -241,7 +241,7 @@ struct CompletionPanelTests {
             try await accept(r, window)
             #expect(text(doc) == "use x;\nlet x = f(a, b)\n")
             #expect(state.isSnippetActive)
-            #expect(text(doc).utf8.count > 0)
+            #expect(!text(doc).isEmpty)
             let sel = state.primarySelection.range
             #expect(String(text(doc).utf8.dropFirst(sel.lowerBound).prefix(sel.count))! == "a")
             window.typeKey(.tab)

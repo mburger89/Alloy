@@ -41,8 +41,14 @@ private actor FailingTransport: SessionTransport {
     func terminate() async { await inner.terminate() }
 }
 
+/// `s` as a JSON string literal. Encoding a `String` cannot fail.
+private func jsonString(_ s: String) -> String {
+    guard let data = try? JSONEncoder().encode(s) else { preconditionFailure("a String always encodes") }
+    return String(decoding: data, as: UTF8.self)
+}
+
 private func userLine(_ parts: [String], uuid: String, replay: Bool) -> Data {
-    let content = parts.map { "{\"type\":\"text\",\"text\":\(String(decoding: try! JSONEncoder().encode($0), as: UTF8.self))}" }.joined(separator: ",")
+    let content = parts.map { "{\"type\":\"text\",\"text\":\(jsonString($0))}" }.joined(separator: ",")
     return Data("{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":[\(content)]},\"uuid\":\"\(uuid)\",\"isReplay\":\(replay)}".utf8)
 }
 
@@ -658,7 +664,7 @@ private func note(_ author: UUID, _ path: String, _ st: FileStamp, _ text: Strin
     private func imageLine(_ text: String?, uuid: String) -> Data {
         var parts: [String] = []
         if let text {
-            parts.append("{\"type\":\"text\",\"text\":\(String(decoding: try! JSONEncoder().encode(text), as: UTF8.self))}")
+            parts.append("{\"type\":\"text\",\"text\":\(jsonString(text))}")
         }
         parts.append("{\"type\":\"image\",\"source\":{\"type\":\"base64\",\"media_type\":\"image/png\",\"data\":\"AAAA\"}}")
         return Data("{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":[\(parts.joined(separator: ","))]},\"uuid\":\"\(uuid)\",\"isReplay\":true}".utf8)

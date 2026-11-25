@@ -38,7 +38,7 @@ import Testing
         ((try? window.elements(where: { _ in true })) ?? []).compactMap { $0.value ?? $0.label }
     }
 
-    private static let csv = "id,name,note\n1,ann,\"two\nlines\"\n2,bob,x\n3,\"bad,y\n".data(using: .utf8)!
+    private static let csv = Data("id,name,note\n1,ann,\"two\nlines\"\n2,bob,x\n3,\"bad,y\n".utf8)
 
     @Test func tableShowsRowsAndHeaderTitles() async throws {
         let (rig, window, g0) = try await setup(["data.csv": Self.csv])

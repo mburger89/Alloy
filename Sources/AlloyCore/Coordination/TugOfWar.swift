@@ -166,7 +166,8 @@ extension Workspace {
         // The cluster of this edit's runs that meets the other party's lines.
         let mine = lines.filter { r in y.lines.contains { OverlapIndex.near(r, $0) } }
         let used = mine.isEmpty ? lines : mine
-        let hull = used.map(\.lowerBound).min()!...used.map(\.upperBound).max()!
+        guard let lo = used.map(\.lowerBound).min(), let hi = used.map(\.upperBound).max() else { return }
+        let hull = lo...hi
         let parties: Set<Author> = [x, y.author]
         let nowDate = now()
 

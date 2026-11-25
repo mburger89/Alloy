@@ -1,4 +1,3 @@
-import AlloyCore
 import enum AlloyCore.TerminalCursorStyle
 import MetalUI
 import MetalUITerminal

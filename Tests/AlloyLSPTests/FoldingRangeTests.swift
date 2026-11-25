@@ -47,7 +47,7 @@ struct FoldingRangeRequestTests {
     private func rig(script: String) throws -> (URL, LSPManager) {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("alloy-fold-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        let launcher = ServerLauncher { config, resolved, root in
+        let launcher = ServerLauncher { _, resolved, root in
             var env = ProcessInfo.processInfo.environment
             env["FAKE_LSP_SCRIPT"] = script
             env["FAKE_LSP_LOG"] = dir.appendingPathComponent("log.jsonl").path

@@ -86,9 +86,9 @@ public final class ScriptedPty: PtyHandle, @unchecked Sendable {
         _readCalls.append(buffer.count)
         if _closed { return -1 }
         if queued.isEmpty { return status != nil ? -1 : 0 }
-        guard let base = buffer.baseAddress, buffer.count > 0 else { return 0 }
+        guard let base = buffer.baseAddress, !buffer.isEmpty else { return 0 }
         let n = min(buffer.count, queued.count)
-        queued.withUnsafeBytes { base.copyMemory(from: $0.baseAddress!, byteCount: n) }
+        queued.withUnsafeBytes { if let source = $0.baseAddress { base.copyMemory(from: source, byteCount: n) } }
         queued.removeFirst(n)
         return n
     }

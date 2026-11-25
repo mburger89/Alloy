@@ -355,9 +355,10 @@ public actor DocumentSync {
 
     private static func fullChange(_ steps: [Step]) -> JSONValue {
         let snapshot: CodeSnapshot
-        switch steps.last! {
+        switch steps.last {
         case .edits(_, _, let after): snapshot = after
         case .full(let s): snapshot = s
+        case nil: return .object(["text": .string("")])  // callers pass at least one step
         }
         return .object(["text": .string(snapshot.text)])
     }

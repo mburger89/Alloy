@@ -187,7 +187,7 @@ public struct SearchMatcher: Sendable {
         } else {
             scratch.removeAll(keepingCapacity: true)
             for k in start..<end { scratch.append(Self.lower(base[k])) }
-            scratch.withUnsafeBufferPointer { search($0.baseAddress!) }
+            scratch.withUnsafeBufferPointer { if let p = $0.baseAddress { search(p) } }
         }
         for r in found {
             result.matches.append(makeMatch(base, start, end, lineNo, r))

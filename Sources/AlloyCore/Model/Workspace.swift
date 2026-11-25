@@ -2258,8 +2258,9 @@ public final class Workspace {
         var failed = false
         var out = [UInt8](unsafeUninitializedCapacity: first) { buffer, count in
             count = 0
+            guard let base = buffer.baseAddress else { return }
             while count < first {
-                let r = read(descriptor, buffer.baseAddress! + count, first - count)
+                let r = read(descriptor, base + count, first - count)
                 if r < 0 { if errno == EINTR { continue }; failed = true; return }
                 if r == 0 { return }
                 count += r
@@ -2309,7 +2310,7 @@ public final class Workspace {
     public func keep(edit: UUID, path: String) {
         ensureLoaded()
         guard ledger.files[path] != nil else { return }
-        ledger.files[path]!.keep(edit)
+        ledger.files[path]?.keep(edit)
         reindex(path)
         revertConflicts[edit] = nil
         persistLedger()
@@ -2318,8 +2319,8 @@ public final class Workspace {
     /// Keeps every live edit of `path` (its text was committed), and persists.
     func keepAllEdits(path: String) {
         guard ledger.files[path] != nil else { return }
-        ledger.files[path]!.keepAll { _ in true }
-        for r in ledger.files[path]!.edits { revertConflicts[r.id] = nil }
+        ledger.files[path]?.keepAll { _ in true }
+        for r in ledger.files[path]?.edits ?? [] { revertConflicts[r.id] = nil }
         reindex(path)
         persistLedger()
     }

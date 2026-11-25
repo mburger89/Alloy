@@ -15,7 +15,7 @@ public enum BuiltinCommands {
         let quickOpen = center.quickOpen
         let palette = center.palette
         // The workspace commands act on, resolved when a command runs, so the registry outlives workspace switches.
-        let current: @MainActor () -> Workspace? = { [unowned center] in center.workspace }
+        let current: @MainActor () -> Workspace? = { [weak center] in center?.workspace }
         let hasWorkspace: @MainActor () -> Bool = { current() != nil }
         let inCode: @MainActor () -> Bool = { current()?.mode == .code }
 
@@ -154,8 +154,8 @@ public enum BuiltinCommands {
             menuID: "view-new-terminal", enabled: inCode) { current()?.newTerminalTab() }
 
         add("view.commandPalette", "Command Palette…", .view, chord([.primary, .shift], ch("p")), .menu, menu: .view,
-            menuID: "view-command-palette", enabled: hasWorkspace) { [unowned center] in
-            guard let workspace = current() else { return }
+            menuID: "view-command-palette", enabled: hasWorkspace) { [weak center] in
+            guard let center, let workspace = current() else { return }
             center.bringProjectWindowForward()
             quickOpen.hide()
             palette.toggle(registry: registry, workspace: workspace)

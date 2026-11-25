@@ -106,7 +106,7 @@ extension Workspace {
         if kept.isEmpty {
             let survivor = ids.contains(saved.focused) ? saved.focused : ids[0]
             tree = .group(survivor)
-            groups = [survivor: groups[survivor]!]
+            groups = groups[survivor].map { [survivor: $0] } ?? [:]
         } else {
             tree = saved.tree.pruned(keeping: kept) ?? .group(ids[0])
             groups = groups.filter { kept.contains($0.key) }

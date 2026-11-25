@@ -44,18 +44,19 @@ extension TestWindow {
     func installAlloyMenu(model: LauncherModel, themes: ThemeController? = nil, center: CommandCenter? = nil) {
         let center = center ?? testCenter(for: model)
         let testApp = self.testApp
-        let rig = SettingsRig()
-        rig.controller = SettingsWindowController { title, size, minSize, root in
+        let log = WindowLog()
+        let controller = SettingsWindowController { title, size, minSize, root in
             // As tall as every section needs, so the tests find all of them without scrolling.
             let tall = Size(width: size.width, height: Pixels(2400))
             let opened = try testApp.openWindow(title: title, size: tall, minSize: minSize, windowStyle: .hiddenTitleBar) { settingsWindowElement(root) }
             opened.tick()
-            rig.windows.append(opened)
+            log.items.append(opened)
             return opened.window
         }
+        let rig = SettingsRig(controller: controller, windows: log)
         settingsRigs[ObjectIdentifier(testApp)] = rig
         // The center's built-in commands read these through closures, so installing again swaps them.
-        testSettingsControllers[ObjectIdentifier(center)] = rig.controller
+        testSettingsControllers[ObjectIdentifier(center)] = controller
         testThemeControllers[ObjectIdentifier(center)] = themes
         center.standardMenuClaims = { [app = testApp.app] in app.standardMenuShortcuts() }
         testApp.app.commands { alloyCommands(center: center) }
@@ -68,7 +69,7 @@ extension TestWindow {
     @discardableResult
     func openSettingsFromMenu() throws -> TestWindow {
         try testApp.performMenuBarItem(accessibilityIdentifier: "app-settings")
-        return try #require(settingsRigs[ObjectIdentifier(testApp)]?.windows.last)
+        return try #require(settingsRigs[ObjectIdentifier(testApp)]?.windows.items.last)
     }
 }
 
@@ -122,8 +123,18 @@ private func cachedCenter(key: AnyObject, make: () -> CommandCenter) -> CommandC
 /// The Settings windows a test app opened, in order.
 @MainActor
 final class SettingsRig {
-    var controller: SettingsWindowController!
-    var windows: [TestWindow] = []
+    let controller: SettingsWindowController
+    let windows: WindowLog
+    init(controller: SettingsWindowController, windows: WindowLog) {
+        self.controller = controller
+        self.windows = windows
+    }
+}
+
+/// The windows a Settings controller opened, shared with its open closure (which exists before the rig does).
+@MainActor
+final class WindowLog {
+    var items: [TestWindow] = []
 }
 
 @MainActor private var settingsRigs: [ObjectIdentifier: SettingsRig] = [:]
@@ -186,6 +197,7 @@ final class TransportBag: @unchecked Sendable {
     }
     subscript(i: Int) -> ScriptedTransport { lock.withLock { all[i] } }
     var count: Int { lock.withLock { all.count } }
+    var isEmpty: Bool { lock.withLock { all.isEmpty } }
 }
 
 /// Every element below `element` in the last published tree, pre-order.

@@ -285,7 +285,7 @@ public struct PluginGitInstaller: Sendable {
             // A pre-release tag is offered only to a plugin that is on a pre-release itself.
             guard let v = PluginSemver(tag), current.map({ v > $0 }) ?? true, !v.isPrerelease || current?.isPrerelease == true
             else { continue }
-            if best == nil || v > best!.semver { best = (v, tag) }
+            if best.map({ v > $0.semver }) ?? true { best = (v, tag) }
         }
         if let best, let commit = commits[best.tag] {
             return .newer(tag: best.tag, version: best.semver.text, commit: commit)

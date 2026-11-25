@@ -41,10 +41,12 @@ public indirect enum TerminalSplitTree: Codable, Equatable, Sendable {
     public func removing(_ pane: UUID) -> (tree: TerminalSplitTree, focus: UUID)? {
         guard case .split(let id, let axis, let first, let second) = self else { return nil }
         if case .pane(let p) = first, p == pane {
-            return (second, second.paneIDs.first!)
+            guard let focus = second.paneIDs.first else { return nil }
+            return (second, focus)
         }
         if case .pane(let p) = second, p == pane {
-            return (first, first.paneIDs.last!)
+            guard let focus = first.paneIDs.last else { return nil }
+            return (first, focus)
         }
         if let r = first.removing(pane) {
             return (.split(id: id, axis: axis, first: r.tree, second: second), r.focus)
@@ -73,7 +75,7 @@ public indirect enum TerminalSplitTree: Codable, Equatable, Sendable {
             case .down: touches = r.y0 == src.y1; overlap = min(r.x1, src.x1) - max(r.x0, src.x0)
             }
             guard touches, overlap > 0 else { continue }
-            if best == nil || overlap > best!.overlap { best = (id, overlap) }
+            if best.map({ overlap > $0.overlap }) ?? true { best = (id, overlap) }
         }
         return best?.id
     }

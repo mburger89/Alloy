@@ -374,7 +374,7 @@ struct LightbulbPanelTests {
     }
 
     @Test func anActionWhoseCommandTheServerDidNotListIsAbsent() async throws {
-        try await run({ r in
+        try await run({ _ in
             #"[{"title":"Ghost","command":{"title":"Ghost","command":"not.listed"}},{"title":"Real","command":{"title":"Real","command":"do.it"}}]"#
         }) { f in
             moveTo(f, line: 0)

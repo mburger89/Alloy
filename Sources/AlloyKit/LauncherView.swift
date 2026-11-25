@@ -82,10 +82,10 @@ public final class LauncherModel {
 /// no window left, quits.
 @MainActor
 public func installWindowShutdown(on window: Window, model: LauncherModel, settings: SettingsWindowController? = nil) {
-    window.onCloseRequest = { [unowned window] in
+    window.onCloseRequest = { [weak window] in
         model.shutdownRequested {
             if $0 { settings?.close() }
-            window.replyToCloseRequest($0)
+            window?.replyToCloseRequest($0)
         }
     }
 }

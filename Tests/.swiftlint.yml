@@ -1,0 +1,4 @@
+# Tests inherit the root .swiftlint.yml; only force_unwrapping is relaxed here.
+# A force unwrap in a test fails that test and cannot crash the app. Every other rule still applies.
+disabled_rules:
+  - force_unwrapping

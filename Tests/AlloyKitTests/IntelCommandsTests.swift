@@ -102,7 +102,7 @@ struct IntelCommandsTests {
             try selectWord(r)
             for id in ids where id != "menu-go-symbol" { #expect(isDisabled(window, id), "\(id) disabled") }
             for _ in 0..<10 { window.tick(); await Task.yield() }
-            #expect(r.methods().filter { $0.hasPrefix("textDocument/") && $0 != "textDocument/didOpen" && $0 != "textDocument/didChange" }.isEmpty)
+            #expect(!r.methods().contains { $0.hasPrefix("textDocument/") && $0 != "textDocument/didOpen" && $0 != "textDocument/didChange" })
         }
     }
 

@@ -36,7 +36,7 @@ import Testing
             return ThemeContrast.findings(Self.library.resolve(draft: file).theme)
         }
         // White text: a nearly opaque black island reads, a 40% one over white does not.
-        #expect(try findings(1.0).first { $0.pair == "text on island" } == nil)
+        #expect(try !findings(1.0).contains { $0.pair == "text on island" })
         let faint = try #require(try findings(0.4).first { $0.pair == "text on island" })
         #expect(faint.layers == ["windowBackground", "islandFill"] && faint.minimum == 4.5)
     }

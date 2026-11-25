@@ -384,7 +384,8 @@ public final class CSVTableModel {
         guard i >= 0 else { return nil }
         if i >= sort.permutation.count { return i < rowCount + 1 ? i : nil }   // the end-of-file marker row
         if inverseCache?.revision != revision { inverseCache = (revision, sort.inverse()) }
-        return Int(inverseCache!.inverse[i])
+        guard let position = inverseCache?.inverse[i] else { return nil }
+        return Int(position)
     }
 
     /// Sorts the displayed rows by a column's values off the main actor and publishes the permutation once.
@@ -447,7 +448,7 @@ public final class CSVTableModel {
     /// After a rebuild or when counts drift: the order must cover exactly the current data rows.
     private func reconcileSort() {
         guard sort != nil else { return }
-        if sort!.permutation.count != rowCount || sort!.firstOrdinal != headerOffset { sort!.resize(toRowCount: rowCount) }
+        if sort?.permutation.count != rowCount || sort?.firstOrdinal != headerOffset { sort?.resize(toRowCount: rowCount) }
         inverseCache = nil
     }
 
@@ -834,11 +835,11 @@ extension CSVTableModel {
                 position += text.utf8.count + terminator
             case .removed(let text, let edit):
                 if current == nil { current = ChangeGroup(position: position) }
-                current!.removed.append((text, edit))
+                current?.removed.append((text, edit))
             case .added(let text, _, let edit, _):
                 if current == nil { current = ChangeGroup(position: position) }
                 let n = text.utf8.count
-                current!.added.append((position..<(position + n), edit, text))
+                current?.added.append((position..<(position + n), edit, text))
                 position += n + terminator
             }
         }
@@ -890,18 +891,20 @@ extension CSVTableModel {
             if unit, let k = rows.firstIndex(of: fileRow) {
                 targetRows = [rows[k]]; lines = [g.added[k]]; old = [old[k]]
             }
-            let first = body(ofRow: targetRows.first!), last = body(ofRow: targetRows.last!)
+            guard let firstRow = targetRows.first, let lastRow = targetRows.last else { continue }
+            let first = body(ofRow: firstRow), last = body(ofRow: lastRow)
             var current = first.lowerBound..<last.upperBound
-            var replacement: String? = old.joined(separator: lineEnding(ofRow: targetRows.last!))
+            var replacement: String? = old.joined(separator: lineEnding(ofRow: lastRow))
             if g.removed.isEmpty {
                 // Rows the session added: removing them takes their terminator (or the one before the last row).
                 replacement = nil
-                let end = index.rowRange(targetRows.last!).upperBound
+                let end = index.rowRange(lastRow).upperBound
                 if end > last.upperBound { current = first.lowerBound..<end }
-                else if first.lowerBound > 0 { current = (first.lowerBound - lineEnding(ofRow: targetRows.first! - 1).utf8.count)..<last.upperBound }
+                else if first.lowerBound > 0 { current = (first.lowerBound - lineEnding(ofRow: firstRow - 1).utf8.count)..<last.upperBound }
             }
             // Each tinted edit keeps what it wrote or removed anywhere on these lines (tombstones touching the range included).
-            let span = lines.first!.range.lowerBound..<lines.last!.range.upperBound
+            guard let firstLine = lines.first, let lastLine = lines.last else { continue }
+            let span = firstLine.range.lowerBound..<lastLine.range.upperBound
             let keeps = edits.sorted { $0.uuidString < $1.uuidString }.map { CSVKeepPiece(range: span, edit: $0) }
             return CSVRangeTarget(current: current, replacement: replacement, keeps: keeps,
                                   bufferVersion: buffer.version, ledgerVersion: ledger.version)

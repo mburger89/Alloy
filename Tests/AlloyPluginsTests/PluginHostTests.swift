@@ -34,6 +34,7 @@ private final class Counter: @unchecked Sendable {
     private let lock = NSLock()
     private var value = 0
     var count: Int { lock.withLock { value } }
+    var isEmpty: Bool { lock.withLock { value == 0 } }
     func bump() { lock.withLock { value += 1 } }
 }
 
@@ -150,7 +151,7 @@ struct PluginHostTests {
         let answer = try #require(log(folder).first { $0["id"]?.intValue == 7 })
         #expect(answer["error"]?["code"]?.intValue == -32003)
         #expect(answer["error"]?["data"]?["permission"]?.stringValue == "project.read")
-        #expect(calls.count == 0)
+        #expect(calls.isEmpty)
         await host.shutdown()
     }
 

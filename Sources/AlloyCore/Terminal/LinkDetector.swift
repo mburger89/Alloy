@@ -165,8 +165,7 @@ public enum LinkDetector {
             nums.append(n)
             end = j - 1
         }
-        guard !nums.isEmpty, looksLikePath(c, lo, end) else { return nil }
-        let line = nums.last!
+        guard let line = nums.last, looksLikePath(c, lo, end) else { return nil }
         let col = nums.count == 2 ? nums[0] : nil
         return TerminalLink(range: lo..<hi, kind: .file(path: String(c[lo..<end]), line: line, column: col))
     }

@@ -105,7 +105,7 @@ final class SemanticHighlighter {
         guard decorations.buffer.map(0, from: asOf, bias: .after) != nil else { return 0 }
         let styled = runs.compactMap { run -> CodeStyleRun? in
             // Plain variables keep the text colour, so they need no run.
-            run.1 == .variable || run.1 == .plain ? nil : CodeStyleRun(range: run.0, style: styleID(for: run.1, in: target))
+            run.1 == .variable || run.1 == .plain ? nil : CodeStyleRun(range: run.0, style: styleID(for: run.1, in: target, decorations: decorations))
         }
         decorations.setHighlights(styled, in: 0..<(1 << 40), layer: .semantic, asOf: asOf)
         return styled.count
@@ -126,9 +126,9 @@ final class SemanticHighlighter {
         targets = []
     }
 
-    private func styleID(for token: SyntaxToken, in target: Target) -> CodeStyleID {
+    private func styleID(for token: SyntaxToken, in target: Target, decorations: CodeDecorations) -> CodeStyleID {
         if let id = target.styleIDs[token] { return id }
-        let id = target.decorations!.register(palette.dynamicStyle(token))
+        let id = decorations.register(palette.dynamicStyle(token))
         target.styleIDs[token] = id
         return id
     }

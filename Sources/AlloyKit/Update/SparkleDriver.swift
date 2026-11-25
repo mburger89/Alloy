@@ -7,6 +7,7 @@ import Sparkle
 public final class SparkleDriver: NSObject, UpdateDriving, SPUUserDriver {
     public weak var controller: UpdateController?
     private var updater: SPUUpdater?
+    // swiftlint:disable:next weak_delegate - this driver is the delegate's only owner; SPUUpdater holds it weakly, so weak here would free it at once
     private let delegate = SparkleDelegate()
     private let defaults: UserDefaults
 

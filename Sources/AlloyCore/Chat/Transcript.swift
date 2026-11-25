@@ -515,7 +515,7 @@ public struct Transcript: Sendable, Equatable {
         }
         let n = seenCounts[messageID, default: 0]
         seenCounts[messageID] = n + 1
-        let finalID = "m\(messageSeq[messageID]!)#\(n)"
+        let finalID = "m\(messageSeq[messageID] ?? seq)#\(n)"
         var existing: Int?
         if let e = streaming[n], e.id == finalID {
             switch (block, e.kind) {

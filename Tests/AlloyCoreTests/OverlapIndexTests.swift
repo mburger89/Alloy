@@ -17,8 +17,8 @@ private let perfBounds = ProcessInfo.processInfo.environment["ALLOY_PERF"] == "1
     @MainActor final class World {
         var files: [String: FileLedger] = [:]
         var docs: [String: EditorDocument] = [:]
-        lazy var index = OverlapIndex(ledger: { [unowned self] in self.files[$0] },
-                                      document: { [unowned self] in self.docs[$0] })
+        lazy var index = OverlapIndex(ledger: { [weak self] in self?.files[$0] },
+                                      document: { [weak self] in self?.docs[$0] })
 
         func ledger(_ path: String, baseline: String) { files[path] = FileLedger(path: path, baseline: baseline) }
 
@@ -405,7 +405,7 @@ private let perfBounds = ProcessInfo.processInfo.environment["ALLOY_PERF"] == "1
         #expect(near.count == 1)
         #expect(near.first?.lines == 15...15)
         // Buffer line 20 is saved line 20 only if nothing shifted; it must not match there.
-        #expect(w.index.overlaps(for: a, range: LineRange(path: "f.txt", lines: 20...22)).filter { $0.kind == .userTyping }.isEmpty)
+        #expect(!w.index.overlaps(for: a, range: LineRange(path: "f.txt", lines: 20...22)).contains { $0.kind == .userTyping })
         // The earlier insertion is reported at saved line 3 (where it was typed), not 3...8.
         #expect(w.index.overlaps(for: a, range: LineRange(path: "f.txt", lines: 3...3)).contains { $0.kind == .userTyping && $0.lines == 3...3 })
     }

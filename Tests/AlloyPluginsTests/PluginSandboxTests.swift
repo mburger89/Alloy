@@ -96,7 +96,7 @@ struct PluginSandboxTests {
         let spawn = try PluginSandbox.profile(input(grants: [.processSpawn])).components(separatedBy: "\n")
         let ungranted = try PluginSandbox.profile(input(grants: [.projectWrite, .sessionsRead, .mcpTools])).components(separatedBy: "\n")
         func added(_ lines: [String]) -> [String] { lines.filter { !base.contains($0) } }
-        #expect(read.first { $0.contains("/work/project") } != nil)
+        #expect(read.contains { $0.contains("/work/project") })
         #expect(read.filter { $0.contains("/work/project") }.count == 1)
         #expect(added(net) == [
             "(allow network-outbound (remote ip))",

@@ -59,7 +59,9 @@ public struct SideBySideModel: Equatable, Sendable {
             if let last = bars.last, last.edit == edit, last.rows.upperBound == row {
                 bars[bars.count - 1].rows = last.rows.lowerBound..<(row + 1)
             } else {
-                bars.append(Bar(rows: row..<(row + 1), author: authors[edit]!, edit: edit, tag: tagOf[edit]!))
+                if let author = authors[edit], let tag = tagOf[edit] {
+                    bars.append(Bar(rows: row..<(row + 1), author: author, edit: edit, tag: tag))
+                }
             }
         }
         /// The shorter side of a replaced block is padded after its last row so the block's top edges line up.

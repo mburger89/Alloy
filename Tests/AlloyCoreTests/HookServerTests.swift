@@ -46,7 +46,7 @@ private struct Harness {
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.setValue("Bearer \(token ?? self.token)", forHTTPHeaderField: "Authorization")
         let (data, resp) = try await urlSession.data(for: req)
-        return (data, resp as! HTTPURLResponse)
+        return (data, try #require(resp as? HTTPURLResponse))
     }
 }
 

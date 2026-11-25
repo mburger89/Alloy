@@ -1,0 +1,28 @@
+# SwiftLint, blocking. There is no baseline: the tree is clean and any violation fails the job.
+# See README.md "Linting".
+name: Lint
+
+on:
+  push:
+    branches: [ "main" ]
+    paths: [ "**.swift", "**/.swiftlint.yml", ".github/workflows/lint.yml" ]
+  pull_request:
+    branches: [ "main" ]
+    paths: [ "**.swift", "**/.swiftlint.yml", ".github/workflows/lint.yml" ]
+
+# A new push to a pull request (or a non-main branch) cancels its superseded run.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref == 'refs/heads/main' && github.sha || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  lint:
+    name: SwiftLint
+    runs-on: ubuntu-24.04
+    # Pinned to the version used locally; Linux, because SwiftLint here is syntactic
+    # (no compile) and the container is the fastest start.
+    container: ghcr.io/realm/swiftlint:0.65.1
+    steps:
+    - uses: actions/checkout@v4
+    - name: SwiftLint
+      run: swiftlint lint --strict --reporter github-actions-logging

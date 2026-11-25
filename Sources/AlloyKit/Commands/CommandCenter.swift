@@ -29,7 +29,10 @@ public final class CommandCenter {
         palette = CommandPaletteModel()
         var current: (@MainActor () -> Workspace?)?
         registry = CommandRegistry(workspace: { current?() })
-        current = { [unowned self] in bound ?? self.launcher.workspace }
+        current = { [weak self] in
+            guard let self else { return nil }
+            return bound ?? launcher.workspace
+        }
     }
 
     /// The workspace commands act on: the bound one, else the launcher's.

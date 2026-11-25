@@ -170,7 +170,7 @@ private func loc(_ uri: String, line: Int, character: Int = 3) -> String {
     }
 
     @Test func aStaleReferencesAnswerOpensNothing() async throws {
-        try await references(delayMs: 600) { r, window in
+        try await references(delayMs: 600) { _, window in
             window.typeKey(FilePanelView.f12, modifierFlags: .shift)
             window.typeText("x")
             await pause(window, seconds: 1.5)

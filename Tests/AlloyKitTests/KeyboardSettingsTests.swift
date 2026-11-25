@@ -99,8 +99,9 @@ import Testing
 
     @Test func conditionalBuiltInShowsItsCondition() async throws {
         let (_, _, settings, center) = try await open()
-        let soft = ShortcutClashes(center: center).builtInRows.enumerated().first { $0.element.isConditional }
-        let (n, claim) = try #require(soft)
+        let rows = ShortcutClashes(center: center).builtInRows
+        let n = try #require(rows.firstIndex { $0.isConditional })
+        let claim = rows[n]
         let row = try settings.element(identifier: "keyboard-builtin-\(n)")
         let shown = descendants(of: row, in: settings).compactMap { $0.value ?? $0.label }.joined(separator: " ")
         #expect(shown.contains(claim.condition ?? "?"), "\(shown)")

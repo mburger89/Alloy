@@ -66,6 +66,7 @@ import Testing
     }
 
     @Test func equalInputsAreEqual() {
+        // swiftlint:disable:next identical_operands - two separately built values must compare equal (Equatable check)
         #expect(make(["terminal.ansi2": red]) == make(["terminal.ansi2": red]))
         #expect(make(["terminal.ansi2": red]) != make(["terminal.ansi2": blue]))
     }

@@ -40,6 +40,7 @@ import MetalUITerminal
     private let home: String
     private let now: @Sendable () -> Date
     private let graceBeforeKill: Duration
+    // swiftlint:disable:next weak_delegate - `Delegate` is a struct of closures (a value type), so it cannot be weak
     private let delegate: Delegate
 
     private var entries: [UUID: Entry] = [:]

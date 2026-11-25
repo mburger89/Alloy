@@ -42,7 +42,7 @@ private struct LSPRig {
         try sourceText.write(to: rig.root.appendingPathComponent("main.rs"), atomically: true, encoding: .utf8)
         logURL = rig.root.appendingPathComponent("fake-lsp.jsonl")
         let log = logURL.path, processes = processes
-        let launcher = ServerLauncher { config, resolved, root in
+        let launcher = ServerLauncher { _, resolved, root in
             var env = ProcessInfo.processInfo.environment
             env["FAKE_LSP_SCRIPT"] = #"{"capabilities":{"textDocumentSync":2}}"#
             env["FAKE_LSP_LOG"] = log

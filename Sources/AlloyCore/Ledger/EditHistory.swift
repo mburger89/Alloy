@@ -195,11 +195,11 @@ struct EditHistory: Codable, Equatable, Sendable {
                 // Right after the previous visible fragment, i.e. before any tombstones at this point.
                 var at = op.start == 0 ? 0 : split(atVisible: op.start)
                 while at > 0, !isVisible(fragments[at - 1]) { at -= 1 }
-                let nextOffset = metas[edit]!.nextOffset   // not a whole-Meta copy: that would copy `ranges` on append
+                guard let nextOffset = metas[edit]?.nextOffset else { continue }  // not a whole-Meta copy: that would copy `ranges` on append
                 let frag = Fragment(id: InsertionID(edit: edit, offset: nextOffset), text: op.insert)
                 fragments.insert(frag, at: at)
-                metas[edit]!.ranges.append(InsertRange(start: nextOffset, length: frag.length))
-                metas[edit]!.nextOffset += frag.length + 1   // gap keeps separate operations non-contiguous
+                metas[edit]?.ranges.append(InsertRange(start: nextOffset, length: frag.length))
+                metas[edit]?.nextOffset += frag.length + 1   // gap keeps separate operations non-contiguous
             }
         }
     }
@@ -252,7 +252,7 @@ struct EditHistory: Codable, Equatable, Sendable {
                 if fragments[i].id.edit == edit, cum >= range.lowerBound, cum + length <= range.upperBound {
                     let offset = fragments[i].id.offset
                     fragments[i].id.edit = sibling
-                    metas[sibling]!.ranges.append(InsertRange(start: offset, length: length))
+                    metas[sibling]?.ranges.append(InsertRange(start: offset, length: length))
                     aliases.append(Alias(from: edit, to: sibling, start: offset, length: length))
                 }
                 cum += length
@@ -278,7 +278,7 @@ struct EditHistory: Codable, Equatable, Sendable {
         for (i, f) in fragments.enumerated() {
             if f.id.edit == edit, let r = meta.ranges.firstIndex(where: { f.id.offset >= $0.start && f.id.offset < $0.start + $0.length }) {
                 pieces.append((i, r))
-                if let d = f.deletedBy.filter({ metas[$0]?.state == .live }).max(by: { metas[$0]!.seq < metas[$1]!.seq }) {
+                if let d = f.deletedBy.filter({ metas[$0]?.state == .live }).max(by: { (metas[$0]?.seq ?? 0) < (metas[$1]?.seq ?? 0) }) {
                     return .other(d)
                 }
             }
@@ -454,20 +454,20 @@ struct EditHistory: Codable, Equatable, Sendable {
 
     /// The earliest live edit (record sequence) among `ids`.
     func earliestLive(_ ids: [UUID]) -> UUID? {
-        ids.filter { metas[$0]?.state == .live }.min { metas[$0]!.seq < metas[$1]!.seq }
+        ids.filter { metas[$0]?.state == .live }.min { (metas[$0]?.seq ?? 0) < (metas[$1]?.seq ?? 0) }
     }
 
     /// The latest live edit (record sequence) among `ids`.
     func latestLive(_ ids: [UUID]) -> UUID? { latest(ids) }
 
     private func latest(_ ids: [UUID]) -> UUID? {
-        ids.filter { metas[$0]?.state == .live }.max { metas[$0]!.seq < metas[$1]!.seq }
+        ids.filter { metas[$0]?.state == .live }.max { (metas[$0]?.seq ?? 0) < (metas[$1]?.seq ?? 0) }
     }
 
     /// Per old-view line, the latest live edit that deleted a character on it.
     func removalOwners(in old: [Fragment]) -> [UUID?] {
         lineAttribution(of: old) { f in
-            f.deletedBy.filter { metas[$0]?.state == .live }.max { metas[$0]!.seq < metas[$1]!.seq }
+            f.deletedBy.filter { metas[$0]?.state == .live }.max { (metas[$0]?.seq ?? 0) < (metas[$1]?.seq ?? 0) }
         }
     }
 

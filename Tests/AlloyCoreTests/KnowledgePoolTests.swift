@@ -231,7 +231,7 @@ import SQLite3
 
     @Test func fiveANotesDecode() throws {
         let n = note(.topic("x"))
-        var obj = try JSONSerialization.jsonObject(with: JSONEncoder().encode(n)) as! [String: Any]
+        var obj = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(n)) as? [String: Any])
         obj.removeValue(forKey: "authorName"); obj.removeValue(forKey: "project")
         let decoded = try JSONDecoder().decode(Note.self, from: JSONSerialization.data(withJSONObject: obj))
         #expect(decoded.authorName == nil && decoded.project == nil)

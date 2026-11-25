@@ -256,7 +256,7 @@ public struct FileLedger: Codable, Sendable, Equatable {
                                     ?? (k < links.newSplitters.count ? history.earliestLive(links.newSplitters[k]) : nil)
                                     ?? (k > 0 && k - 1 < newTerms.count ? history.inserter(ofFragment: newTerms[k - 1]) : nil)
                                     ?? latest(region.old.map(remover)) ?? fallback,
-                                  runs: k < runsByLine!.count ? runsByLine![k] : []), TextDiff.terminatorLength(newUnits[k])))
+                                  runs: runsByLine.map { k < $0.count ? $0[k] : [] } ?? []), TextDiff.terminatorLength(newUnits[k])))
             }
             o = region.old.upperBound; n = region.new.upperBound
         }
@@ -509,10 +509,10 @@ enum TextDiff {
         while i < om.count || j < nm.count {
             if i < om.count, removed.contains(i) {
                 if cur == nil { cur = (base + p + i, 0, []) }
-                cur!.del += 1; i += 1
+                cur?.del += 1; i += 1
             } else if j < nm.count, inserted.contains(j) {
                 if cur == nil { cur = (base + p + i, 0, []) }
-                cur!.ins.append(nm[j]); j += 1
+                cur?.ins.append(nm[j]); j += 1
             } else {
                 flush(); i += 1; j += 1
             }
@@ -605,7 +605,7 @@ enum TextDiff {
         return Patch.diff(old: keys(am), new: keys(bm), context: context).map {
             var h = $0
             h.oldStart += lo; h.newStart += lo
-            h.lines = h.lines.map { line in String(line.first!) + (original[String(line.dropFirst())] ?? String(line.dropFirst())) }
+            h.lines = h.lines.map { line in String(line.prefix(1)) + (original[String(line.dropFirst())] ?? String(line.dropFirst())) }
             return h
         }
     }

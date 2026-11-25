@@ -120,7 +120,7 @@ final class IntelligenceScheduler {
         var bytes: Set<UInt8> = []
         var scalars: Set<Unicode.Scalar> = []
         for trigger in features.completionTriggers where trigger.unicodeScalars.count == 1 {
-            let s = trigger.unicodeScalars.first!
+            guard let s = trigger.unicodeScalars.first else { continue }
             if s.isASCII { bytes.insert(UInt8(s.value)) } else { scalars.insert(s) }
         }
         triggerBytes = bytes

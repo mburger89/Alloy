@@ -52,7 +52,7 @@ private struct Harness {
         if useToken { req.setValue("Bearer \(token ?? self.token)", forHTTPHeaderField: "Authorization") }
         for (k, v) in headers { req.setValue(v, forHTTPHeaderField: k) }
         let (data, resp) = try await urlSession.data(for: req)
-        return (data, resp as! HTTPURLResponse)
+        return (data, try #require(resp as? HTTPURLResponse))
     }
 
     func rpc(_ json: String, headers: [String: String] = [:]) async throws -> (JSONValue?, HTTPURLResponse) {
@@ -290,7 +290,7 @@ private func rawPost(port: Int, token: String, body: String = pingBody, extra: S
             req.httpMethod = method
             req.setValue("Bearer \(h.token)", forHTTPHeaderField: "Authorization")
             let (_, resp) = try await h.urlSession.data(for: req)
-            #expect((resp as! HTTPURLResponse).statusCode == 405)
+            #expect(try #require(resp as? HTTPURLResponse).statusCode == 405)
         }
         await h.stop()
     }

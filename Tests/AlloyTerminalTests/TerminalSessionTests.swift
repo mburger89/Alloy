@@ -56,6 +56,7 @@ struct TerminalSessionTests {
 
     @Test func snapshotSourceIsStable() {
         let (session, _) = make()
+        // swiftlint:disable:next identical_operands - deliberate: two reads of the property must return the same object
         #expect(session.snapshotSource === session.snapshotSource)
     }
 

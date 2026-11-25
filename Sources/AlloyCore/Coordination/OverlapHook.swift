@@ -98,8 +98,9 @@ extension Workspace {
         var spans: [ClosedRange<Int>]?
         if let change {
             overlapIndex.propose(change)
-            spans = change.ranges.count <= Self.maxSpanQueries ? change.ranges : [change.range.lines]
-            for span in spans! {
+            let queried = change.ranges.count <= Self.maxSpanQueries ? change.ranges : [change.range.lines]
+            spans = queried
+            for span in queried {
                 overlaps += overlapIndex.overlaps(for: s.id, range: LineRange(path: rel, lines: span))
             }
         }

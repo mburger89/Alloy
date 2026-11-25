@@ -189,7 +189,7 @@ import Testing
         let signs = calls.filter { $0.contains("--sign") }
         #expect(signs.count == 6, "\(signs)")
         #expect(signs.filter { $0.hasSuffix("Updater.app") }.count == 1, "symlinked .app is signed once, by its real path: \(signs)")
-        #expect(signs.filter { $0.hasSuffix("Updater.app") }.first?.contains("Versions/A/Updater.app") == true, "\(signs)")
+        #expect(signs.first { $0.hasSuffix("Updater.app") }?.contains("Versions/A/Updater.app") == true, "\(signs)")
         for c in signs {
             #expect(c.contains("--force --sign Test Identity --options runtime --timestamp"), "\(c)")
             #expect(!c.contains("--deep"), "\(c)")

@@ -73,7 +73,8 @@ public struct ProposedChange: Sendable, Equatable {
         default:
             return nil
         }
-        let hull = spans.first!.lowerBound...spans.last!.upperBound
+        guard let firstSpan = spans.first, let lastSpan = spans.last else { return nil }
+        let hull = firstSpan.lowerBound...lastSpan.upperBound
         return ProposedChange(session: session, toolUseID: toolUseID, range: LineRange(path: path, lines: hull),
                               ranges: spans, date: date, diff: diff)
     }
@@ -92,7 +93,9 @@ public struct ProposedChange: Sendable, Equatable {
         }
         if out.count > maxSpans {
             let tail = out[(maxSpans - 1)...]
-            out = Array(out[..<(maxSpans - 1)]) + [tail.first!.lowerBound...tail.last!.upperBound]
+            if let head = tail.first, let end = tail.last {
+                out = Array(out[..<(maxSpans - 1)]) + [head.lowerBound...end.upperBound]
+            }
         }
         return out
     }

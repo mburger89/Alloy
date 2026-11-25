@@ -63,7 +63,8 @@ public struct FileTreeSnapshot: Sendable, Equatable {
             children[parent, default: []].append(FileTreeEntry(path: path, name: Self.lastName(path), isFolder: false))
         }
         for key in Array(children.keys) {
-            children[key] = children[key]!
+            guard let entries = children[key] else { continue }
+            children[key] = entries
                 .map { (entry: $0, lower: $0.name.lowercased()) }
                 .sorted { l, r in
                     if l.entry.isFolder != r.entry.isFolder { return l.entry.isFolder }

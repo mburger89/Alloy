@@ -296,17 +296,17 @@ public actor LSPManager {
         let needsLog: Bool
         let targets: [Entry]
         do {
-            let current = tracked[path]!
+            guard let current = tracked[path] else { return }
             needsLog = liveMemberCount(current) >= 2
             targets = syncTargets(current)
         }
         switch change {
         case .edits(let edits, let after):
-            tracked[path]!.snapshot = after
-            if needsLog { tracked[path]!.log.append(edits, after: after.version) } else { tracked[path]!.log.reset(to: after.version) }
+            tracked[path]?.snapshot = after
+            if needsLog { tracked[path]?.log.append(edits, after: after.version) } else { tracked[path]?.log.reset(to: after.version) }
         case .resync(let snapshot):
-            tracked[path]!.snapshot = snapshot
-            tracked[path]!.log.reset(to: snapshot.version)
+            tracked[path]?.snapshot = snapshot
+            tracked[path]?.log.reset(to: snapshot.version)
         }
         // Tokens of the old text are no use; the view asks again after its debounce.
         if let state = semantic[path] {
@@ -542,7 +542,7 @@ public actor LSPManager {
                 continue
             }
             // Same server: running (kept) or waiting for its restart. One that was missing gets another try below.
-            if config?.id == doc.serverID, config == nil || entries[config!.id] != nil || restarting.contains(config!.id) {
+            if config?.id == doc.serverID, config.map({ entries[$0.id] != nil || restarting.contains($0.id) }) ?? true {
                 await reconcileLinters(path: path, onlyNew: true)
                 continue
             }

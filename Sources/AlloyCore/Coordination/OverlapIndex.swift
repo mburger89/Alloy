@@ -157,7 +157,8 @@ public final class OverlapIndex {
             guard let owner else { continue }
             let line = i + 1
             if let last = runs[owner]?.last, last.upperBound == line - 1 {
-                runs[owner]![runs[owner]!.count - 1] = last.lowerBound...line
+                runs[owner]?.removeLast()
+                runs[owner]?.append(last.lowerBound...line)
             } else {
                 runs[owner, default: []].append(line...line)
             }
@@ -206,17 +207,19 @@ public final class OverlapIndex {
     private func userTyping(path: String) -> UserTyping {
         guard let doc = documentFor(path), doc.isDirty else { typing[path] = nil; return .none }
         guard let log = doc.editsSinceSave() else { typing[path] = nil; return .lost }
-        var t = typing[path]
-        if t == nil || t!.document != doc.id || t!.savedVersion != doc.savedVersion || t!.processed > log.count {
+        var t: Typing
+        if let known = typing[path], known.document == doc.id, known.savedVersion == doc.savedVersion, known.processed <= log.count {
+            t = known
+        } else {
             t = Typing(document: doc.id, savedVersion: doc.savedVersion)
         }
-        if t!.processed < log.count {
-            for e in log[t!.processed...] { t!.regions.apply(range: e.range, newLength: e.newText.utf8.count) }
-            t!.processed = log.count
-            t!.lines = Self.lines(of: t!.regions, in: doc.savedSnapshot)
+        if t.processed < log.count {
+            for e in log[t.processed...] { t.regions.apply(range: e.range, newLength: e.newText.utf8.count) }
+            t.processed = log.count
+            t.lines = Self.lines(of: t.regions, in: doc.savedSnapshot)
         }
         typing[path] = t
-        return .lines(t!.lines)
+        return .lines(t.lines)
     }
 
     private static func lines(of regions: TypingRegions, in saved: CodeSnapshot) -> [ClosedRange<Int>] {

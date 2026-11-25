@@ -1,0 +1,78 @@
+# SwiftLint configuration for Alloy (blocking in CI; see README.md "Linting").
+# Philosophy: surface real bug classes early, stay silent on the house style.
+# There is no baseline: the tree is clean and `swiftlint lint --strict` must stay at zero.
+# Rule choices match MetalUI's .swiftlint.yml so both projects share one house style.
+# Tests/.swiftlint.yml relaxes force_unwrapping for tests only.
+
+included:
+  - Sources
+  - Tests
+
+excluded:
+  - .build
+  - "**/.build"
+  # No generated or vendored Swift lives in Sources (grammars and icons are data or C).
+  # Vendored C (CFreeType, CHarfBuzz, CSheenBidi, CUnibreak, CStbImage) contains no Swift;
+  # SDL3 and AccessKit are not in the tree (THIRD-PARTY-NOTICES.md).
+
+# Opt-in rules that flag a real bug class (counts were measured and are sane).
+opt_in_rules:
+  - force_unwrapping
+  - identical_operands
+  - unowned_variable_capture
+  - overridden_super_call
+  - prohibited_super_call
+  - weak_delegate
+  - discarded_notification_center_observer
+  - contains_over_first_not_nil
+  - first_where
+  - empty_count
+  - yoda_condition
+  - implicitly_unwrapped_optional
+  - unhandled_throwing_task
+  - class_delegate_protocol
+  - lower_acl_than_parent
+  - contains_over_filter_is_empty
+
+# Everything below is disabled because it clashes with the house style, not because it is wrong in general.
+disabled_rules:
+  - line_length                              # house lines run 100-170 columns (p99 = 129); thousands of hits
+  - file_length                              # large files are deliberate (one type per concern, long test suites)
+  - type_body_length                         # large types are deliberate
+  - function_body_length                     # long layout/paint functions are deliberate
+  - cyclomatic_complexity                    # switch-heavy event/layout code
+  - function_parameter_count                 # SwiftUI-style initialisers and layout helpers take many parameters
+  - large_tuple                              # tuples are used for geometry and test fixtures
+  - nesting                                  # nested helper types and closures are idiomatic here
+  - identifier_name                          # short names (x, y, w, h, dx) in math/layout code; test names are sentences
+  - type_name                                # underscored and short type names in tests and SwiftUI-mirroring API
+  - trailing_comma                           # formatting preference, mixed in the tree
+  - multiple_closures_with_trailing_closure  # SwiftUI-style multi-closure APIs
+  - optional_data_string_conversion          # String(decoding:as:) is deliberate for lossy UTF-8
+  - statement_position                       # pure formatting
+  - comma                                    # pure formatting
+  - colon                                    # pure formatting (aligned dictionary/argument columns)
+  - vertical_parameter_alignment             # pure formatting
+  - switch_case_alignment                    # pure formatting
+  - vertical_whitespace                      # pure formatting
+  - trailing_newline                         # pure formatting
+  - trailing_whitespace                      # pure formatting
+  - leading_whitespace                       # pure formatting
+  - opening_brace                            # pure formatting
+  - control_statement                        # pure formatting
+  - empty_parentheses_with_trailing_closure  # pure formatting
+  - redundant_void_return                    # pure formatting
+  - syntactic_sugar                          # pure formatting
+  - implicit_optional_initialization         # `= nil` on optionals is written explicitly on purpose
+  - unneeded_synthesized_initializer         # explicit inits are kept for public API clarity
+  - inclusive_language                       # hits are API names that mirror SwiftUI/AppKit terms
+  - void_function_in_ternary                 # style
+  - for_where                                # style
+  - todo                                     # TODOs are tracked in Tasks.md and records, not by the linter
+  - legacy_multiple                          # `% n == 0` reads fine in layout math
+  - redundant_nil_coalescing                 # style
+  - empty_string                             # style
+  - empty_collection_literal                 # style
+  - discouraged_optional_collection          # optional collections carry meaning (nil vs empty)
+  - redundant_discardable_let                # `let _ = BodyProbe.hit(..)` / `let _ = model.revision` sit in MetalUI `content` result builders, where `_ = expr` is not a valid statement
+  - discouraged_optional_boolean             # tri-state booleans are deliberate (SwiftUI-style)

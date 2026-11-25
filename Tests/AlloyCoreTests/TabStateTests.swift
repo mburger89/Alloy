@@ -43,7 +43,7 @@ import Testing
         withObservationTracking { _ = doc.tabDirty } onChange: { notified.bump() }
         for i in 0..<10 { doc.buffer.replace(0..<0, with: "k\(i)") }
         for _ in 0..<2_000 { await Task.yield() }
-        #expect(notified.count == 0)
+        #expect(notified.isEmpty)
         #expect(doc.isDirty)
         try await e.ws.save("a.txt")
         await waitUntil("clean flag") { !doc.tabDirty }
@@ -56,4 +56,5 @@ private final class Counter: @unchecked Sendable {
     private var n = 0
     func bump() { lock.withLock { n += 1 } }
     var count: Int { lock.withLock { n } }
+    var isEmpty: Bool { lock.withLock { n == 0 } }
 }

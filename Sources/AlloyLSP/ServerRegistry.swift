@@ -35,7 +35,7 @@ public struct ServerRegistry: Sendable {
         }
         let known = Set(builtIn.map(\.id))
         for id in overrides.keys.sorted() where !known.contains(id) {
-            let o = overrides[id]!
+            guard let o = overrides[id] else { continue }
             guard let command = o.command, !command.isEmpty,
                   !(o.extensions ?? []).isEmpty || !(o.fileNames ?? []).isEmpty else { continue }
             servers.append(ServerConfig(id: id, name: o.name ?? id, languageID: o.languageID ?? id, languageIDs: o.languageIDs ?? [:],

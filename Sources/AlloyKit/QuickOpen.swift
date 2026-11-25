@@ -206,8 +206,7 @@ final class QuickOpenModel {
         if result.truncated { notes.append("first \(ReferenceParsing.hitLimit) shown") }
         if result.outsideRoot > 0 { notes.append("\(result.outsideRoot) more outside the project") }
         let encoding = result.encoding
-        return ListPaletteModel(kind: .references, items: items, note: notes.isEmpty ? nil : notes.joined(separator: ", ")) {
-            [weak workspace, weak quickOpen] item in
+        return ListPaletteModel(kind: .references, items: items, note: notes.isEmpty ? nil : notes.joined(separator: ", ")) { [weak workspace, weak quickOpen] item in
             guard let workspace, hits.indices.contains(item.tag) else { return }
             let hit = hits[item.tag]
             quickOpen?.hide()

@@ -67,11 +67,12 @@ import Testing
     }
 
     @Test func differentAsksBeforeReplacingAndCancelWritesNothing() async throws {
-        var skill: URL!
+        var skill: URL?
         let t = try await setup(prepare: { installer, files in
             try installer.install(files: files)
-            skill = installer.directory.appendingPathComponent("SKILL.md")
-            try "my edits".write(to: skill, atomically: true, encoding: .utf8)
+            let file = installer.directory.appendingPathComponent("SKILL.md")
+            skill = file
+            try "my edits".write(to: file, atomically: true, encoding: .utf8)
         })
         defer { t.controller.stop() }
         #expect(try await label(t) == "Update theme skill\u{2026}")
@@ -82,7 +83,7 @@ import Testing
         #expect((confirm.value ?? confirm.label) == "Replace the copy in your skills folder? Changes made to it will be lost.")
         try t.window.click(t.window.element(identifier: "settings-theme-skill-cancel"))
         try await t.window.runUntil { (try? t.window.element(identifier: "settings-theme-skill-confirm")) == nil }
-        #expect(try String(contentsOf: skill, encoding: .utf8) == "my edits")
+        #expect(try String(contentsOf: try #require(skill), encoding: .utf8) == "my edits")
         #expect(try await label(t) == "Update theme skill\u{2026}")
 
         try t.window.click(t.window.element(identifier: "settings-install-theme-skill"))

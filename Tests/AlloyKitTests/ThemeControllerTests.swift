@@ -152,7 +152,7 @@ import Testing
         await waitFor("accent turns green") { let r = probe.resolved(); return self.same(r[0], r[1]) }
         r = probe.resolved()
         #expect(same(r[0], r[1]))
-        #expect(rig.transports.count == 0)
+        #expect(rig.transports.isEmpty)
     }
 
     @Test func brokenActiveFileKeepsLastGood() async throws {

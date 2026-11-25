@@ -275,8 +275,8 @@ private let t0 = Date(timeIntervalSince1970: 1_000)
     @Test func decodesLedgerWithoutRemovalsOrMetas() throws {
         var l = FileLedger(path: "f.txt", baseline: "1\n2\n")
         _ = edit(&l, A, to: "1\nX\n")
-        var json = try JSONSerialization.jsonObject(with: JSONEncoder().encode(l)) as! [String: Any]
-        var history = json["history"] as! [String: Any]
+        var json = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(l)) as? [String: Any])
+        var history = try #require(json["history"] as? [String: Any])
         history["removals"] = nil
         json["history"] = history
         let old = try JSONDecoder().decode(FileLedger.self, from: JSONSerialization.data(withJSONObject: json))

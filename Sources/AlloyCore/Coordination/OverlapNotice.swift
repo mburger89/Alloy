@@ -50,8 +50,8 @@ enum OverlapNotice {
                 grouped[key] = (o, o.lines)
             }
         }
-        return order.map { key in
-            let (o, lines) = grouped[key]!
+        return order.compactMap { key in
+            guard let (o, lines) = grouped[key] else { return nil }
             var edit: UUID?
             if case .active(let id) = o.kind { edit = id }
             return Item(key: key, text: text(for: o, lines: lines, path: AlreadyRead.oneLine(path), now: now, name: name),

@@ -127,10 +127,11 @@ extension Workspace {
     private func dispatch(_ origin: SessionMessageOrigin, to target: Session) -> UUID {
         let wire = origin.isSystem ? Messages.systemWire(text: origin.body) : Messages.wire(sender: origin.senderName, text: origin.body)
         var message = OutgoingMessage(text: wire, priority: .next, origin: origin)
-        message.uuid = UUID()
+        let uuid = UUID()
+        message.uuid = uuid
         let id = target.id
         _ = track { [weak self] in await self?.send(message, to: id) }
-        return message.uuid!
+        return uuid
     }
 
     /// Seconds until the oldest of `entries` leaves the window (at least 1).
