@@ -5,7 +5,7 @@ import MetalUI
 /// An AskUserQuestion prompt: per question a header chip, the question text, one row per option and an "Other" row
 /// with a text field. Submit sends every answer through `Workspace.answerQuestion`; once answered the chosen
 /// answers show read-only. The picks live in a `CardDraft` owned by the transcript (see `TranscriptView.drafts`).
-struct QuestionCard: Component {
+struct QuestionCard: Component, @MainActor Equatable {
     typealias Question = QuestionBlock.Question
 
     let workspace: Workspace
@@ -17,7 +17,14 @@ struct QuestionCard: Component {
     private var otherText: [Int: String] { draft.wrappedValue.otherText }
     @FocusState var focusedOther: Int?
 
+    /// `draft` is compared by nothing: its getter reads `SessionUIStore.Entry.drafts` (`@Observable`), so a pick or
+    /// typed text re-evaluates the row whatever `==` says. The focus state is the row's own.
+    static func == (l: QuestionCard, r: QuestionCard) -> Bool {
+        l.workspace === r.workspace && l.sessionID == r.sessionID && l.block == r.block
+    }
+
     var content: some ElementGroup {
+        let _ = BodyProbe.hit("QuestionCard")
         BlockChrome(kind: .question, title: "Question", id: "q-\(block.requestID)") {
             switch block.state {
             case .pending: pending

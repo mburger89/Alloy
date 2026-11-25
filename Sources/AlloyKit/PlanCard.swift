@@ -4,7 +4,7 @@ import MetalUI
 
 /// An ExitPlanMode prompt: the plan, then Approve, Approve with accept-edits, or Send back with feedback.
 /// The feedback editor's open flag and text live in a `CardDraft` owned by the transcript (see `TranscriptView.drafts`).
-struct PlanCard: Component {
+struct PlanCard: Component, @MainActor Equatable {
     let workspace: Workspace
     let sessionID: Session.ID
     let block: PlanBlock
@@ -17,9 +17,16 @@ struct PlanCard: Component {
         Binding(get: { draft.wrappedValue.feedback }, set: { draft.wrappedValue.feedback = $0 })
     }
 
+    /// `draft` is read through `SessionUIStore.Entry.drafts` (`@Observable`), so only the value inputs and the
+    /// class identities are compared.
+    static func == (l: PlanCard, r: PlanCard) -> Bool {
+        l.workspace === r.workspace && l.sessionID == r.sessionID && l.block == r.block && l.cache === r.cache
+    }
+
     var content: some ElementGroup {
+        let _ = BodyProbe.hit("PlanCard")
         BlockChrome(kind: .plan, title: "Plan", id: "plan-\(block.requestID)") {
-            MarkdownText(blockID: "plan-\(block.requestID)", text: block.plan, cache: cache)
+            MarkdownText(blockID: "plan-\(block.requestID)", text: block.plan, cache: cache).equatable()
             if let path = block.planFilePath, !path.isEmpty {
                 Text(verbatim: path).font(family: "Menlo", size: 11).foregroundColor(.mutedInk)
             }

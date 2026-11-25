@@ -1,4 +1,4 @@
-import AlloyCore
+@testable import AlloyCore
 @testable import AlloyKit
 import AlloyTestSupport
 import Foundation
@@ -9,16 +9,24 @@ import Testing
 /// While a reply streams, only the streaming row's bodies run: the rows above it replay (`.equatable()`).
 @MainActor
 @Suite struct TranscriptRowRerunTests {
-    static let names = ["ChatBlockView", "AssistantText", "MarkdownText", "TranscriptView", "UserBubble", "ThinkingRow", "NoticeRow", "SessionMessageRow", "PermissionCard", "ToolBlockView", "BlockChrome"]
+    static let names = ["ChatBlockView", "AssistantText", "MarkdownText", "TranscriptView", "UserBubble", "ThinkingRow", "NoticeRow", "SessionMessageRow", "PermissionCard", "ToolBlockView", "BlockChrome", "QuestionCard", "PlanCard"]
 
     struct Run { var rerun: [String: Int] = [:]; var requests = 0; var prepaints = 0; var deltas = 0 }
 
     /// 22 mixed blocks (user, markdown, thinking, tools), then an assistant block streamed in `deltas` pieces.
-    private func scenario(deltas: Int = 30) async throws -> (Rig, Session, TestWindow, Run) {
+    private func fixture(_ name: String) throws -> [Data] {
+        let url = try #require(Bundle.module.url(forResource: name, withExtension: "jsonl", subdirectory: "Fixtures"))
+        return try String(contentsOf: url, encoding: .utf8).split(separator: "\n").map { Data($0.utf8) }
+    }
+
+    /// `extras` adds a command-output notice, a session message, a pending question and a pending plan before the
+    /// streamed block.
+    private func scenario(deltas: Int = 30, extras: Bool = false) async throws -> (Rig, Session, TestWindow, Run) {
         let rig = Rig()
+        let other = extras ? await rig.workspace.newSession(name: "Bea") : nil
         let session = await rig.workspace.newSession(name: "A")
-        let t = rig.transports[0]
-        for i in 0..<5 {
+        let t = rig.transports[extras ? 1 : 0]
+        for i in 0..<(extras ? 2 : 5) {
             await rig.workspace.send(OutgoingMessage(text: "question \(i)", images: [], priority: .later), to: session.id)
             await t.emit(.assistantBlock(messageID: "th\(i)", block: .thinking("thinking about \(i)")))
             await t.emit(.assistantBlock(messageID: "tl\(i)", block: .toolUse(id: "tool\(i)", name: "Read", input: .object(["file_path": .string("/tmp/f\(i).txt")]))))
@@ -26,8 +34,20 @@ import Testing
         }
         await t.emit(.controlRequest(ControlRequest(requestID: "pend", kind: .canUseTool(
             toolName: "Bash", input: .object([:]), description: "ls", toolUseID: nil, suggestions: []))))
-        try await acpUntil { session.transcript.blocks.count >= 20 }
-        let window = try alloyWindow(rig.workspace)
+        if let other {
+            await t.emit(.notice(kind: .commandOutput, text: "notice-out **bold**"))
+            if case .failure(let e) = rig.workspace.deliverSessionMessage(from: other.id, to: session.id, text: "hello A") { Issue.record("\(e)") }
+            let plan = try fixture("plan-allow").filter { String(decoding: $0, as: UTF8.self).contains("control_request") }
+            await t.emit(fixture: try fixture("ask-question") + plan)
+        }
+        try await acpUntil {
+            session.transcript.blocks.count >= (extras ? 8 : 20)
+                && (!extras || (session.transcript.blocks.contains { if case .plan = $0 { true } else { false } }
+                    && session.transcript.blocks.contains { if case .sessionMessage = $0 { true } else { false } }))
+        }
+        rig.workspace.selectedSessionID = session.id
+        // A tall window, so the notice, the message, the question and the plan are all on screen at once.
+        let window = try alloyWindow(rig.workspace, height: extras ? 3000 : 800)
         for _ in 0..<30 { window.tick(); await Task.yield() }
         var run = Run()
         var text = "streaming"
@@ -62,6 +82,27 @@ import Testing
         #expect(run.rerun["ChatBlockView"]! <= run.deltas, "ChatBlockView \(run.rerun["ChatBlockView"]!)")
         #expect(run.rerun["AssistantText"]! <= run.deltas)
         #expect(run.rerun["MarkdownText"]! <= run.deltas)
+    }
+
+    /// Mean per-delta counts over 3 runs with the notice, session message, question and plan rows in the transcript.
+    @Test func measureWithTheOtherRowTypes() async throws {
+        var total = Run()
+        for _ in 0..<3 {
+            let (_, _, _, run) = try await scenario(extras: true)
+            total.rerun.merge(run.rerun, uniquingKeysWith: +)
+            total.requests += run.requests; total.prepaints += run.prepaints; total.deltas += run.deltas
+        }
+        let d = Double(total.deltas)
+        print("ROWS2 " + Self.names.map { "\($0)=\(Double(total.rerun[$0]!) / d)" }.joined(separator: " ")
+              + " requests=\(Double(total.requests) / d) prepaints=\(Double(total.prepaints) / d)")
+    }
+
+    /// Each of the four rows (notice, session message, question, plan) stays out of every delta's frame work.
+    @Test func settledNoticeMessageQuestionAndPlanDoNotRerun() async throws {
+        let (_, _, _, run) = try await scenario(extras: true)
+        for n in ["NoticeRow", "SessionMessageRow", "QuestionCard", "PlanCard"] {
+            #expect(run.rerun[n]! == 0, "\(n) re-ran \(run.rerun[n]!) times in \(run.deltas) deltas")
+        }
     }
 
     private func visibleText(_ window: TestWindow, _ id: String) -> String {
@@ -113,5 +154,55 @@ import Testing
         try window.click(window.element(identifier: "approve-r1"))
         try await window.runUntil { (try? window.element(label: "Allowed")) != nil }
         #expect((try? window.element(identifier: "approve-r1")) == nil)
+    }
+
+    @Test func noticeAndSessionMessageRenderAfterReplayedFrames() async throws {
+        let (_, session, window, _) = try await scenario(deltas: 12, extras: true)
+        let notice = try #require(session.transcript.blocks.first { if case .notice(_, .commandOutput, _) = $0 { true } else { false } })
+        let message = try #require(session.transcript.blocks.first { if case .sessionMessage = $0 { true } else { false } })
+        for _ in 0..<5 { window.tick(); await Task.yield() }
+        #expect(visibleText(window, notice.id).contains("notice-out"))
+        let text = try window.element(identifier: "session-message-text-\(message.id)")
+        #expect((text.value ?? text.label) == "hello A")
+    }
+
+    private func click(_ window: TestWindow, _ identifier: String) throws {
+        try window.click(window.element(identifier: identifier))
+        window.tick()
+    }
+
+    @Test func aQuestionTakesTypedAndPickedAnswersThenAnswers() async throws {
+        let (_, _, window, _) = try await scenario(deltas: 12, extras: true)
+        let rid = "40ef1a1e-119b-4077-9cb6-577187fdfd95"
+        try await window.runUntil { (try? window.element(identifier: "q-submit-\(rid)")) != nil }
+        for _ in 0..<5 { window.tick(); await Task.yield() }
+        try window.typeText("Rust", into: window.element(identifier: "q-other-\(rid)-0"))
+        window.tick()
+        for _ in 0..<5 { window.tick(); await Task.yield() }
+        #expect((try window.element(identifier: "q-other-\(rid)-0")).value == "Rust")
+        try click(window, "q-opt-\(rid)-1-0")
+        for _ in 0..<5 { window.tick(); await Task.yield() }
+        try window.typeText("black", into: window.element(identifier: "q-other-\(rid)-1"))
+        window.tick()
+        for _ in 0..<5 { window.tick(); await Task.yield() }
+        #expect((try window.element(identifier: "q-other-\(rid)-1")).value == "black")
+        try click(window, "q-submit-\(rid)")
+        // Submit is enabled only when both questions carry a pick, so answering proves the picks showed in state.
+        try await window.runUntil { (try? window.element(label: "pytest, black")) != nil }
+        #expect((try? window.element(label: "Rust")) != nil)
+        #expect((try? window.element(identifier: "q-submit-\(rid)")) == nil)
+    }
+
+    @Test func aPlanTakesFeedbackAfterReplayedFrames() async throws {
+        let (_, _, window, _) = try await scenario(deltas: 12, extras: true)
+        let rid = "d259011a-7e47-48b0-9946-6fb1ff6ad28e"
+        try await window.runUntil { (try? window.element(identifier: "plan-sendback-\(rid)")) != nil }
+        for _ in 0..<5 { window.tick(); await Task.yield() }
+        try click(window, "plan-sendback-\(rid)")
+        try await window.runUntil { (try? window.element(identifier: "plan-feedback-\(rid)")) != nil }
+        try window.typeText("add tests", into: window.element(identifier: "plan-feedback-\(rid)"))
+        window.tick()
+        for _ in 0..<5 { window.tick(); await Task.yield() }
+        #expect((try window.element(identifier: "plan-feedback-\(rid)")).value == "add tests")
     }
 }

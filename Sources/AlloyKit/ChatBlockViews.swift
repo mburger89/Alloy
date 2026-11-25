@@ -50,12 +50,12 @@ struct ChatBlockView: Component, @MainActor Equatable {
             case .thinking(let id, let text, let tokens): ThinkingRow(id: id, text: text, tokens: tokens, collapsed: collapsed, defaultCollapsed: defaultCollapsed).equatable()
             case .tool(let tool): ToolBlockView(workspace: workspace, tool: tool, collapsed: collapsed, codeState: codeState).equatable()
             case .permission(let p): PermissionCard(workspace: workspace, sessionID: session.id, agentName: session.agentName, block: p).equatable()
-            case .question(let q): QuestionCard(workspace: workspace, sessionID: session.id, block: q, draft: draft ?? .constant(CardDraft()))
-            case .plan(let p): PlanCard(workspace: workspace, sessionID: session.id, block: p, draft: draft ?? .constant(CardDraft()), cache: cache)
-            case .notice(_, let kind, let text): NoticeRow(id: block.id, kind: kind, text: text, cache: cache)
+            case .question(let q): QuestionCard(workspace: workspace, sessionID: session.id, block: q, draft: draft ?? .constant(CardDraft())).equatable()
+            case .plan(let p): PlanCard(workspace: workspace, sessionID: session.id, block: p, draft: draft ?? .constant(CardDraft()), cache: cache).equatable()
+            case .notice(_, let kind, let text): NoticeRow(id: block.id, kind: kind, text: text, cache: cache).equatable()
             case .sessionMessage(_, let direction, let peer, let peerID, let text):
                 SessionMessageRow(blockID: block.id, direction: direction, peer: peer, text: text,
-                                  colorIndex: SessionMessageRow.colorIndex(direction, peer: peer, peerID: peerID, sessions: workspace.sessions))
+                                  colorIndex: SessionMessageRow.colorIndex(direction, peer: peer, peerID: peerID, sessions: workspace.sessions)).equatable()
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -199,12 +199,19 @@ struct ThinkingRow: Component, @MainActor Equatable {
 
 /// A message between sessions: "From <name>" in the receiver's chat, "To <name>" in the sender's. A stripe in the
 /// other session's colour marks who it is; Alloy's own messages and unknown senders get a neutral stripe.
-struct SessionMessageRow: Component {
+struct SessionMessageRow: Component, @MainActor Equatable {
     let blockID: String
     let direction: SessionMessageDirection
     let peer: String
     let text: String
     var colorIndex: Int?
+
+    /// Every input; the body reads nothing else (the stripe colour arrives as `colorIndex`, computed from
+    /// `workspace.sessions` at the call site, so a session rename or recolour changes this row's input).
+    static func == (l: SessionMessageRow, r: SessionMessageRow) -> Bool {
+        l.blockID == r.blockID && l.direction == r.direction && l.peer == r.peer && l.text == r.text
+            && l.colorIndex == r.colorIndex
+    }
 
     /// The other session's colour: by id, else by name (history knows only the name). Alloy's own rows get none.
     static func colorIndex(_ direction: SessionMessageDirection, peer: String, peerID: UUID?, sessions: [Session]) -> Int? {
@@ -242,11 +249,15 @@ struct SessionMessageRow: Component {
     }
 }
 
-struct NoticeRow: Component {
+struct NoticeRow: Component, @MainActor Equatable {
     let id: String
     let kind: NoticeKind
     let text: String
     let cache: MarkdownCache
+
+    static func == (l: NoticeRow, r: NoticeRow) -> Bool {
+        l.id == r.id && l.kind == r.kind && l.text == r.text && l.cache === r.cache
+    }
 
     var content: some ElementGroup {
         let _ = BodyProbe.hit("NoticeRow")
