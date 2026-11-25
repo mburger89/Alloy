@@ -22,6 +22,7 @@ struct BlockChrome<Body: ElementGroup>: Component {
     }
 
     var content: some ElementGroup {
+        let _ = BodyProbe.hit("BlockChrome")
         let style = BlockStyle.style(kind)
         let collapsed = collapsed
         let isCollapsed = collapsed?.wrappedValue ?? false

@@ -5,7 +5,7 @@ import MetalUI
 
 /// Dispatches one block to its view, identified `block-<id>`. `collapsed` drives the chrome of the collapsible
 /// kinds (thinking and tool blocks).
-struct ChatBlockView: Component {
+struct ChatBlockView: Component, @MainActor Equatable {
     let workspace: Workspace
     let session: Session
     let block: ChatBlock
@@ -17,6 +17,20 @@ struct ChatBlockView: Component {
     var codeState: CodeBlockState = .detached()
     /// Whether the user bubble's "shared" chip is expanded.
     var sharedExpanded: Binding<Bool>?
+    /// The block's collapse before the user toggled it. The `collapsed` binding falls back to it, and it moves without
+    /// the block changing (a thinking row collapses once text follows), so `==` compares it.
+    var defaultCollapsed: Bool?
+
+    /// Equal while every stored input that shapes the output is: the block by value, the class inputs by identity,
+    /// the default collapse, and which bindings are present. A binding's value is not compared: the body reads it
+    /// through `@Observable` (`SessionUIStore.Entry.overrides`, `drafts`, `codeExpanded`), which re-evaluates the row
+    /// whatever `==` says. The bindings' closures only read and write that entry, so an old one behaves as a new one.
+    static func == (l: ChatBlockView, r: ChatBlockView) -> Bool {
+        l.block == r.block && l.workspace === r.workspace && l.session === r.session && l.cache === r.cache
+            && l.codeState.store === r.codeState.store && l.defaultCollapsed == r.defaultCollapsed
+            && (l.collapsed == nil) == (r.collapsed == nil) && (l.draft == nil) == (r.draft == nil)
+            && (l.sharedExpanded == nil) == (r.sharedExpanded == nil)
+    }
 
     /// "Send now" on a message waiting behind a running ACP turn; Claude's queue has no such button.
     static func sendNowAction(_ workspace: Workspace, _ session: Session, _ id: UUID, _ state: UserState) -> (() -> Void)? {
@@ -26,15 +40,16 @@ struct ChatBlockView: Component {
     }
 
     var content: some ElementGroup {
+        let _ = BodyProbe.hit("ChatBlockView")
         VStack(alignment: .leading, spacing: 0) {
             switch block {
             case .user(let id, let text, let images, let state): UserBubble(blockID: id.uuidString, text: text, imageCount: images, state: state,
                                                                   shared: workspace.sharedFiles[id] ?? [], sharedExpanded: sharedExpanded,
-                                                                  sendNow: Self.sendNowAction(workspace, session, id, state))
-            case .assistantText(let id, let text): AssistantText(blockID: id, text: text, cache: cache)
-            case .thinking(let id, let text, let tokens): ThinkingRow(id: id, text: text, tokens: tokens, collapsed: collapsed)
-            case .tool(let tool): ToolBlockView(workspace: workspace, tool: tool, collapsed: collapsed, codeState: codeState)
-            case .permission(let p): PermissionCard(workspace: workspace, sessionID: session.id, agentName: session.agentName, block: p)
+                                                                  sendNow: Self.sendNowAction(workspace, session, id, state)).equatable()
+            case .assistantText(let id, let text): AssistantText(blockID: id, text: text, cache: cache).equatable()
+            case .thinking(let id, let text, let tokens): ThinkingRow(id: id, text: text, tokens: tokens, collapsed: collapsed, defaultCollapsed: defaultCollapsed).equatable()
+            case .tool(let tool): ToolBlockView(workspace: workspace, tool: tool, collapsed: collapsed, codeState: codeState).equatable()
+            case .permission(let p): PermissionCard(workspace: workspace, sessionID: session.id, agentName: session.agentName, block: p).equatable()
             case .question(let q): QuestionCard(workspace: workspace, sessionID: session.id, block: q, draft: draft ?? .constant(CardDraft()))
             case .plan(let p): PlanCard(workspace: workspace, sessionID: session.id, block: p, draft: draft ?? .constant(CardDraft()), cache: cache)
             case .notice(_, let kind, let text): NoticeRow(id: block.id, kind: kind, text: text, cache: cache)
@@ -63,7 +78,7 @@ struct ChatBlockView: Component {
     }
 }
 
-struct UserBubble: Component {
+struct UserBubble: Component, @MainActor Equatable {
     let blockID: String
     let text: String
     var imageCount = 0
@@ -73,6 +88,14 @@ struct UserBubble: Component {
     var sharedExpanded: Binding<Bool>?
     /// Set for a queued message of an ACP session: sends it at once and cancels the running turn.
     var sendNow: (() -> Void)?
+
+    /// Every input but the bindings' and the closure's values: `sharedExpanded` is read through `@Observable`
+    /// (re-evaluates the row), and `sendNow` is a function of `state` and the session.
+    static func == (l: UserBubble, r: UserBubble) -> Bool {
+        l.blockID == r.blockID && l.text == r.text && l.imageCount == r.imageCount && l.state == r.state
+            && l.shared == r.shared && (l.sharedExpanded == nil) == (r.sharedExpanded == nil)
+            && (l.sendNow == nil) == (r.sendNow == nil)
+    }
 
     /// "shared: 3 files"; nil without any.
     static func sharedCaption(_ count: Int) -> String? {
@@ -95,6 +118,7 @@ struct UserBubble: Component {
     }
 
     var content: some ElementGroup {
+        let _ = BodyProbe.hit("UserBubble")
         HStack(spacing: 0) {
             Spacer(minLength: Pixels(60))
             VStack(alignment: .leading, spacing: Pixels(4)) {
@@ -134,21 +158,37 @@ struct UserBubble: Component {
     }
 }
 
-struct AssistantText: Component {
+struct AssistantText: Component, @MainActor Equatable {
     let blockID: String
     let text: String
     let cache: MarkdownCache
+
+    static func == (l: AssistantText, r: AssistantText) -> Bool {
+        l.blockID == r.blockID && l.text == r.text && l.cache === r.cache
+    }
+
     var content: some ElementGroup {
-        MarkdownText(blockID: blockID, text: text, cache: cache)
+        let _ = BodyProbe.hit("AssistantText")
+        MarkdownText(blockID: blockID, text: text, cache: cache).equatable()
     }
 }
 
-struct ThinkingRow: Component {
+struct ThinkingRow: Component, @MainActor Equatable {
     let id: String
     let text: String
     let tokens: Int
     let collapsed: Binding<Bool>?
+    /// What `collapsed` falls back to: it moves when text follows the thinking, with the block unchanged.
+    var defaultCollapsed: Bool?
+
+    /// `collapsed` is read through `@Observable` (the chrome's body), so only its presence and its default are compared.
+    static func == (l: ThinkingRow, r: ThinkingRow) -> Bool {
+        l.id == r.id && l.text == r.text && l.tokens == r.tokens && (l.collapsed == nil) == (r.collapsed == nil)
+            && l.defaultCollapsed == r.defaultCollapsed
+    }
+
     var content: some ElementGroup {
+        let _ = BodyProbe.hit("ThinkingRow")
         BlockChrome(kind: .thinking, title: "Thinking", summary: "\(tokens) tokens", collapsed: collapsed, id: id) {
             if !text.isEmpty {
                 Text(verbatim: text).font(size: 12).italic().foregroundColor(.mutedInk)
@@ -177,6 +217,7 @@ struct SessionMessageRow: Component {
     }
 
     var content: some ElementGroup {
+        let _ = BodyProbe.hit("SessionMessageRow")
         let style = BlockStyle.style(.sessionMessage)
         HStack(spacing: 0) {
             Rectangle().fill(colorIndex.map { Color.sessionColor($0) } ?? style.ink)
@@ -206,7 +247,9 @@ struct NoticeRow: Component {
     let kind: NoticeKind
     let text: String
     let cache: MarkdownCache
+
     var content: some ElementGroup {
+        let _ = BodyProbe.hit("NoticeRow")
         let blockKind: BlockKind = switch kind {
         case .exited, .error: .error
         case .warning: .overlap
@@ -215,7 +258,7 @@ struct NoticeRow: Component {
         }
         if kind == .commandOutput {
             BlockChrome(kind: blockKind, title: "Command output", id: id) {
-                MarkdownText(blockID: id, text: text, cache: cache)
+                MarkdownText(blockID: id, text: text, cache: cache).equatable()
             }
         } else {
             BlockChrome(kind: blockKind, title: text, id: id) { Spacer(minLength: 0).frame(height: 0) }
@@ -223,16 +266,21 @@ struct NoticeRow: Component {
     }
 }
 
-struct PermissionCard: Component {
+struct PermissionCard: Component, @MainActor Equatable {
     let workspace: Workspace
     let sessionID: Session.ID
     /// "Claude" for Claude sessions (output unchanged); the agent's name for ACP sessions.
     var agentName: String = "Claude"
     let block: PermissionBlock
 
+    static func == (l: PermissionCard, r: PermissionCard) -> Bool {
+        l.workspace === r.workspace && l.sessionID == r.sessionID && l.agentName == r.agentName && l.block == r.block
+    }
+
     static func title(agentName: String, tool: String) -> String { "\(agentName) wants to use \(tool)" }
 
     var content: some ElementGroup {
+        let _ = BodyProbe.hit("PermissionCard")
         let workspace = workspace, sessionID = sessionID, requestID = block.requestID
         BlockChrome(kind: .overlap, title: Self.title(agentName: agentName, tool: block.toolName), id: "perm-\(requestID)") {
             Text(verbatim: block.summary).font(family: "Menlo", size: 12)
@@ -300,12 +348,18 @@ func toolStatusWord(_ status: ToolBlock.Status) -> String {
     }
 }
 
-struct ToolBlockView: Component {
+struct ToolBlockView: Component, @MainActor Equatable {
     let workspace: Workspace
     let tool: ToolBlock
     var collapsed: Binding<Bool>?
     var codeState: CodeBlockState = .detached()
     @State var showPrompt = false
+
+    /// `collapsed` and the code-block expansion are read through `@Observable`, so only their presence and store are compared.
+    static func == (l: ToolBlockView, r: ToolBlockView) -> Bool {
+        l.workspace === r.workspace && l.tool == r.tool && (l.collapsed == nil) == (r.collapsed == nil)
+            && l.codeState.store === r.codeState.store
+    }
 
     /// The project-relative file a read, edit or write block names (its title then opens the file).
     static func openablePath(_ tool: ToolBlock, root: URL) -> String? {
@@ -324,6 +378,7 @@ struct ToolBlockView: Component {
     }
 
     var content: some ElementGroup {
+        let _ = BodyProbe.hit("ToolBlockView")
         let workspace = workspace, tool = tool
         let openFile: ((Int?) -> Void)? = Self.openablePath(tool, root: workspace.projectRoot).map { path in
             { line in workspace.requestOpen(path, line: line) }

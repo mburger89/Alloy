@@ -102,7 +102,8 @@ struct TranscriptView: Component {
                                       collapsed: Self.binding(for: block.id, default: defaults[block.id], overrides: overrides),
                                       draft: Self.draftBinding(for: block, drafts: drafts), cache: cache,
                                       codeState: codeState,
-                                      sharedExpanded: Self.sharedBinding(for: block, overrides: overrides))
+                                      sharedExpanded: Self.sharedBinding(for: block, overrides: overrides),
+                                      defaultCollapsed: defaults[block.id]).equatable()
                     }
                 }
                 .padding(inset(16, 12))

@@ -63,12 +63,17 @@ let alloyMarkdownTheme: MarkdownTheme = {
 /// A reply's Markdown as blocks, inside one row of the transcript's lazy stack. Code blocks carry MetalUI's built-in
 /// Copy button (`MarkdownTheme.showsCodeCopyButton`, an icon labelled "Copy code", identified `copy-code-<blockID>-<top-level block id>-<n>`). Fences are
 /// coloured by `FenceHighlighter`, one shared instance whose colours are theme keys (MetalUI compares a highlighter by identity).
-struct MarkdownText: Component {
+struct MarkdownText: Component, @MainActor Equatable {
     let blockID: String
     let text: String
     let cache: MarkdownCache
 
+    static func == (l: MarkdownText, r: MarkdownText) -> Bool {
+        l.blockID == r.blockID && l.text == r.text && l.cache === r.cache
+    }
+
     var content: some ElementGroup {
+        let _ = BodyProbe.hit("MarkdownText")
         let document = cache.document(for: blockID, text: text)
         let blockID = blockID
         VStack(alignment: .leading, spacing: alloyMarkdownTheme.blockSpacing) {
