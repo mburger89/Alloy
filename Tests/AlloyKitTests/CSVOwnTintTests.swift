@@ -142,4 +142,67 @@ import Testing
         #expect(t.model.changedRows().isEmpty)
         #expect(t.model.changedCells().isEmpty)
     }
+
+    /// Deletes the saved row `row` ("1,ann,rome\n" and so on) from the buffer, as the Table's row delete does.
+    private func deleteRow(_ t: Table, _ row: String) async {
+        let text = t.doc.buffer.snapshot().text
+        let end = text.utf8.distance(from: text.utf8.startIndex, to: text.range(of: row)!.upperBound.samePosition(in: text.utf8)!)
+        t.doc.buffer.replace((end - row.utf8.count)..<end, with: "")
+        await settle(t.window, 5)
+        await t.model.buildFinished()
+        await t.model.ownTintSettled()
+        await settle(t.window)
+    }
+
+    private func tinted(_ t: Table, rows: Range<Int>) throws -> [String] {
+        var out: [String] = []
+        for r in rows { for c in 0..<3 where try t.value(r, c) == "tint-own" { out.append("\(r),\(c)") } }
+        return out
+    }
+
+    @Test func deletingRowLeavesNextRowUntinted() async throws {
+        let t = try await table(enabled: true)
+        await deleteRow(t, "1,ann,rome\n")
+        #expect(try t.value(1, 0) == "2")
+        #expect(try tinted(t, rows: 1..<3).isEmpty)
+    }
+
+    @Test func deletingMiddleAndLastRowsLeavesNoTint() async throws {
+        let t = try await table(enabled: true)
+        await deleteRow(t, "2,bob,oslo\n")
+        #expect(try t.value(2, 0) == "3")
+        #expect(try tinted(t, rows: 1..<3).isEmpty)
+        await deleteRow(t, "3,cy,lima\n")
+        #expect(try tinted(t, rows: 1..<2).isEmpty)
+    }
+
+    @Test func deletingSeveralRowsLeavesNoTint() async throws {
+        let t = try await table(enabled: true)
+        await deleteRow(t, "1,ann,rome\n2,bob,oslo\n")
+        #expect(try t.value(1, 0) == "3")
+        #expect(try tinted(t, rows: 1..<2).isEmpty)
+    }
+
+    @Test func deletingRowKeepsEarlierEditsRemapped() async throws {
+        let t = try await table(enabled: true)
+        let text = t.doc.buffer.snapshot().text
+        let at = text.utf8.distance(from: text.utf8.startIndex, to: text.range(of: "lima")!.upperBound.samePosition(in: text.utf8)!)
+        t.doc.buffer.replace(at..<at, with: "x")
+        await deleteRow(t, "1,ann,rome\n")
+        #expect(try tinted(t, rows: 1..<3) == ["2,2"])
+    }
+
+    @Test func insertingRowTintsOnlyTheNewRow() async throws {
+        let t = try await table(enabled: true)
+        let text = t.doc.buffer.snapshot().text
+        let at = text.utf8.distance(from: text.utf8.startIndex, to: text.range(of: "1,ann,rome\n")!.upperBound.samePosition(in: text.utf8)!)
+        t.doc.buffer.replace(at..<at, with: "9,zed,nice\n")
+        await settle(t.window, 5)
+        await t.model.buildFinished()
+        await t.model.ownTintSettled()
+        await settle(t.window)
+        let rows = try tinted(t, rows: 1..<5)
+        #expect(!rows.isEmpty)
+        #expect(rows.allSatisfy { $0.hasPrefix("2,") }, "only the new row is tinted: \(rows)")
+    }
 }

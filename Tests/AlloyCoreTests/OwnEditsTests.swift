@@ -46,4 +46,23 @@ import Testing
         #expect(OwnEdits.changedLines(saved: saved, current: current).isEmpty)
         #expect(OwnEdits.changedBytes(saved: saved, current: current).isEmpty)
     }
+
+    @Test func deletingWholeRowsLeavesNoSpan() {
+        let saved = "id,n\n1,a\n2,b\n3,c\n"
+        #expect(OwnEdits.changedBytes(saved: saved, current: "id,n\n1,a\n3,c\n").isEmpty, "middle row")
+        #expect(OwnEdits.changedBytes(saved: saved, current: "id,n\n1,a\n2,b\n").isEmpty, "last row")
+        #expect(OwnEdits.changedBytes(saved: saved, current: "id,n\n3,c\n").isEmpty, "several rows")
+        #expect(OwnEdits.changedBytes(saved: "id,n\n1,a\n2,b", current: "id,n\n1,a").isEmpty, "last row, no final newline")
+    }
+
+    @Test func deletingRowKeepsOtherEdits() {
+        let saved = "id,n\n1,a\n2,b\n3,c\n4,d\n"
+        let bytes = OwnEdits.changedBytes(saved: saved, current: "id,n\n1,a\n3,c\n4,dX\n")
+        #expect(bytes == [16..<17])
+    }
+
+    @Test func insertedRowIsOneSpan() {
+        let bytes = OwnEdits.changedBytes(saved: "id,n\n1,a\n2,b\n", current: "id,n\n1,a\nx,y\n2,b\n")
+        #expect(bytes == [9..<13])
+    }
 }

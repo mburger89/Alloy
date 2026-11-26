@@ -13,7 +13,9 @@ public enum OwnEdits {
     }
 
     /// UTF-8 byte ranges in `current` that differ from `saved`: each changed line region narrowed to the bytes between
-    /// its common prefix and suffix. A pure deletion gives an empty range at the deletion point.
+    /// its common prefix and suffix. A pure deletion gives an empty range at the deletion point, except a deletion of
+    /// whole lines: its point sits on the first byte of the line that moved up, which that line did not cause, so it
+    /// gives no range (the Table would tint that line's first cell).
     public static func changedBytes(saved: String, current: String) -> [Range<Int>] {
         if TextDiff.same(saved, current) { return [] }
         let oldUnits = TextDiff.lineUnits(saved), newUnits = TextDiff.lineUnits(current)
@@ -24,14 +26,19 @@ public enum OwnEdits {
         oldOffsets.reserveCapacity(oldUnits.count + 1)
         for u in oldUnits { oldOffsets.append(oldOffsets[oldOffsets.count - 1] + u.utf8.count) }
         let old = Array(saved.utf8), new = Array(current.utf8)
-        return TextDiff.regions(old: oldUnits, new: newUnits).map { region in
+        return TextDiff.regions(old: oldUnits, new: newUnits).compactMap { region in
             let o = oldOffsets[region.old.lowerBound]..<oldOffsets[region.old.upperBound]
             let n = newOffsets[region.new.lowerBound]..<newOffsets[region.new.upperBound]
             var p = 0
             while p < o.count, p < n.count, old[o.lowerBound + p] == new[n.lowerBound + p] { p += 1 }
             var s = 0
             while s < o.count - p, s < n.count - p, old[o.upperBound - 1 - s] == new[n.upperBound - 1 - s] { s += 1 }
-            return (n.lowerBound + p)..<(n.upperBound - s)
+            let span = (n.lowerBound + p)..<(n.upperBound - s)
+            guard span.isEmpty else { return span }
+            // Whole lines removed: the region has no new lines, or only the last line lost its separating newline.
+            if n.isEmpty { return nil }
+            if span.lowerBound == new.count, old[o.lowerBound + p] == UInt8(ascii: "\n") { return nil }
+            return span
         }
     }
 }
