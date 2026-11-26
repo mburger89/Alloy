@@ -200,7 +200,8 @@ import Testing
         await open(m, .index)
         #expect(m.view.compare?.hunks.count == 1)
         m.view.compareStage()
-        await m.settle("staged") { m.view.compare?.hunks.isEmpty == true }
+        // The manual clock stays put: advancing it while git runs would fire autosave and write the unsaved buffer to disk.
+        await m.settle("staged", advance: 0) { m.view.compare?.hunks.isEmpty == true }
         #expect(try git(m.rig.root, "show", ":a.txt").contains("L2 typed"))
         #expect(try String(contentsOf: m.rig.root.appendingPathComponent("a.txt"), encoding: .utf8) == Self.base)
     }

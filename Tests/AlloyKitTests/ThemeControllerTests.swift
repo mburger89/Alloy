@@ -33,7 +33,7 @@ import Testing
     }
 
     private func themesDirectory(_ rig: Rig) -> URL {
-        ThemeLibrary.userDirectory(appSupport: rig.root.appendingPathComponent("support"))
+        ThemeLibrary.userDirectory(appSupport: rig.appSupport)
     }
 
     private func userTheme(accent: String) -> String {
@@ -123,7 +123,7 @@ import Testing
     @Test func missingSelectedThemeFallsBackWithNotice() throws {
         let rig = Rig()
         try rig.workspace.updateSettings(AlloySettings(theme: "user/gone"))
-        let file = rig.root.appendingPathComponent("support/Alloy/settings.json")
+        let file = rig.appSupport.appendingPathComponent("Alloy/settings.json")
         let before = try Data(contentsOf: file)
         let probe = try Probe([.chatFill, hex("#282A36")])
         let controller = ThemeController(workspace: rig.workspace, host: probe.window.window, watcher: nil)
@@ -287,7 +287,7 @@ import Testing
 
     @Test func unboundChoosePersistsThenBindKeepsTheTheme() throws {
         let rig = Rig()
-        let support = rig.root.appendingPathComponent("support")
+        let support = rig.appSupport
         let probe = try Probe([.chatFill])
         let controller = ThemeController(appSupport: support, settings: AlloySettings(), host: probe.window.window, watcher: nil)
         try controller.choose(theme: "one-dark")
@@ -303,7 +303,7 @@ import Testing
 
     @Test func adoptingAFolderAfterChooseDoesNotRevertTheTheme() throws {
         let rig = Rig()
-        let support = rig.root.appendingPathComponent("support")
+        let support = rig.appSupport
         let probe = try Probe([.chatFill])
         let controller = ThemeController(appSupport: support, settings: AlloySettings(), host: probe.window.window, watcher: nil)
         try controller.choose(mode: .matchSystem, theme: "one-dark", light: "solarized-light", dark: "one-dark")
@@ -339,7 +339,7 @@ import Testing
         let probe = try Probe([.chatFill])
         let controller = ThemeController(workspace: rig.workspace, host: probe.window.window, watcher: nil)
         try controller.choose(theme: "user/gone")
-        #expect(AlloySettings.load(appSupport: rig.root.appendingPathComponent("support")).theme == "user/gone")
+        #expect(AlloySettings.load(appSupport: rig.appSupport).theme == "user/gone")
         #expect(controller.notice == "Theme \"user/gone\" isn't available; using Dracula.")
         let dracula = ThemeApplier.theme(for: try #require(ThemeLibrary(builtIns: BuiltInThemes.all).resolve("dracula")))
         #expect(probe.window.window.darkTheme == dracula)

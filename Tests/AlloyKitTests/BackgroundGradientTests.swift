@@ -105,7 +105,7 @@ import Testing
         window.tick(); window.tick()
         let settings = try window.openSettingsFromMenu()
         try await settings.runUntil { (try? settings.element(identifier: "settings-appearance-reset")) != nil }
-        let support = rig.root.appendingPathComponent("support")
+        let support = rig.appSupport
         #expect(controller.style.backgroundGradient)
         try settings.click(settings.element(identifier: "settings-appearance-background-gradient"))
         for _ in 0..<4 { window.tick(); settings.tick(); await Task.yield() }

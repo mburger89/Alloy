@@ -86,6 +86,10 @@ import Testing
         if gitTab { try await window.runUntil { self.exists(window, "git-row-notes.txt") } }
         let groups = workspace.codeLayout.tree.groupIDs
         try await window.runUntil { groups.allSatisfy { g in self.exists(window, "code-group-\(g.uuidString)") } }
+        // The tree's first scan builds off the main actor; its snapshot must have landed before a frame is measured, or
+        // it arrives mid-typing and re-runs the tree's rows in one of the counted frames.
+        for _ in 0..<3000 where workspace.fileTreeActive && workspace.fileTree.buildCount == 0 { window.tick(); try? await Task.sleep(nanoseconds: 1_000_000) }
+        #expect(!workspace.fileTreeActive || workspace.fileTree.buildCount >= 1, "the file tree's first build landed")
         if useGit, let doc = workspace.document("login.swift"), let view = CodePanelStore.existingView(for: doc, in: .group(g0)) {
             // The modified file's marks are in the gutter before anything is measured, and no popover is open.
             for _ in 0..<3000 where !(view.gitMarks?.isShowing ?? false) { window.tick(); try? await Task.sleep(nanoseconds: 1_000_000) }

@@ -40,7 +40,7 @@ import Testing
 
     /// The theme with square buttons, chosen through the controller the way Settings does.
     private func chooseSquare(_ s: Setup) async throws {
-        let dir = ThemeLibrary.userDirectory(appSupport: s.rig.root.appendingPathComponent("support"))
+        let dir = ThemeLibrary.userDirectory(appSupport: s.rig.appSupport)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         try #"{"name":"Square","appearance":"dark","base":"dracula","style":{"pillButtons":false,"cornerRadius":12}}"#
             .write(to: dir.appendingPathComponent("square.json"), atomically: true, encoding: .utf8)

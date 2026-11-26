@@ -255,7 +255,7 @@ private func fr(_ a: Int, _ b: Int) -> FoldRange { FoldRange(startLine: a, endLi
         var settings = AlloySettings()
         settings.followEdits = false
         let bag = rig.transports, source = rig.changes
-        return Workspace(projectRoot: rig.root, appSupport: rig.root.appendingPathComponent("support"), settings: settings,
+        return Workspace(projectRoot: rig.root, appSupport: rig.appSupport, settings: settings,
                          locate: { _ in URL(fileURLWithPath: "/fake/claude") },
                          makeTransport: { _ in bag.make() }, autosaveClock: rig.clock, changes: { _ in source })
     }

@@ -164,13 +164,15 @@ private let fakeAgent = AgentDefinition(id: "fake", name: "Fake", command: "/abs
         #expect(s.modelOptions.map(\.id) == ["m1"])
     }
 
-    @MainActor @Test func acpCommandsHaveNoLocalForkOrTheme() async {
+    /// `/theme` runs on any agent; `/fork` is Claude-only, so an ACP session is offered the agent's commands plus `/theme`.
+    @MainActor @Test func acpCommandsAddLocalThemeButNotFork() async {
         let h = BHarness()
         let ws = workspace(h)
         let s = await ws.newSession(name: "A", backend: .acp(agentID: "fake"))
         await h.acp[0].emit(.commandsChanged([SlashCommandInfo(name: "review", description: "Review", argumentHint: nil)]))
         await waitUntil("commands") { !s.slashCommands.isEmpty }
-        #expect(s.slashCommands.map(\.name) == ["review"])
+        #expect(s.slashCommands.map(\.name) == ["review", "theme"])
+        #expect(s.slashCommands.first { $0.name == "theme" }?.description == "Make a theme with this agent in a new session")
     }
 
     // MARK: launch failures are visible and retried by the next message

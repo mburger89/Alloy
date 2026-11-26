@@ -226,7 +226,7 @@ import Testing
         let rig = Rig()
         let registry = testCenter(for: rig.workspace).registry
         // Support dir is a plain file, so the save cannot succeed.
-        try "x".write(to: rig.root.appendingPathComponent("support"), atomically: true, encoding: .utf8)
+        try "x".write(to: rig.appSupport, atomically: true, encoding: .utf8)
         var s = rig.workspace.settings
         s.keybindings = ["view.splitRight": "primary+shift+d"]
         #expect(throws: (any Error).self) { try rig.workspace.updateSettings(s) }

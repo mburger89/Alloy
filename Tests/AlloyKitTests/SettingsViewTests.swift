@@ -174,7 +174,7 @@ import Testing
         try await window.runUntil { rig.workspace.settings.claudePath == "/opt/claude2" }
         try await window.runUntil { (try? window.element(identifier: "settings-saved")) != nil }
         _ = try window.element(identifier: "settings-view")
-        #expect(AlloySettings.load(appSupport: rig.root.appendingPathComponent("support")).claudePath == "/opt/claude2")
+        #expect(AlloySettings.load(appSupport: rig.appSupport).claudePath == "/opt/claude2")
         // Detect clears the field; Save then clears the override.
         try window.click(window.element(identifier: "settings-detect"))
         try window.click(window.element(identifier: "settings-save"))
@@ -195,7 +195,7 @@ import Testing
         try window.click(window.element(identifier: "settings-ask-shared-notes"))
         try await window.runUntil { rig.workspace.settings.askBeforeSharedNotes }
         await rig.workspace.settle()
-        let support = rig.root.appendingPathComponent("support")
+        let support = rig.appSupport
         #expect(AlloySettings.load(appSupport: support).askBeforeSharedNotes)
         #expect(rig.transports.count == 2, "relaunched at idle")
         try window.click(window.element(identifier: "settings-share-knowledge"))
@@ -224,7 +224,7 @@ import Testing
         try window.click(window.element(identifier: "settings-terminal-blink"))
         try await window.runUntil { !rig.workspace.settings.terminal.cursorBlink }
         await rig.workspace.settle()
-        let support = rig.root.appendingPathComponent("support")
+        let support = rig.appSupport
         #expect(!AlloySettings.load(appSupport: support).terminal.cursorBlink)
         await rig.workspace.stopAll()
     }
@@ -309,7 +309,7 @@ import Testing
     @Test func failedPathSaveShowsErrorAndEditingClearsIt() async throws {
         let rig = Rig()
         // A file where the support directory should be: the settings file cannot be created.
-        try Data().write(to: rig.root.appendingPathComponent("support"))
+        try Data().write(to: rig.appSupport)
         let main = try alloyWindow(rig.workspace)
         let window = try await open(main)
         try window.click(window.element(identifier: "settings-claude-path"))
@@ -357,7 +357,7 @@ import Testing
         #expect(try window.element(identifier: "settings-share-other-projects").isEnabled)
         try window.click(window.element(identifier: "settings-share-other-projects"))
         try await window.runUntil { !rig.workspace.settings.shareAcrossProjects }
-        #expect(!AlloySettings.load(appSupport: rig.root.appendingPathComponent("support")).shareAcrossProjects)
+        #expect(!AlloySettings.load(appSupport: rig.appSupport).shareAcrossProjects)
         await rig.workspace.stopAll()
     }
 
@@ -368,13 +368,13 @@ import Testing
         #expect(rig.workspace.settings.paletteShowsDisabled)
         try window.click(window.element(identifier: "settings-palette-show-disabled"))
         try await window.runUntil { !rig.workspace.settings.paletteShowsDisabled }
-        #expect(!AlloySettings.load(appSupport: rig.root.appendingPathComponent("support")).paletteShowsDisabled)
+        #expect(!AlloySettings.load(appSupport: rig.appSupport).paletteShowsDisabled)
         await rig.workspace.stopAll()
     }
 
     @Test func failedPaletteToggleSaveShowsErrorAndKeepsTheValue() async throws {
         let rig = Rig()
-        try Data().write(to: rig.root.appendingPathComponent("support"))
+        try Data().write(to: rig.appSupport)
         let main = try alloyWindow(rig.workspace)
         let window = try await open(main)
         try window.click(window.element(identifier: "settings-palette-show-disabled"))
@@ -438,7 +438,7 @@ import Testing
         let settings = try await open(rig)
         try settings.click(settings.element(identifier: "settings-linter-ruff"))
         #expect(rig.workspace.settings.languageServers["ruff"]?.enabled == false)
-        let reloaded = AlloySettings.load(appSupport: rig.root.appendingPathComponent("support"))
+        let reloaded = AlloySettings.load(appSupport: rig.appSupport)
         #expect(reloaded.languageServers["ruff"]?.enabled == false)
     }
 
@@ -447,7 +447,7 @@ import Testing
         let settings = try await open(rig)
         try settings.click(settings.element(identifier: "settings-lsp-rust-analyzer-clippy"))
         #expect(rig.workspace.settings.languageServers["rust-analyzer"]?.clippy == true)
-        let reloaded = AlloySettings.load(appSupport: rig.root.appendingPathComponent("support"))
+        let reloaded = AlloySettings.load(appSupport: rig.appSupport)
         #expect(reloaded.languageServers["rust-analyzer"]?.clippy == true)
     }
 
@@ -484,7 +484,7 @@ import Testing
         _ = try settings.element(identifier: "settings-lsp-format-on-save-ruff")
         try settings.click(settings.element(identifier: "settings-lsp-format-on-save-rust-analyzer"))
         #expect(rig.workspace.settings.languageServers["rust-analyzer"]?.formatOnSave == true)
-        let reloaded = AlloySettings.load(appSupport: rig.root.appendingPathComponent("support"))
+        let reloaded = AlloySettings.load(appSupport: rig.appSupport)
         #expect(reloaded.languageServers["rust-analyzer"]?.formatOnSave == true)
     }
 
@@ -497,7 +497,7 @@ import Testing
         let row = try #require(descendants(of: picker, in: settings).first { $0.label == linter.name })
         try settings.click(row)
         #expect(rig.workspace.settings.formatters[choice.languageID] == linter.id)
-        let reloaded = AlloySettings.load(appSupport: rig.root.appendingPathComponent("support"))
+        let reloaded = AlloySettings.load(appSupport: rig.appSupport)
         #expect(reloaded.formatters[choice.languageID] == linter.id)
     }
 }

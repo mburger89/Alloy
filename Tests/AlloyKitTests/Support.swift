@@ -145,6 +145,8 @@ final class WindowLog {
 final class Rig {
     let workspace: Workspace
     let root: URL
+    /// Alloy's own data folder. Outside `root`, so a test that makes the project a git repo never sees it as project content.
+    let appSupport: URL
     let transports = TransportBag()
     /// Autosave never fires on its own, so a save in a test comes from the code under test.
     let clock = ManualClock()
@@ -161,6 +163,7 @@ final class Rig {
         settings.defaultAgentID = defaultAgentID
         root = FileManager.default.temporaryDirectory.appendingPathComponent("alloy-ui-\(UUID().uuidString)").resolvingSymlinksInPath()
         try? FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        appSupport = FileManager.default.temporaryDirectory.appendingPathComponent("alloy-ui-support-\(UUID().uuidString)").resolvingSymlinksInPath()
         if let branch {
             try? FileManager.default.createDirectory(at: root.appendingPathComponent(".git"), withIntermediateDirectories: true)
             try? "ref: refs/heads/\(branch)\n".write(to: root.appendingPathComponent(".git/HEAD"), atomically: true, encoding: .utf8)
@@ -177,7 +180,7 @@ final class Rig {
             return out
         }
         let detector = customDetector ?? AgentDetector(resolve: found, isExecutable: { _ in true }, home: "/nohome", helpRunner: { _ in nil })
-        workspace = Workspace(projectRoot: root, appSupport: root.appendingPathComponent("support"), settings: settings,
+        workspace = Workspace(projectRoot: root, appSupport: appSupport, settings: settings,
                               locate: { _ in URL(fileURLWithPath: "/fake/claude") },
                               makeTransport: { _ in bag.make() }, makeACPTransport: acpFactory,
                               agentDefinitions: { definitions }, agentSecrets: secrets,
@@ -185,7 +188,10 @@ final class Rig {
                               autosaveClock: clock, changes: { _ in source })
     }
 
-    deinit { try? FileManager.default.removeItem(at: root) }
+    deinit {
+        try? FileManager.default.removeItem(at: root)
+        try? FileManager.default.removeItem(at: appSupport)
+    }
 }
 
 final class TransportBag: @unchecked Sendable {

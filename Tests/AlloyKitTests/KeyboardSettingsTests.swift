@@ -174,7 +174,7 @@ import Testing
         #expect(center.registry.keymap.chord(for: toggle) == rebound)
         let s = rebound.shortcut(for: .macOS)
         #expect(menuShortcut(main, center.registry.command(id: toggle)!.descriptor.menuID) == PlatformKeyEquivalent(key: String(s.key.character).lowercased(), modifiers: s.modifiers))
-        #expect(AlloySettings.load(appSupport: rig.root.appendingPathComponent("support")).keybindings[toggle] == rebound.description)
+        #expect(AlloySettings.load(appSupport: rig.appSupport).keybindings[toggle] == rebound.description)
         #expect(try text(settings, "keyboard-chord-\(toggle)") == s.displayText)
     }
 
@@ -295,7 +295,7 @@ import Testing
 
     @Test func failedSaveShowsErrorAndChangesNothing() async throws {
         let rig = Rig()
-        try Data().write(to: rig.root.appendingPathComponent("support"))
+        try Data().write(to: rig.appSupport)
         let main = try alloyWindow(rig.workspace)
         let settings = try main.openSettingsFromMenu()
         try await settings.runUntil { (try? settings.element(identifier: "settings-keyboard")) != nil }
@@ -381,7 +381,7 @@ import Testing
         settle(settings)
         #expect(!exists(settings, "keyboard-row-ghost.command"))
         try record(settings, toggle, rebound)
-        let reloaded = AlloySettings.load(appSupport: rig.root.appendingPathComponent("support"))
+        let reloaded = AlloySettings.load(appSupport: rig.appSupport)
         #expect(reloaded.keybindings["ghost.command"] == "cmd+alt+q")
         #expect(reloaded.keybindings[toggle] == rebound.description)
     }

@@ -55,7 +55,7 @@ import UniformTypeIdentifiers
     }
 
     private func themesDirectory(_ rig: Rig) -> URL {
-        ThemeLibrary.userDirectory(appSupport: rig.root.appendingPathComponent("support"))
+        ThemeLibrary.userDirectory(appSupport: rig.appSupport)
     }
 
     private func writeTheme(_ rig: Rig, _ stem: String, style: String) throws {
@@ -154,14 +154,14 @@ import UniformTypeIdentifiers
         try c.setBackgroundImage(from: red)
         let dracula = try #require(c.style.backgroundImage)
         #expect(dracula.exists && dracula.name == "dracula.png")
-        #expect(dracula.path.hasPrefix(rig.root.appendingPathComponent("support").path), "the copy lives in the temp app support")
+        #expect(dracula.path.hasPrefix(rig.appSupport.path), "the copy lives in the temp app support")
         try c.choose(theme: "alloy-dark")
         #expect(c.style.backgroundImage == nil, "another theme has its own (here no) image")
         try c.setBackgroundImage(from: blue)
         #expect(c.style.backgroundImage?.name == "alloy-dark.png")
         try c.choose(theme: "dracula")
         #expect(c.style.backgroundImage?.name == "dracula.png")
-        let saved = AlloySettings.load(appSupport: rig.root.appendingPathComponent("support"))
+        let saved = AlloySettings.load(appSupport: rig.appSupport)
         #expect(saved.backgroundImages == ["dracula": "dracula.png", "alloy-dark": "alloy-dark.png"])
         // Match system: each of light and dark has its own, and the one showing now is the one that changes.
         try c.choose(mode: .matchSystem, light: "alloy-light", dark: "dracula")
@@ -201,7 +201,7 @@ import UniformTypeIdentifiers
         #expect(c2.style.backgroundImage == nil, "hidden")
         #expect(c2.currentSettings.backgroundImages["user/own"] == BackgroundImageStore.hidden)
         #expect(try Data(contentsOf: themeFile) == before, "the theme file is never rewritten")
-        #expect(AlloySettings.load(appSupport: rig.root.appendingPathComponent("support")).backgroundImages["user/own"] == "")
+        #expect(AlloySettings.load(appSupport: rig.appSupport).backgroundImages["user/own"] == "")
         // Another theme is untouched, and Back to Dracula leaves the images alone.
         try c2.backToDracula()
         #expect(c2.currentSettings.backgroundImages["user/own"] == "")

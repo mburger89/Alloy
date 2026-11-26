@@ -68,15 +68,24 @@ import Testing
         #expect(hasElement(w2, "composer") && !hasElement(w2, "effort-menu"))
     }
 
-    @Test func forkAndThemeUnavailableForACP() async throws {
+    @Test func forkRefusedAndThemeRunsOnTheSameAgentForACP() async throws {
         let rig = Rig(agents: [uiFake])
-        let (s, _) = try await acpIdleSession(rig)
-        #expect(!s.slashCommands.contains { $0.name == "fork" || $0.name == "theme" })
+        let (s, t) = try await acpIdleSession(rig)
+        // An agent that has listed its own commands gets Alloy's /theme beside them, but not /fork.
+        await t.emit(.commandsChanged([SlashCommandInfo(name: "help", description: "Help", argumentHint: nil)]))
+        try await acpUntil { !s.slashCommands.isEmpty }
+        #expect(!s.slashCommands.contains { $0.name == "fork" })
+        #expect(s.slashCommands.contains { $0.name == "theme" })
         await rig.workspace.send(OutgoingMessage(text: "/fork x", images: [], priority: nil), to: s.id)
-        await rig.workspace.send(OutgoingMessage(text: "/theme dark", images: [], priority: nil), to: s.id)
         #expect(rig.workspace.sessions.count == 1)
         let notices = s.transcript.blocks.compactMap { b -> String? in if case .notice(_, _, let t) = b { t } else { nil } }
-        #expect(notices.contains { $0.contains("/fork is not available") } && notices.contains { $0.contains("/theme is not available") })
+        #expect(notices.contains { $0.contains("/fork is not available") })
+        await rig.workspace.send(OutgoingMessage(text: "/theme dark", images: [], priority: nil), to: s.id)
+        #expect(rig.workspace.sessions.count == 2)
+        let theme = try #require(rig.workspace.sessions.first { $0.purpose == .theme })
+        #expect(theme.backend == s.backend && theme.backend.isACP, "the theme session runs on the session's own agent")
+        let after = s.transcript.blocks.compactMap { b -> String? in if case .notice(_, _, let t) = b { t } else { nil } }
+        #expect(!after.contains { $0.contains("/theme is not available") })
     }
 
     @Test func queuedBubbleShowsSendNow() async throws {

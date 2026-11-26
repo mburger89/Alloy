@@ -19,14 +19,16 @@ struct TabRig {
     /// `files` are committed (unless `commit` is false); `worktree` is written afterwards; `prepare` runs before the
     /// coordinator exists (hooks, branches).
     static func make(files: [String: String] = ["a.txt": "one\n", "b.txt": "two\n"], worktree: [String: String] = [:],
-                     commit: Bool = true, showGit: Bool = true, prepare: ((URL) throws -> Void)? = nil) async throws -> TabRig {
+                     commit: Bool = true, showGit: Bool = true,
+                     prepare: ((URL) throws -> Void)? = nil, runner: GitRunner? = nil) async throws -> TabRig {
         let rig = Rig()
         try git(rig.root, "init", "-q", "-b", "main")
         for (rel, text) in files { try writeFile(rig.root, rel, text) }
         if commit { try git(rig.root, "add", "-A"); try git(rig.root, "commit", "-qm", "init") }
         for (rel, text) in worktree { try writeFile(rig.root, rel, text) }
         try prepare?(rig.root)
-        let coordinator = GitCoordinator.install(on: rig.workspace)
+        let service = runner.map { GitService(root: rig.root, clock: rig.clock, runner: $0) }
+        let coordinator = GitCoordinator.install(on: rig.workspace, service: service)
         await coordinator.service.refreshNow()
         await rig.workspace.restoreUIState()
         rig.workspace.setMode(.code)
@@ -382,10 +384,19 @@ struct TabRig {
     }
 
     @Test func timeoutBannerThenManualRefresh() async throws {
-        let t = try await TabRig.make(worktree: ["a.txt": "1x\n"])
+        // A real timeout from the service (not a hand-made panel update), so the service and the panel agree on it.
+        let hang = StatusHang()
+        let live = GitService.liveRunner
+        let runner: GitRunner = { args, dir, stdin, readOnly, terminate, kill in
+            if hang.on, args.contains("status") { return GitResult(status: -1, timedOut: true) }
+            return await live(args, dir, stdin, readOnly, terminate, kill)
+        }
+        let t = try await TabRig.make(worktree: ["a.txt": "1x\n"], runner: runner)
         await t.settle("row") { t.has("git-row-a.txt") }
-        t.panel.apply(GitUpdate(status: GitStatus(branch: "main"), timedOut: true))
+        hang.on = true
+        await t.coordinator.service.requestRefresh()
         await t.settle("banner") { t.has("git-status-timeout") }
+        hang.on = false
         try t.click("git-refresh")
         await t.settle("cleared") { !t.has("git-status-timeout") && t.has("git-row-a.txt") }
     }
@@ -445,5 +456,15 @@ struct TabRig {
         let changed = BodyProbe.counts.filter { $0.value != before[$0.key] ?? 0 && !$0.key.contains("#") }
         #expect(changed.isEmpty, "idle ticks re-ran \(changed)")
         #expect(t.coordinator.spawnCount == spawned)
+    }
+}
+
+/// Makes the scripted git runner's status run time out while `on`.
+final class StatusHang: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value = false
+    var on: Bool {
+        get { lock.withLock { value } }
+        set { lock.withLock { value = newValue } }
     }
 }

@@ -30,7 +30,7 @@ import Testing
         abs(a.red - b.red) < 0.01 && abs(a.green - b.green) < 0.01 && abs(a.blue - b.blue) < 0.01
     }
 
-    private func support(_ rig: Rig) -> URL { rig.root.appendingPathComponent("support") }
+    private func support(_ rig: Rig) -> URL { rig.appSupport }
     private func themesDirectory(_ rig: Rig) -> URL { ThemeLibrary.userDirectory(appSupport: support(rig)) }
     private func listing(_ rig: Rig) -> [String] {
         ((try? FileManager.default.contentsOfDirectory(atPath: themesDirectory(rig).path)) ?? []).sorted()

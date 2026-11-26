@@ -44,7 +44,7 @@ import Testing
 
     /// A dark user theme whose text is nearly the colour of its chat fill, so it has contrast findings.
     private func writeBadTheme(_ t: Setup) async throws -> String {
-        let dir = ThemeLibrary.userDirectory(appSupport: t.rig.root.appendingPathComponent("support"))
+        let dir = ThemeLibrary.userDirectory(appSupport: t.rig.appSupport)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         try ##"{"name":"Murky","appearance":"dark","base":"dracula","colors":{"textPrimary":"#2A2C38","mutedInk":"#2A2C38"}}"##
             .write(to: dir.appendingPathComponent("murky.json"), atomically: true, encoding: .utf8)
@@ -110,7 +110,7 @@ import Testing
     @Test func keepSaveErrorShowsInline() async throws {
         // A file where the support directory should be: the theme cannot be saved.
         let rig = Rig()
-        try Data().write(to: rig.root.appendingPathComponent("support"))
+        try Data().write(to: rig.appSupport)
         let holder = Holder()
         let window = try TestWindow(size: Size(width: Pixels(1200), height: Pixels(800))) {
             rootView(workspace: rig.workspace, themes: holder.controller, center: testCenter(for: rig.workspace))
@@ -130,7 +130,7 @@ import Testing
 
     @Test func keepErrorDoesNotOutliveItsPreview() async throws {
         let rig = Rig()
-        try Data().write(to: rig.root.appendingPathComponent("support"))
+        try Data().write(to: rig.appSupport)
         let holder = Holder()
         let window = try TestWindow(size: Size(width: Pixels(1200), height: Pixels(800))) {
             rootView(workspace: rig.workspace, themes: holder.controller, center: testCenter(for: rig.workspace))

@@ -59,7 +59,7 @@ import Testing
         try increment("settings-appearance-control-opacity", times: 5, t)  // 60% -> 65%
         let opacity = try #require(t.rig.workspace.settings.appearance.controlOpacity)
         #expect(abs(opacity - 0.65) < 1e-9)
-        let support = t.rig.root.appendingPathComponent("support")
+        let support = t.rig.appSupport
         let reloaded = AlloySettings.load(appSupport: support)
         #expect(reloaded.appearance.gutter == 10)
         #expect(reloaded.appearance.cornerRadius == 12)
@@ -130,7 +130,7 @@ import Testing
         seen.append(t.controller.style.gutter)
         #expect(t.controller.style.gutter != AppearanceStyle.defaults.gutter, "the drag changed the live style")
         #expect(t.rig.workspace.settingsSaveCount == saves + 1, "one save for the whole drag, got \(t.rig.workspace.settingsSaveCount - saves)")
-        let reloaded = AlloySettings.load(appSupport: t.rig.root.appendingPathComponent("support"))
+        let reloaded = AlloySettings.load(appSupport: t.rig.appSupport)
         #expect(reloaded.appearance.gutter == t.controller.style.gutter, "the final value is on disk")
         _ = seen
     }
@@ -216,7 +216,7 @@ import Testing
         let t = try await setup()
         defer { t.controller.stop() }
         func backdrop() -> WindowBackdrop? { t.window.platformWindow.windowBackdropRequests.last }
-        let support = t.rig.root.appendingPathComponent("support")
+        let support = t.rig.appSupport
         #expect(t.controller.style.glass && t.controller.style.windowSeeThrough)
         #expect(GlassLook.resolve(style: t.controller.style, reduceTransparency: false) != .solid)
         #expect(backdrop() != .some(.none) && backdrop() != nil)

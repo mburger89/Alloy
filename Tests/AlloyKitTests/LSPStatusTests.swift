@@ -125,7 +125,7 @@ struct LSPStatusTests {
             #expect(statusText(window) == nil)
 
             // The setting reaches disk.
-            let reloaded = AlloySettings.load(appSupport: r.rig.root.appendingPathComponent("support"))
+            let reloaded = AlloySettings.load(appSupport: r.rig.appSupport)
             #expect(reloaded.languageServers["fake"]?.enabled == false)
         }
     }

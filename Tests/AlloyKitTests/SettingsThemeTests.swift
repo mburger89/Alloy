@@ -46,7 +46,7 @@ import Testing
     }
 
     private func themesDirectory(_ rig: Rig) -> URL {
-        ThemeLibrary.userDirectory(appSupport: rig.root.appendingPathComponent("support"))
+        ThemeLibrary.userDirectory(appSupport: rig.appSupport)
     }
 
     private func waitFor(_ what: String, _ condition: () -> Bool) async {
@@ -75,7 +75,7 @@ import Testing
         #expect(t.window.window.darkTheme != oneDark)
         try t.window.click(t.window.element(identifier: "theme-row-one-dark"))
         try await t.window.runUntil { t.window.window.darkTheme == oneDark && t.main.window.darkTheme == oneDark }
-        let text = try String(contentsOf: t.rig.root.appendingPathComponent("support/Alloy/settings.json"), encoding: .utf8)
+        let text = try String(contentsOf: t.rig.appSupport.appendingPathComponent("Alloy/settings.json"), encoding: .utf8)
         #expect(text.contains("\"theme\":\"one-dark\"") || text.contains("\"theme\" : \"one-dark\""), "\(text)")
         try await t.window.runUntil { (try? t.window.element(identifier: "theme-row-one-dark"))?.isSelected == true }
     }
@@ -224,7 +224,7 @@ import Testing
 
     @Test func saveFailureShowsNextToTheControls() async throws {
         // A file where the support directory should be: the settings file cannot be created.
-        let t = try await setup { try Data().write(to: $0.root.appendingPathComponent("support")) }
+        let t = try await setup { try Data().write(to: $0.appSupport) }
         defer { t.controller.stop() }
         try t.window.click(t.window.element(identifier: "theme-row-one-dark"))
         try await t.window.runUntil { (try? t.window.element(identifier: "settings-theme-save-error")) != nil }

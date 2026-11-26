@@ -107,15 +107,16 @@ public final class Session: Identifiable {
     }
 
     /// Commands Alloy handles itself, offered in `/` autocomplete beside the CLI's.
-    static func withLocalCommands(_ commands: [SlashCommandInfo]) -> [SlashCommandInfo] {
+    static func withLocalCommands(_ commands: [SlashCommandInfo], fork: Bool = true) -> [SlashCommandInfo] {
         // Nothing is offered until the CLI has given its list (an empty list means "not known yet").
         guard !commands.isEmpty else { return commands }
         var result = commands
-        if !commands.contains(where: { $0.name == "fork" }) {
+        if fork, !commands.contains(where: { $0.name == "fork" }) {
             result.append(SlashCommandInfo(name: "fork", description: "Start a new session from this conversation", argumentHint: "[name]"))
         }
         if !commands.contains(where: { $0.name == "theme" }) {
-            result.append(SlashCommandInfo(name: "theme", description: "Make a theme with Claude in a new session", argumentHint: "[description]"))
+            result.append(SlashCommandInfo(name: "theme", description: fork ? "Make a theme with Claude in a new session" : "Make a theme with this agent in a new session",
+                                            argumentHint: "[description]"))
         }
         return result
     }
@@ -123,13 +124,13 @@ public final class Session: Identifiable {
     /// A saved list for a session whose process has not started; the CLI's next list replaces it.
     func restoreCommands(_ commands: [SlashCommandInfo]) {
         allCommands = commands
-        slashCommands = backend.isACP ? commands : Self.withLocalCommands(commands)
+        slashCommands = Self.withLocalCommands(commands, fork: !backend.isACP)
     }
 
     func setCommands(_ commands: [SlashCommandInfo]) {
         allCommands = commands
         let shown = commands.filter { !terminalOnlyCommands.contains($0.name) }
-        slashCommands = backend.isACP ? shown : Self.withLocalCommands(shown)
+        slashCommands = Self.withLocalCommands(shown, fork: !backend.isACP)
     }
 
     /// Applies one process event to the transcript and status.
