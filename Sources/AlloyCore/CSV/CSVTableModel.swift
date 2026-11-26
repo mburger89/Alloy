@@ -16,6 +16,8 @@ public struct CSVRowCells: Equatable, Sendable {
 public enum CSVTint: Hashable, Sendable {
     case session(Int)
     case outside
+    /// What the user typed since the last save (only with the "Tint my own edits" setting on).
+    case own
 }
 
 /// Per-document CSV state: the row index, a bounded window cache of parsed rows, the header toggle and the
@@ -70,6 +72,28 @@ public final class CSVTableModel {
     @ObservationIgnored private var headerRemovedColumns = false
     /// How many times the ownership was mapped to a buffer (tests read it): once per (ledger version, buffer version).
     @ObservationIgnored public private(set) var ownershipBuilds = 0
+
+    // The user's own unsaved edits (the "Tint my own edits" setting): byte spans of the buffer that differ from the saved
+    // text, found off the main actor once per (saved version, buffer version) while the setting is on.
+    /// Set by the owner of the model from the setting. Off: no spans, no work.
+    @ObservationIgnored public var ownTintEnabled = false {
+        didSet {
+            guard ownTintEnabled != oldValue else { return }
+            ownKey = nil
+            if ownTintEnabled {
+                refreshOwnTint()
+            } else {
+                ownGeneration += 1; ownTask?.cancel()
+                if !ownSpans.isEmpty { ownSpans = []; bump() }
+            }
+        }
+    }
+    @ObservationIgnored private var ownSpans: [Range<Int>] = []
+    @ObservationIgnored private var ownKey: (saved: UInt64, buffer: UInt64)?
+    @ObservationIgnored private var ownGeneration = 0
+    @ObservationIgnored private var ownTask: Task<Void, Never>?
+    /// How many own-edit diffs were started (tests read it).
+    @ObservationIgnored public private(set) var ownDiffs = 0
 
     // Selection, change navigation and reveal. Rows are file ordinals; the header row is never selectable.
     @ObservationIgnored public private(set) var selectedRows: Set<Int> = []
@@ -262,6 +286,9 @@ public final class CSVTableModel {
         }
     }
 
+    /// Redraws the cells (the own-edit colour changed).
+    public func redraw() { bump() }
+
     private func bump() {
         revision &+= 1
         pruneSelection()
@@ -356,6 +383,8 @@ public final class CSVTableModel {
         cache.removeAll()
         ownershipTask?.cancel()
         ownershipTask = nil
+        ownTask?.cancel()
+        ownTask = nil
         sortTask?.cancel()
         sortTask = nil
     }
@@ -457,6 +486,12 @@ public final class CSVTableModel {
     /// The tint of the cell at (`fileRow`, `column`): a session's colour slot or an outside change; nil for your own
     /// edits, kept text and unchanged cells.
     public func tint(forFileRow row: Int, column: Int) -> CSVTint? {
+        if ownTintEnabled, !ownSpans.isEmpty, ownEdited(fileRow: row, column: column) { return .own }
+        return ledgerTint(forFileRow: row, column: column)
+    }
+
+    /// The tint the ledger gives a cell (a session or an outside change), without the user's own unsaved edits.
+    private func ledgerTint(forFileRow row: Int, column: Int) -> CSVTint? {
         guard let author = author(forFileRow: row, column: column) else { return nil }
         switch author {
         case .session(let id): return .session(colorSlots[id] ?? 0)
@@ -464,6 +499,59 @@ public final class CSVTableModel {
         case .user: return nil
         }
     }
+
+    /// Whether the cell's field intersects text the user changed since the last save. A deletion (an empty span) tints the
+    /// field it was cut from.
+    private func ownEdited(fileRow row: Int, column: Int) -> Bool {
+        guard row >= 0, row < usableRows else { return false }
+        let cells = cache[row] ?? parse(fileRow: row)
+        guard column >= 0, column < cells.fieldRanges.count else { return false }
+        let field = cells.fieldRanges[column]
+        // The spans are ordered and disjoint: find the first that ends at or after the field's start.
+        var lo = 0, hi = ownSpans.count
+        while lo < hi {
+            let mid = (lo + hi) / 2
+            if ownSpans[mid].upperBound >= field.lowerBound { hi = mid } else { lo = mid + 1 }
+        }
+        while lo < ownSpans.count, ownSpans[lo].lowerBound <= field.upperBound {
+            let span = ownSpans[lo]
+            if span.isEmpty || (span.upperBound > field.lowerBound && span.lowerBound < field.upperBound) { return true }
+            lo += 1
+        }
+        return false
+    }
+
+    /// Looks at the saved text again (a save or a refresh moved it). A clean buffer clears the tint at once.
+    public func savedTextChanged() { refreshOwnTint() }
+
+    /// Diffs the saved text against the buffer text the index describes, off the main actor, once per (saved version,
+    /// buffer version). Does nothing with the setting off, before the index is installed or above the size limit.
+    private func refreshOwnTint() {
+        guard ownTintEnabled, installed else { return }
+        let key = (saved: document.savedVersion, buffer: indexSnapshot.version)
+        if let k = ownKey, k == key { return }
+        ownKey = key
+        ownGeneration += 1
+        ownTask?.cancel()
+        let gen = ownGeneration
+        let saved = document.savedSnapshot, snap = indexSnapshot
+        if saved.version == snap.version || saved.utf8Count > OwnEdits.sizeLimit || snap.utf8Count > OwnEdits.sizeLimit {
+            if !ownSpans.isEmpty { ownSpans = []; bump() }
+            return
+        }
+        ownDiffs += 1
+        ownTask = Task { [weak self] in
+            let spans = await Task.detached(priority: .userInitiated) {
+                OwnEdits.changedBytes(saved: saved.text, current: snap.text)
+            }.value
+            guard let self, gen == ownGeneration, !Task.isCancelled else { return }
+            ownSpans = spans
+            bump()
+        }
+    }
+
+    /// Resolves when the last own-edit diff has landed. A test hook.
+    public func ownTintSettled() async { await ownTask?.value }
 
     /// The author of the change in a cell when it is tinted.
     public func author(forFileRow row: Int, column: Int) -> Author? {
@@ -532,6 +620,7 @@ public final class CSVTableModel {
     /// Maps the saved-text ownership to the current buffer, once per (ledger version, buffer version) pair, and places the
     /// deletion markers on rows. Never called from a body.
     private func refreshOwnership() {
+        refreshOwnTint()
         let key = (ledger: sourceLedgerVersion, buffer: document.buffer.version)
         if let k = ownershipKey, k.ledger == key.ledger, k.buffer == key.buffer { return }
         ownershipKey = key
@@ -706,7 +795,7 @@ public final class CSVTableModel {
         for r in changedRows() {
             let cells = cache[r] ?? parse(fileRow: r)
             var columns = Set<Int>()
-            for c in cells.fieldRanges.indices where tint(forFileRow: r, column: c) != nil { columns.insert(c) }
+            for c in cells.fieldRanges.indices where ledgerTint(forFileRow: r, column: c) != nil { columns.insert(c) }
             if markers[r] != nil || (trailingMarker != nil && r == last) { columns.insert(0) }
             for c in columns.sorted() { out.append(ActiveCell(row: r, column: c)) }
         }

@@ -101,13 +101,32 @@ private struct SeededRng: RandomNumberGenerator {
             .context(text: "z", line: 3),
             .added(text: "p", line: 4, edit: e, runs: []), .added(text: "q", line: 5, edit: e, runs: []),
         ]
-        let m = SideBySideModel.build(lines, authorOf: { _ in .user }, lineEnding: "\n")
+        let m = SideBySideModel.build(lines, authorOf: { _ in .outside }, lineEnding: "\n")
         #expect(m.oldText == "a\no1\no2\no3\nz\n")
         #expect(m.rightFillers == [.init(beforeRow: 2, count: 2)])
         #expect(m.leftFillers == [.init(beforeRow: 5, count: 2)])
         #expect(m.leftBars.map(\.rows) == [1..<4])
         #expect(m.rightBars.map(\.rows) == [1..<2, 3..<5])
         #expect(m.leftBars.first?.tag == m.tagOf[e])
+    }
+
+    @Test func sideBySideDoesNotMarkSavedUserEdits() {
+        let e = UUID()
+        let lines: [DiffLine] = [
+            .context(text: "a", line: 1),
+            .removed(text: "o1", edit: e), .removed(text: "o2", edit: e), .removed(text: "o3", edit: e),
+            .added(text: "n1", line: 2, edit: e, runs: []),
+            .context(text: "z", line: 3),
+            .added(text: "p", line: 4, edit: e, runs: []),
+        ]
+        let user = SideBySideModel.build(lines, authorOf: { _ in .user }, lineEnding: "\n")
+        let other = SideBySideModel.build(lines, authorOf: { _ in .outside }, lineEnding: "\n")
+        #expect(user.leftBars.isEmpty && user.rightBars.isEmpty, "no bars for the user's own saved edits")
+        #expect(!other.leftBars.isEmpty && !other.rightBars.isEmpty)
+        // The panes stay level and the left pane still shows the old text.
+        #expect(user.oldText == other.oldText)
+        #expect(user.leftFillers == other.leftFillers && user.rightFillers == other.rightFillers)
+        #expect(user.leftRowCount == other.leftRowCount && user.rightRowCount == other.rightRowCount)
     }
 }
 

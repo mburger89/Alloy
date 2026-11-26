@@ -28,6 +28,26 @@ public struct GitSettings: Codable, Equatable, Sendable {
     }
 }
 
+/// Tints the user's own unsaved edits (off by default). `colorHex` is a picked `#RRGGBB` or `#RRGGBBAA`; nil follows the
+/// theme's "you" colour.
+public struct OwnEditTint: Codable, Equatable, Sendable {
+    public var enabled: Bool
+    public var colorHex: String?
+
+    public init(enabled: Bool = false, colorHex: String? = nil) {
+        self.enabled = enabled; self.colorHex = colorHex
+    }
+
+    private enum CodingKeys: String, CodingKey { case enabled, colorHex }
+
+    /// Every key is optional and a wrong-typed value falls back to its default without losing the other.
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        enabled = (try? c.decodeIfPresent(Bool.self, forKey: .enabled)) ?? false
+        colorHex = (try? c.decodeIfPresent(String.self, forKey: .colorHex)) ?? nil
+    }
+}
+
 /// User settings at `<appSupport>/Alloy/settings.json`.
 public struct AlloySettings: Codable, Equatable, Sendable {
     public var claudePath: String?
@@ -105,6 +125,9 @@ public struct AlloySettings: Codable, Equatable, Sendable {
     /// Installed plugins by plugin id.
     public var plugins: [String: PluginSetting]
 
+    /// Tint the user's own unsaved edits, in the editor and in tables.
+    public var ownEditTint: OwnEditTint
+
     public init(claudePath: String? = nil, lastProjectPath: String? = nil,
                 shareKnowledge: Bool = true, shareAcrossProjects: Bool = true, askBeforeSharedNotes: Bool = false, followEdits: Bool = true, paletteShowsDisabled: Bool = true,
                 themeMode: ThemeMode = .single, theme: String = "dracula",
@@ -116,7 +139,8 @@ public struct AlloySettings: Codable, Equatable, Sendable {
                 searchMaxResults: Int = AlloySettings.defaultSearchMaxResults, searchExcludes: [String] = [],
                 formatters: [String: String] = [:], git: GitSettings = GitSettings(),
                 agents: [AgentDefinition] = [], defaultAgentID: String? = nil,
-                plugins: [String: PluginSetting] = [:]) {
+                plugins: [String: PluginSetting] = [:], ownEditTint: OwnEditTint = OwnEditTint()) {
+        self.ownEditTint = ownEditTint
         self.plugins = plugins
         self.agents = agents
         self.defaultAgentID = defaultAgentID
@@ -144,7 +168,7 @@ public struct AlloySettings: Codable, Equatable, Sendable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case claudePath, lastProjectPath, shareKnowledge, shareAcrossProjects, askBeforeSharedNotes, followEdits, paletteShowsDisabled, themeMode, theme, lightTheme, darkTheme, languageServers, appearance, glass, backgroundImages, keybindings, searchMaxResults, searchExcludes, terminal, formatters, git, agents, defaultAgentID, plugins
+        case claudePath, lastProjectPath, shareKnowledge, shareAcrossProjects, askBeforeSharedNotes, followEdits, paletteShowsDisabled, themeMode, theme, lightTheme, darkTheme, languageServers, appearance, glass, backgroundImages, keybindings, searchMaxResults, searchExcludes, terminal, formatters, git, agents, defaultAgentID, plugins, ownEditTint
     }
 
     /// Every key is optional, so a file written by an older Alloy still loads with its values intact.
@@ -179,6 +203,7 @@ public struct AlloySettings: Codable, Equatable, Sendable {
         // Entry by entry: one malformed override is dropped without losing the others.
         let lossy = (try? c.decodeIfPresent([String: LossyOverride].self, forKey: .languageServers)) ?? nil
         languageServers = (lossy ?? [:]).compactMapValues(\.value)
+        ownEditTint = (try? c.decodeIfPresent(OwnEditTint.self, forKey: .ownEditTint)) ?? OwnEditTint()
         let lossyPlugins = (try? c.decodeIfPresent([String: LossyPlugin].self, forKey: .plugins)) ?? nil
         plugins = (lossyPlugins ?? [:]).compactMapValues(\.value)
     }

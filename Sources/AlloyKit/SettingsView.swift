@@ -64,6 +64,18 @@ struct SettingsView: Component {
                 Text("Show a session's edits in the right pane as they happen.").font(size: 11).foregroundColor(.mutedInk)
                 Toggle(isOn: flag(\.paletteShowsDisabled)) { Text("Show unavailable commands in the command palette").font(size: 13) }
                     .accessibilityIdentifier("settings-palette-show-disabled")
+                Toggle(isOn: ownTintBinding) { Text("Tint my own edits").font(size: 13) }
+                    .accessibilityIdentifier("settings-own-tint")
+                Text("Colours what you've changed since your last save, in the editor and in tables.")
+                    .font(size: 11).foregroundColor(.mutedInk)
+                if workspace.settings.ownEditTint.enabled {
+                    ColorPicker("Tint colour", selection: ownTintColor, supportsOpacity: false)
+                        .accessibilityIdentifier("settings-own-tint-color")
+                    if workspace.settings.ownEditTint.colorHex != nil {
+                        Button("Reset to theme colour") { resetOwnTintColor() }
+                            .accessibilityIdentifier("settings-own-tint-reset")
+                    }
+                }
             }
             Divider()
             VStack(alignment: .leading, spacing: Pixels(8)) {
@@ -142,6 +154,35 @@ struct SettingsView: Component {
                            s[keyPath: key] = value
                            apply(s)
                        })
+    }
+
+    /// The own-edit toggle, written through `updateSettings` at once.
+    private var ownTintBinding: Binding<Bool> {
+        let workspace = workspace
+        return Binding(get: { workspace.settings.ownEditTint.enabled },
+                       set: { value in
+                           var s = workspace.settings
+                           s.ownEditTint.enabled = value
+                           apply(s)
+                       })
+    }
+
+    /// The tint colour: the picked colour, else the theme's "you" colour. A pick is stored as `#RRGGBB`.
+    private var ownTintColor: Binding<Color> {
+        let workspace = workspace
+        return Binding(get: { Color.ownEditTint(workspace.settings) },
+                       set: { color in
+                           let c = color.resolve(in: EnvironmentValues())
+                           var s = workspace.settings
+                           s.ownEditTint.colorHex = ThemeRGBA(r: Double(c.red), g: Double(c.green), b: Double(c.blue)).hex
+                           apply(s)
+                       })
+    }
+
+    private func resetOwnTintColor() {
+        var s = workspace.settings
+        s.ownEditTint.colorHex = nil
+        apply(s)
     }
 
     private func resetKnowledge() {

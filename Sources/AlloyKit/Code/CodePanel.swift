@@ -57,6 +57,8 @@ final class OpenDocumentView {
     @ObservationIgnored private var searchGeneration = 0
     /// The git coordinator's marks for this view (it owns them); nil without a repository or coordinator.
     @ObservationIgnored weak var gitMarks: GitDocumentMarks?
+    /// This view's tint for the user's own unsaved edits; made on the first rebuild, nothing runs in it while the setting is off.
+    @ObservationIgnored private(set) var ownMarks: OwnEditMarks?
     /// Whether the code view reserves the change lane (git marks can show for this document). Set by
     /// `GitDocumentMarks.laneReserved`; read in the panel body, changes only when a recompute finishes.
     var gitLaneReserved = false
@@ -143,6 +145,8 @@ final class OpenDocumentView {
         closed = true
         messageTask?.cancel()
         gitMarks?.coordinator?.detach(self)
+        ownMarks?.teardown()
+        ownMarks = nil
         dismissHover()
         dismissRename()
         scheduler?.stop()
@@ -182,6 +186,8 @@ final class OpenDocumentView {
         self.workspace = workspace
         let path = document.path
         attachGit(workspace: workspace)
+        if ownMarks == nil { ownMarks = OwnEditMarks(view: self, workspace: workspace) }
+        ownMarks?.presentationSeen(workspace.presentation(of: path, in: pane))
         let key = buildTrigger(workspace: workspace)
         if key.mode == .plain {
             guard key != builtKey else { return }

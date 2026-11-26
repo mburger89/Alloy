@@ -102,7 +102,7 @@ final class DocumentServices {
     /// engine call is made in order from one task, so the engine's version never runs ahead of a request's.
     private func startHighlighting() {
         cursor = document.buffer.makeEditCursor()
-        defer { observeBuffer() }
+        defer { observeBuffer(); observeSaved() }
         let first = document.buffer.snapshot()
         let detected = Language.detect(path: document.path, firstLine: first.lineCount > 0 ? first.line(0) : nil)
         hasGrammar = detected != nil
@@ -146,9 +146,23 @@ final class DocumentServices {
         }
     }
 
+    /// A save or a refresh from disk moved the saved text: the views' own-edit tints clear or diff again.
+    private func observeSaved() {
+        guard !closed else { return }
+        withObservationTracking {
+            _ = document.savedVersion
+        } onChange: { [weak self] in
+            Task { @MainActor in
+                guard let self, !self.closed else { return }
+                for entry in self.views { entry.view?.ownMarks?.savedChanged() }
+                self.observeSaved()
+            }
+        }
+    }
+
     private func bufferChanged() {
         // Matches follow edits but a new one is not found by that, so an open find searches again (off main).
-        for entry in views { entry.view?.searchAgainIfOpen(); entry.view?.gitMarks?.typed(); entry.view?.renameBufferChanged() }
+        for entry in views { entry.view?.searchAgainIfOpen(); entry.view?.gitMarks?.typed(); entry.view?.ownMarks?.typed(); entry.view?.renameBufferChanged() }
         drainEdits()
     }
 

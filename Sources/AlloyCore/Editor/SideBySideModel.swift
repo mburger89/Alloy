@@ -56,6 +56,9 @@ public struct SideBySideModel: Equatable, Sendable {
                 tagOf[edit] = tag
                 tags[tag] = edit
             }
+            // The user's own saved edits are not marked (the setting tints them while unsaved). The rows and fillers stay, so
+            // the panes stay level and the left pane still shows the old text.
+            if authors[edit] == .user { return }
             if let last = bars.last, last.edit == edit, last.rows.upperBound == row {
                 bars[bars.count - 1].rows = last.rows.lowerBound..<(row + 1)
             } else {

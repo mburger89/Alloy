@@ -66,7 +66,10 @@ public struct DiffDecorationModel: Equatable, Sendable {
                 offset += text.utf8.count + terminator
             case .added(let text, _, let edit, let runs):
                 let who = author(edit)
-                if let last = model.lineBars.last, last.edit == edit, last.rows.upperBound == row {
+                // The user's own edits are not drawn here (the setting tints them while unsaved); they stay in the ledger.
+                if who == .user {
+                    // No bar for this line.
+                } else if let last = model.lineBars.last, last.edit == edit, last.rows.upperBound == row {
                     model.lineBars[model.lineBars.count - 1].rows = last.rows.lowerBound..<(row + 1)
                 } else {
                     model.lineBars.append(LineBar(rows: row..<(row + 1), author: who, edit: edit))
@@ -75,7 +78,10 @@ public struct DiffDecorationModel: Equatable, Sendable {
                 var seen: [(Range<Int>, Author)] = []
                 for run in runs {
                     let length = run.text.utf8.count
-                    if let e = run.edit, length > 0 { seen.append((cursor..<(cursor + length), author(e))) }
+                    if let e = run.edit, length > 0 {
+                        let who = author(e)
+                        if who != .user { seen.append((cursor..<(cursor + length), who)) }
+                    }
                     cursor += length
                 }
                 if Set(seen.map(\.1)).count > 1 {
@@ -85,7 +91,9 @@ public struct DiffDecorationModel: Equatable, Sendable {
                 offset += text.utf8.count + terminator
             case .removed(let text, let edit):
                 let who = author(edit)
-                if let last = model.removedGroups.last, last.edit == edit, last.beforeRow == row {
+                if who == .user {
+                    // The user's own removals are not drawn either.
+                } else if let last = model.removedGroups.last, last.edit == edit, last.beforeRow == row {
                     model.removedGroups[model.removedGroups.count - 1].lines.append(text)
                 } else {
                     model.removedGroups.append(RemovedGroup(beforeRow: row, lines: [text], edit: edit, author: who))

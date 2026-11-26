@@ -68,10 +68,11 @@ struct TablePanel: Component {
                 TableColumnForEach(0..<titles.count) { column in
                     TableColumn(titles[column], sortUsing: CSVColumnComparator(column: column)) { row in
                         let values = model.cells(forDataRow: row.id - offset).values
+                        let tint = model.tint(forFileRow: row.id, column: column)
                         CSVCell(text: column < values.count ? values[column] : "",
                                 identifier: "csv-cell-\(gid)-\(row.id)-\(column)",
-                                tint: model.tint(forFileRow: row.id, column: column),
-                                who: model.changeDescription(forFileRow: row.id, column: column)).equatable()
+                                tint: tint,
+                                who: tint == .own ? nil : model.changeDescription(forFileRow: row.id, column: column)).equatable()
                     }
                     // Resizable (MetalUI Table column resize): starts at the measured width, user-draggable within bounds.
                     .width(min: Pixels(40), ideal: Pixels(Float(widths[column])), max: Pixels(1200))
@@ -86,7 +87,7 @@ struct TablePanel: Component {
                 })
             .tableCellBackground { cell in
                 model.dataColumn(forTableColumn: cell.column).flatMap { model.tint(forFileRow: cell.row, column: $0) }
-                    .map(CSVCell.fill)
+                    .map { CSVCell.fill($0, own: Color.ownEditTint(workspace.settings)) }
             }
             .tableFrozenColumns(1)
             .tableRowIndex { id in

@@ -18,8 +18,11 @@ final class CSVTableHandle {
         self.pane = pane
         let path = document.path
         model.ledgerProvider = { [weak workspace] in (workspace?.ledger.files[path], workspace?.sessions ?? []) }
+        model.ownTintEnabled = workspace.settings.ownEditTint.enabled
         model.ledgerChanged()
         observe()
+        observeSaved()
+        observeOwnTint()
         observeLedger()
         takeReveal()
         observeReveal()
@@ -58,6 +61,36 @@ final class CSVTableHandle {
                 guard let self, !self.closed else { return }
                 self.model.ledgerChanged()
                 self.observeLedger()
+            }
+        }
+    }
+
+    /// A save or a refresh from disk moved the saved text: the own-edit tint clears or diffs again.
+    private func observeSaved() {
+        guard !closed else { return }
+        let document = model.document
+        withObservationTracking {
+            _ = document.savedVersion
+        } onChange: { [weak self] in
+            Task { @MainActor in
+                guard let self, !self.closed else { return }
+                self.model.savedTextChanged()
+                self.observeSaved()
+            }
+        }
+    }
+
+    /// The setting: the toggle starts or stops the tint; a colour change redraws the table.
+    private func observeOwnTint() {
+        guard !closed, let workspace else { return }
+        withObservationTracking {
+            _ = workspace.settings.ownEditTint
+        } onChange: { [weak self] in
+            Task { @MainActor in
+                guard let self, !self.closed, let workspace = self.workspace else { return }
+                let tint = workspace.settings.ownEditTint
+                if self.model.ownTintEnabled != tint.enabled { self.model.ownTintEnabled = tint.enabled } else if tint.enabled { self.model.redraw() }
+                self.observeOwnTint()
             }
         }
     }

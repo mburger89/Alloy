@@ -25,8 +25,9 @@ struct CSVCell: Component {
     let tint: CSVTint?
     var who: String? = nil
 
-    static func fill(_ tint: CSVTint) -> Color {
+    static func fill(_ tint: CSVTint, own: Color = .userAuthor) -> Color {
         switch tint {
+        case .own: own.opacity(0.3)
         case .session(let slot): Color.sessionColor(slot).opacity(0.3)
         case .outside: Color.outsideAuthor.opacity(0.3)
         }
@@ -35,6 +36,7 @@ struct CSVCell: Component {
     /// What the accessibility value says about the fill (tests read it).
     static func token(_ tint: CSVTint) -> String {
         switch tint {
+        case .own: "tint-own"
         case .session(let slot): "tint-session\(((slot % 12) + 12) % 12)"
         case .outside: "tint-outside"
         }
