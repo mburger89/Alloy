@@ -955,6 +955,21 @@ public final class Workspace {
             }
         }
         ensureLoaded()
+        // A source that never ran a turn has no conversation file for the CLI to resume or fork (its init only
+        // announced an id): the fork is simply a fresh session with the source's settings.
+        if !source.hasTurn, source.forkSource == nil {
+            let trimmed = name?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            let fork = Session(id: UUID(), name: trimmed.isEmpty ? "\(source.name) (fork)" : allowedName(trimmed, for: nil),
+                               colorIndex: records.count % 12, projectRoot: projectRoot,
+                               model: source.model, permissionMode: source.permissionMode, purpose: source.purpose,
+                               effort: source.effort)
+            if Self.isReserved(trimmed) { fork.transcript.appendNotice(kind: .commandOutput, text: Self.reservedNotice(for: fork.name)) }
+            sessions.append(fork)
+            selectedSessionID = fork.id
+            persistSessions()
+            await launch(fork, resume: false)
+            return fork
+        }
         // The point the fork starts from. An unsent fork being forked again keeps its own point (it has no file yet).
         let point: String?
         if source.forkSource != nil { point = source.forkPoint } else {

@@ -89,6 +89,19 @@ private func msg(_ text: String, _ id: UUID) -> OutgoingMessage {
         #expect(clock.pendingSleepers == 0)
     }
 
+    /// Once the agent has started, the notice goes: it only said what was going on at that moment.
+    @Test func slowStartNoticeIsRemovedWhenTheAgentStarts() async throws {
+        let env = WEnv(); defer { env.cleanup() }
+        let rig = WRig(), clock = ManualClock()
+        let ws = env.workspace(rig, clock: clock)
+        let s = await ws.newSession(name: "A", backend: .acp(agentID: "fake"))
+        await waitUntil("timer") { clock.pendingSleepers == 1 }
+        clock.advance(by: 10)
+        await waitUntil("notice") { self.stillStarting(s) }
+        s.status = .idle
+        #expect(!stillStarting(s))
+    }
+
     @Test func fastStartSaysNothing() async throws {
         let env = WEnv(); defer { env.cleanup() }
         let rig = WRig(), clock = ManualClock()

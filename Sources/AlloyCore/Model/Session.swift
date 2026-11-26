@@ -17,7 +17,23 @@ public final class Session: Identifiable {
     public let id: UUID
     public var name: String
     public let colorIndex: Int
-    public internal(set) var status: SessionStatus = .starting
+    public internal(set) var status: SessionStatus = .starting {
+        didSet { if status != .starting { removeSlowStartNotice() } }
+    }
+    /// The "still starting" notice on screen, so it goes the moment the start ends (it is never saved).
+    var slowStartNoticeID: UUID?
+
+    /// Adds the "still starting" notice; `removeSlowStartNotice` takes it away again.
+    func showSlowStartNotice(_ text: String) {
+        removeSlowStartNotice()
+        slowStartNoticeID = transcript.appendNotice(kind: .commandOutput, text: text)
+    }
+
+    func removeSlowStartNotice() {
+        guard let id = slowStartNoticeID else { return }
+        slowStartNoticeID = nil
+        transcript.removeNotice(id: id)
+    }
     public internal(set) var transcript: Transcript
     /// Cost across all of this session's processes. `total_cost_usd` is the running total of the current
     /// process (the compact fixture rises from 0.0015 to 0.0025 on a zero-usage turn), so this is the total of

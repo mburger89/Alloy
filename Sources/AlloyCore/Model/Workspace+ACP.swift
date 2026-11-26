@@ -102,9 +102,7 @@ extension Workspace {
         Task { @MainActor [weak s] in
             do { try await clock.sleep(until: deadline) } catch { return }
             guard let s, s.status == .starting else { return }
-            s.transcript.appendNotice(
-                kind: .commandOutput,
-                text: "\(agent) is still starting \u{2014} the first launch can take a few minutes.")
+            s.showSlowStartNotice("\(agent) is still starting \u{2014} the first launch can take a few minutes.")
         }
     }
 }

@@ -383,8 +383,18 @@ public struct Transcript: Sendable, Equatable {
         cancelPendingPrompts()
     }
 
-    public mutating func appendNotice(kind: NoticeKind, text: String) {
-        push(.notice(id: UUID(), kind: kind, text: text))
+    @discardableResult
+    public mutating func appendNotice(kind: NoticeKind, text: String) -> UUID {
+        let id = UUID()
+        push(.notice(id: id, kind: kind, text: text))
+        return id
+    }
+
+    /// Takes a notice back out (one that only says what is going on right now).
+    mutating func removeNotice(id: UUID) {
+        guard let i = blocks.firstIndex(where: { if case .notice(let n, _, _) = $0 { n == id } else { false } }) else { return }
+        blocks.remove(at: i)
+        reindex()
     }
 
     /// Ends the open assistant message: empty streamed text/thinking blocks are removed, non-empty

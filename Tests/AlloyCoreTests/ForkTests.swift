@@ -196,6 +196,31 @@ private func userTexts(_ t: ScriptedTransport, at index: Int = 0) async -> [Stri
         await ws.stopAll()
     }
 
+    /// The source got its init but never ran a turn, so the CLI never wrote its conversation: the fork starts fresh
+    /// instead of resuming (and failing on) a conversation that does not exist.
+    @Test @MainActor func forkOfNeverTurnedSessionStartsFresh() async throws {
+        let root = tempDir(), home = tempDir(), support = tempDir()
+        let h1 = FHarness()
+        let ws1 = workspace(h1, root: root, support: support, home: home)
+        let first = await ws1.newSession(name: "A")
+        await h1.transports[0].emit(fixture: Fixture.lines("fork-init"))
+        await waitUntil("init") { first.hasConversation }
+        await ws1.stopAll()
+        let h2 = FHarness()
+        let ws2 = workspace(h2, root: root, support: support, home: home)
+        await ws2.restore()
+        let source = try #require(ws2.sessions.first { $0.id == first.id })
+        #expect(source.hasConversation && !source.hasTurn && source.status == .dormant)
+        let fork = try #require(await ws2.fork(source.id, name: nil))
+        await ws2.settle()
+        let c = try #require(h2.configs.last)
+        #expect(!c.resume && !c.forkSession && c.resumeID == nil)
+        let args = c.arguments()
+        #expect(!args.contains("--resume") && !args.contains("--fork-session"))
+        #expect(fork.forkSource == nil && fork.forkPoint == nil)
+        await ws2.stopAll()
+    }
+
     @Test @MainActor func forkWaitsForIdle() async throws {
         let h = FHarness()
         let ws = workspace(h)
