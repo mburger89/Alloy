@@ -40,7 +40,12 @@ enum ToolBodies {
 
     /// The header title: the kind's label and the call's summary (shell and todo blocks carry no summary).
     static func title(_ tool: ToolBlock) -> String {
-        tool.kind == .shell || tool.kind == .todo || tool.summary.isEmpty ? kindLabel(tool) : "\(kindLabel(tool)) \(tool.summary)"
+        let label = kindLabel(tool)
+        // An ACP call with nothing more to say has its own title as the summary ("Read read"): show the label once.
+        if tool.kind == .shell || tool.kind == .todo || tool.summary.isEmpty
+            || tool.summary.caseInsensitiveCompare(label) == .orderedSame
+            || tool.summary.caseInsensitiveCompare(tool.name) == .orderedSame { return label }
+        return "\(label) \(tool.summary)"
     }
 
     /// A failed block wears the error kind's colors and icon.

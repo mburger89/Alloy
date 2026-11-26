@@ -47,6 +47,10 @@ public final class Session: Identifiable {
     public internal(set) var permissionMode: String?
     /// True once the CLI has a conversation for this id (first init or result), so `--resume` is valid.
     public internal(set) var hasConversation: Bool
+    /// True once the CLI has taken a message or finished a turn. The CLI announces itself (`system/init`) before any
+    /// message but writes no conversation until the first turn, so `--resume` of a session without one fails with
+    /// "No conversation found": such a session starts fresh instead.
+    public internal(set) var hasTurn: Bool
     /// The id of the CLI conversation (the transcript file's name). Starts as `id`; every `system/init` names it,
     /// which is how `/clear` moves a session to a new conversation. `--resume` uses this.
     public internal(set) var cliSessionID: String
@@ -73,7 +77,7 @@ public final class Session: Identifiable {
         transcript.blocks.compactMap { if case .user(let id, _, _, .queued) = $0 { return id } else { return nil } }
     }
 
-    init(id: UUID, name: String, colorIndex: Int, projectRoot: URL, hasConversation: Bool = false,
+    init(id: UUID, name: String, colorIndex: Int, projectRoot: URL, hasConversation: Bool = false, hasTurn: Bool? = nil,
          cliSessionID: String? = nil, model: String? = nil, permissionMode: String? = nil, forkSource: String? = nil,
          forkPoint: String? = nil, purpose: SessionPurpose = .coding, effort: String? = nil,
          backend: SessionBackend = .claude, agentName: String? = nil, acpSessionID: String? = nil) {
@@ -85,6 +89,7 @@ public final class Session: Identifiable {
         self.forkSource = forkSource
         self.forkPoint = forkPoint
         self.hasConversation = hasConversation
+        self.hasTurn = hasTurn ?? hasConversation
         self.cliSessionID = cliSessionID ?? id.uuidString.lowercased()
         self.model = model; self.permissionMode = permissionMode
         self.id = id; self.name = name; self.colorIndex = colorIndex
@@ -174,6 +179,7 @@ public final class Session: Identifiable {
             case .userEcho(_, _, _, let isReplay):
                 // An ACP prompt is on the wire once it is echoed.
                 if backend.isACP, !isReplay, status == .idle { status = .working }
+                if !backend.isACP, !isReplay { hasTurn = true }
             case .agentState(let state):
                 switch state {
                 case .modes(let current, let available):
@@ -190,6 +196,8 @@ public final class Session: Identifiable {
             case .assistantBlock:
                 // Assigning an equal value still wakes observers; a streamed chunk must not rerun what only reads `status`.
                 if status != .working { status = .working }
+                // The CLI answers only a message it has taken, so its conversation exists.
+                if !backend.isACP, !hasTurn { hasTurn = true }
             case .controlRequest(let r):
                 if case .canUseTool = r.kind { status = .awaitingPermission }
             case .controlCancel:
@@ -197,7 +205,7 @@ public final class Session: Identifiable {
             case .result(let r):
                 costUSD = costBase + r.costUSD; inputTokens += r.inputTokens; outputTokens += r.outputTokens
                 totalTokens += r.inputTokens + r.cacheCreationTokens + r.cacheReadTokens + r.outputTokens
-                status = .idle; hasConversation = true
+                status = .idle; hasConversation = true; hasTurn = true
             default: break
             }
         }

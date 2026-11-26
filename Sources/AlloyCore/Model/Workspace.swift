@@ -12,6 +12,8 @@ struct SessionRecord: Codable {
     var name: String
     var colorIndex: Int
     var hasConversation: Bool = false
+    /// Nil in a record from before it was kept: it then follows `hasConversation`.
+    var hasTurn: Bool?
     var cliSessionID: String?
     var model: String?
     /// The CLI effort level (`--effort`); nil is the CLI default.
@@ -34,7 +36,8 @@ struct SessionRecord: Codable {
          cliSessionID: String? = nil, model: String? = nil, permissionMode: String? = nil,
          slashCommands: [SlashCommandInfo]? = nil, forkSource: String? = nil, forkPoint: String? = nil,
          purpose: SessionPurpose? = nil, effort: String? = nil, backend: SessionBackend = .claude,
-         acpSessionID: String? = nil) {
+         acpSessionID: String? = nil, hasTurn: Bool? = nil) {
+        self.hasTurn = hasTurn
         self.backend = backend
         self.acpSessionID = acpSessionID
         self.effort = effort
@@ -52,6 +55,7 @@ struct SessionRecord: Codable {
         name = try c.decode(String.self, forKey: .name)
         colorIndex = try c.decode(Int.self, forKey: .colorIndex)
         hasConversation = try c.decodeIfPresent(Bool.self, forKey: .hasConversation) ?? false
+        hasTurn = try c.decodeIfPresent(Bool.self, forKey: .hasTurn)
         cliSessionID = try c.decodeIfPresent(String.self, forKey: .cliSessionID)
         model = try c.decodeIfPresent(String.self, forKey: .model)
         effort = try c.decodeIfPresent(String.self, forKey: .effort)
@@ -65,7 +69,7 @@ struct SessionRecord: Codable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, name, colorIndex, hasConversation, cliSessionID, model, effort, permissionMode, slashCommands
+        case id, name, colorIndex, hasConversation, hasTurn, cliSessionID, model, effort, permissionMode, slashCommands
         case forkSource, forkPoint, purpose, backend, acpSessionID
     }
 
@@ -76,6 +80,7 @@ struct SessionRecord: Codable {
         try c.encode(name, forKey: .name)
         try c.encode(colorIndex, forKey: .colorIndex)
         try c.encode(hasConversation, forKey: .hasConversation)
+        try c.encodeIfPresent(hasTurn, forKey: .hasTurn)
         try c.encodeIfPresent(cliSessionID, forKey: .cliSessionID)
         try c.encodeIfPresent(model, forKey: .model)
         try c.encodeIfPresent(effort, forKey: .effort)
@@ -885,7 +890,7 @@ public final class Workspace {
         s.transcript.finalizeStreaming()
         s.transcript.interruptRunningTools()
         await checkForkPoint(s)
-        await launch(s, resume: s.hasConversation || s.forkSource != nil, forkFrom: s.forkSource, forkAt: s.forkPoint)
+        await launch(s, resume: s.hasTurn || s.forkSource != nil, forkFrom: s.forkSource, forkAt: s.forkPoint)
         if live[id] != nil { s.transcript.appendNotice(kind: .commandOutput, text: "Settings applied") }
     }
 
@@ -1357,7 +1362,7 @@ public final class Workspace {
         if case .failedToLaunch = s.status {
             s.status = .starting
             await checkForkPoint(s)
-            await launch(s, resume: s.hasConversation || s.forkSource != nil, forkFrom: s.forkSource, forkAt: s.forkPoint)
+            await launch(s, resume: s.hasTurn || s.forkSource != nil, forkFrom: s.forkSource, forkAt: s.forkPoint)
             if case .failedToLaunch = s.status {
                 s.transcript.appendNotice(kind: .error, text: "Message not sent: \(s.backend.isACP ? s.agentName : "Claude") could not start")
                 return
@@ -1520,7 +1525,7 @@ public final class Workspace {
     }
 
     private func persistedState(_ s: Session) -> [String?] {
-        [s.hasConversation ? "1" : "0", s.cliSessionID, s.forkSource, s.forkPoint, s.model, s.effort, s.permissionMode,
+        [s.hasConversation ? "1" : "0", s.hasTurn ? "1" : "0", s.cliSessionID, s.forkSource, s.forkPoint, s.model, s.effort, s.permissionMode,
          s.slashCommands.map { "\($0.name):\($0.description)" }.joined(separator: "\n"), s.acpSessionID]
     }
 
@@ -1621,7 +1626,7 @@ public final class Workspace {
         }
         s.status = .starting
         await checkForkPoint(s)
-        await launch(s, resume: s.hasConversation || s.forkSource != nil, forkFrom: s.forkSource, forkAt: s.forkPoint)
+        await launch(s, resume: s.hasTurn || s.forkSource != nil, forkFrom: s.forkSource, forkAt: s.forkPoint)
     }
 
     public func answerPermission(session id: Session.ID, requestID: String, allow: Bool) async {
@@ -2546,7 +2551,7 @@ public final class Workspace {
                                   cliSessionID: s.cliSessionID, model: s.model, permissionMode: s.permissionMode,
                                   slashCommands: s.slashCommands.isEmpty ? nil : s.slashCommands, forkSource: s.forkSource, forkPoint: s.forkPoint,
                                   purpose: s.purpose == .coding ? nil : s.purpose, effort: s.effort,
-                                  backend: s.backend, acpSessionID: s.acpSessionID)
+                                  backend: s.backend, acpSessionID: s.acpSessionID, hasTurn: s.hasTurn)
             if let i = records.firstIndex(where: { $0.id == s.id }) { records[i] = r } else { records.append(r) }
         }
         do {
@@ -2645,7 +2650,7 @@ public final class Workspace {
         var renamedOnRestore = false
         for r in records where session(r.id) == nil {
             let s = Session(id: r.id, name: r.name, colorIndex: r.colorIndex, projectRoot: projectRoot,
-                            hasConversation: r.hasConversation, cliSessionID: r.cliSessionID,
+                            hasConversation: r.hasConversation, hasTurn: r.hasTurn, cliSessionID: r.cliSessionID,
                             model: r.model, permissionMode: r.permissionMode, forkSource: r.forkSource, forkPoint: r.forkPoint,
                             purpose: r.purpose ?? .coding, effort: r.effort, backend: r.backend,
                             agentName: agentDisplayName(for: r.backend), acpSessionID: r.acpSessionID)

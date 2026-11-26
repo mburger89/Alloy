@@ -187,9 +187,12 @@ struct ThinkingRow: Component, @MainActor Equatable {
             && l.defaultCollapsed == r.defaultCollapsed
     }
 
+    /// No count rather than "0 tokens": agents that do not report thinking tokens (ACP) leave it at zero.
+    static func summary(tokens: Int) -> String { tokens > 0 ? "\(tokens) tokens" : "" }
+
     var content: some ElementGroup {
         let _ = BodyProbe.hit("ThinkingRow")
-        BlockChrome(kind: .thinking, title: "Thinking", summary: "\(tokens) tokens", collapsed: collapsed, id: id) {
+        BlockChrome(kind: .thinking, title: "Thinking", summary: Self.summary(tokens: tokens), collapsed: collapsed, id: id) {
             if !text.isEmpty {
                 Text(verbatim: text).font(size: 12).italic().foregroundColor(.mutedInk)
             }
@@ -492,20 +495,26 @@ struct EditActions: Component {
 
     var content: some ElementGroup {
         let workspace = workspace, id = record.id, path = record.path
+        // Two rows so a narrow chat column never squeezes a label: the path gives way (truncating) beside Keep and
+        // Revert, and the open buttons sit on their own line. Labels stay on one line and keep their width.
         HStack(spacing: Pixels(8)) {
-            Text(verbatim: record.path).font(size: 11).foregroundColor(.mutedInk)
+            Text(verbatim: record.path).font(size: 11).foregroundColor(.mutedInk).lineLimit(1).truncationMode(.middle)
+                .layoutPriority(-1)
             Spacer()
             switch record.state {
             case .live:
-                Button("Keep") { workspace.keep(edit: id, path: path) }
-                    .accessibilityIdentifier("keep-\(id.uuidString)")
-                Button("Revert") { Task { _ = await workspace.revertInEditor(edit: id, path: path) } }
-                    .accessibilityIdentifier("revert-\(id.uuidString)")
+                ActionButton(title: "Keep", id: "keep-\(id.uuidString)") { workspace.keep(edit: id, path: path) }
+                ActionButton(title: "Revert", id: "revert-\(id.uuidString)") {
+                    Task { _ = await workspace.revertInEditor(edit: id, path: path) }
+                }
+            case .kept: Text("Kept").font(size: 11).foregroundColor(.mutedInk).lineLimit(1).layoutPriority(1)
+            case .reverted: Text("Reverted").font(size: 11).foregroundColor(.mutedInk).lineLimit(1).layoutPriority(1)
+            }
+        }
+        if record.state != .reverted {
+            HStack(spacing: Pixels(8)) {
                 OpenActions(workspace: workspace, id: id, path: path)
-            case .kept:
-                Text("Kept").font(size: 11).foregroundColor(.mutedInk)
-                OpenActions(workspace: workspace, id: id, path: path)
-            case .reverted: Text("Reverted").font(size: 11).foregroundColor(.mutedInk)
+                Spacer()
             }
         }
         if let conflict {
@@ -525,9 +534,23 @@ struct OpenActions: Component {
 
     var content: some ElementGroup {
         let workspace = workspace, id = id, path = path
-        Button("Open in file") { workspace.requestOpen(path, edit: id) }
-            .accessibilityIdentifier("open-in-file-\(id.uuidString)")
-        Button("Side by side") { workspace.requestOpen(path, edit: id, mode: .sideBySide) }
-            .accessibilityIdentifier("side-by-side-\(id.uuidString)")
+        ActionButton(title: "Open in file", id: "open-in-file-\(id.uuidString)") { workspace.requestOpen(path, edit: id) }
+        ActionButton(title: "Side by side", id: "side-by-side-\(id.uuidString)") {
+            workspace.requestOpen(path, edit: id, mode: .sideBySide)
+        }
+    }
+}
+
+/// A button whose label stays on one line and is never squeezed below its text.
+struct ActionButton: Component {
+    let title: String
+    let id: String
+    let action: () -> Void
+
+    var content: some ElementGroup {
+        let action = action
+        Button { action() } label: { Text(title).lineLimit(1) }
+            .layoutPriority(1)
+            .accessibilityIdentifier(id)
     }
 }

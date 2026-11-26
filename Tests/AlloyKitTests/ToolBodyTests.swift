@@ -239,6 +239,22 @@ extension ToolBodyTests {
                           result: .object(["numFiles": .number(0), "filenames": .array([])]))
         #expect(ToolBodies.searchLines(t, root: URL(fileURLWithPath: "/proj")) == ["No files found"])
     }
+
+    @Test func titleNeverRepeatsItsLabel() {
+        let read = ToolBlock(toolUseID: "r", name: "read", kind: .read, summary: "read")
+        #expect(ToolBodies.title(read) == "Read")
+        let edit = ToolBlock(toolUseID: "e", name: "edit", kind: .edit, summary: "Edit")
+        #expect(ToolBodies.title(edit) == "Edit")
+        let other = ToolBlock(toolUseID: "o", name: "execute", kind: .other, summary: "execute")
+        #expect(ToolBodies.title(other) == "execute")
+        let path = ToolBlock(toolUseID: "p", name: "read", kind: .read, summary: "src/a.swift")
+        #expect(ToolBodies.title(path) == "Read src/a.swift")
+    }
+
+    @Test func thinkingSummaryOmitsUnknownCount() {
+        #expect(ThinkingRow.summary(tokens: 0) == "")
+        #expect(ThinkingRow.summary(tokens: 42) == "42 tokens")
+    }
 }
 
 @MainActor

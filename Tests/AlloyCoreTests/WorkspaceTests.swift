@@ -300,6 +300,26 @@ private let original = "import Foundation\n\nfunc login(user: String, password: 
         try Data(transform(String(decoding: sample, as: UTF8.self)).utf8).write(to: url)
     }
 
+    /// The CLI announces itself with a `system/init` before any message, but writes no conversation until the first
+    /// turn: `--resume` of such a session fails with "No conversation found".
+    @Test func sessionWithoutAFirstTurnStartsFreshOnWake() async throws {
+        let root = dirs.make(); let support = dirs.make()
+        let h1 = Harness()
+        let ws1 = makeWorkspace(root: root, appSupport: support, harness: h1)
+        let a = await ws1.newSession(name: "Alpha")
+        await h1.transports[0].emit(.systemInit(SystemInit(model: "m", permissionMode: "default", sessionID: "cli-1", tools: [], slashCommands: [])))
+        await waitUntil("idle") { a.status == .working && a.cliSessionID == "cli-1" }
+        #expect(!a.hasTurn)
+        await ws1.stopAll()
+
+        let h2 = Harness()
+        let ws2 = makeWorkspace(root: root, appSupport: support, harness: h2)
+        await ws2.restore()
+        await ws2.wake(a.id)
+        #expect(h2.configs.map(\.resume) == [false])
+        #expect(h2.configs.first?.resumeID == nil)
+    }
+
     @Test func restoredSessionLoadsOnSelect() async throws {
         let root = dirs.make(); let support = dirs.make(); let home = dirs.make()
         let h1 = Harness()

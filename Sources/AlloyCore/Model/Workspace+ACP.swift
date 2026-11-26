@@ -1,6 +1,8 @@
 import Foundation
 
 extension Workspace {
+    static let slowStartSeconds = 10.0
+
     /// The agent's display name for a backend; "Claude" for the native one, the id when the definition is gone.
     func agentDisplayName(for backend: SessionBackend) -> String {
         guard case .acp(let id) = backend else { return "Claude" }
@@ -88,7 +90,22 @@ extension Workspace {
             markStopped(s)
             return
         }
+        announceSlowStart(of: s, agent: definition.name)
         await runSession(s, transport: transport, stream: stream, initialStatus: .starting)
+    }
+
+    /// An agent's first launch can take minutes (OpenCode sets itself up) with nothing to show: one timer on the
+    /// injected clock, no ticking, says so if the session is still starting after ten seconds.
+    private func announceSlowStart(of s: Session, agent: String) {
+        let clock = autosaveClock
+        let deadline = clock.now + Self.slowStartSeconds
+        Task { @MainActor [weak s] in
+            do { try await clock.sleep(until: deadline) } catch { return }
+            guard let s, s.status == .starting else { return }
+            s.transcript.appendNotice(
+                kind: .commandOutput,
+                text: "\(agent) is still starting \u{2014} the first launch can take a few minutes.")
+        }
     }
 }
 

@@ -30,14 +30,14 @@ private final class WEnv {
     }
     func cleanup() { try? FileManager.default.removeItem(at: base) }
 
-    func workspace(_ rig: WRig, settings: AlloySettings = AlloySettings()) -> Workspace {
+    func workspace(_ rig: WRig, settings: AlloySettings = AlloySettings(), clock: any AutosaveClock = SystemAutosaveClock()) -> Workspace {
         Workspace(projectRoot: project.resolvingSymlinksInPath(), appSupport: support, settings: settings,
                   locate: { _ in URL(fileURLWithPath: "/fake/claude") },
                   makeTransport: { _ in ScriptedTransport() }, makeACPTransport: rig.factory,
                   agentDefinitions: { [agent] }, agentSecrets: secrets,
                   agentDetector: AgentDetector(resolve: { _ in [:] }, isExecutable: { _ in true }, home: "/nohome",
                                                helpRunner: { _ in nil }),
-                  now: Date.init, home: base.appendingPathComponent("home"),
+                  now: Date.init, home: base.appendingPathComponent("home"), autosaveClock: clock,
                   changes: { _ in ScriptedChangeSource() })
     }
 
@@ -60,6 +60,43 @@ private func msg(_ text: String, _ id: UUID) -> OutgoingMessage {
 @MainActor @Suite struct ACPWorkspaceTests {
     private func echo(_ t: ScriptedTransport, _ text: String, _ id: UUID) async {
         await t.emit(.userEcho(text: text, imageCount: 0, uuid: id.uuidString.lowercased(), isReplay: false))
+    }
+
+    // MARK: slow start
+
+    private func stillStarting(_ s: Session) -> Bool {
+        s.transcript.blocks.contains { if case .notice(_, _, let text) = $0 { text.contains("still starting") } else { false } }
+    }
+
+    /// An agent's first launch can take minutes (OpenCode sets itself up): after ten seconds the session says so, once,
+    /// from one timer on the injected clock.
+    @Test func slowStartIsSaidAfterTenSeconds() async throws {
+        let env = WEnv(); defer { env.cleanup() }
+        let rig = WRig(), clock = ManualClock()
+        let ws = env.workspace(rig, clock: clock)
+        let s = await ws.newSession(name: "A", backend: .acp(agentID: "fake"))
+        #expect(s.status == .starting)
+        await waitUntil("timer") { clock.pendingSleepers == 1 }
+        clock.advance(by: 9)
+        for _ in 0..<50 { await Task.yield() }
+        #expect(!stillStarting(s))
+        clock.advance(by: 1)
+        await waitUntil("notice") { self.stillStarting(s) }
+        let text = s.transcript.blocks.compactMap { b -> String? in
+            if case .notice(_, _, let t) = b, t.contains("still starting") { t } else { nil }
+        }
+        #expect(text == ["Fake is still starting \u{2014} the first launch can take a few minutes."])
+        #expect(clock.pendingSleepers == 0)
+    }
+
+    @Test func fastStartSaysNothing() async throws {
+        let env = WEnv(); defer { env.cleanup() }
+        let rig = WRig(), clock = ManualClock()
+        let ws = env.workspace(rig, clock: clock)
+        let (s, _) = await env.start(ws, rig)
+        clock.advance(by: 60)
+        for _ in 0..<50 { await Task.yield() }
+        #expect(!stillStarting(s))
     }
 
     // MARK: history and restore
