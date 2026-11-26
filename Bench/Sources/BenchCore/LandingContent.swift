@@ -24,16 +24,30 @@ public struct LandingContent: Sendable {
     public var issuesURL = "https://github.com/mburger89/Alloy/issues"
 
     public var heroTitle = "Fast. Native. Yours."
-    public var heroLead = "The code editor for Claude Code and other AI coding agents — written in Swift, drawn on the GPU with Metal."
+    public var heroLead = "The native code editor for any AI coding agent, written in Swift, drawn on the GPU."
     public var heroMeta = "macOS 14 or later · Apple silicon · signed & notarised · updates itself · free, MIT"
     /// Shown instead of `heroMeta` while `downloadAvailable` is false (no release exists to be signed or to update itself).
     public var heroMetaSoon = "Coming soon for Apple-silicon Macs · macOS 14 or later · free, MIT"
     public var heroPoster = "hero-poster.png"
     public var heroVideo = "hero.mp4"
-    public var heroAlt = "Alloy with two Claude Code sessions editing the same function, and the overlap warning that follows, in the Dracula theme."
+    public var heroAlt = "Alloy with a Claude Code session and an OpenCode session in the same folder: the Claude Code edit overlaps a line the OpenCode session changed, and the overlap warning follows. The theme is one an agent built."
 
     public var raceTitle = "Feel the difference."
     public var raceSub = "Replayed from the published benchmark. Only tests Alloy really wins are listed."
+
+    public var agentsTitle = "Bring your agent. Bring your model."
+    public var agentsSub = "Alloy is the editor around your agent, not another model."
+    public var agentsPoints: [(String, String)] = [
+        ("Five agents built in", "Claude Code, Codex, Gemini CLI, OpenCode and Goose. Add any Agent Client Protocol agent in Settings: its command, arguments and environment variables."),
+        ("Any model, even local", "Alloy never talks to a model itself. Use whatever your agent uses, such as OpenCode or Goose running a model on your Mac through Ollama."),
+        ("Keys stay in the Keychain", "Secrets are typed into a secure field and stored only in your macOS Keychain, never in a file."),
+    ]
+    public var agentsImages: [Feature] = [
+        Feature(title: "Chat with a local model.", text: "OpenCode running qwen2.5-coder:7b through Ollama, inside an Alloy session.",
+                image: "shot-agents.png", alt: "An Alloy session with OpenCode answering from a local model."),
+        Feature(title: "Add any agent.", text: "Settings › Agents lists the built-in agents, and Add agent… adds your own. Secret values never show.",
+                image: "shot-agents-settings.png", alt: "Settings, Agents: the built-in agents and the Add agent form."),
+    ]
 
     public var notesTitle = "Stop paying to read the same file twice."
     public var notesSub = "Your sessions share what they learn."
@@ -46,17 +60,23 @@ public struct LandingContent: Sendable {
 
     public var features: [Feature] = [
         Feature(title: "Many agent sessions. One folder.",
-                text: "Run several Claude Code sessions side by side, or bring Codex, Gemini CLI, OpenCode and Goose. Plans, questions and permission requests are answered in place.",
+                text: "Run Claude Code, Codex, Gemini CLI, OpenCode, Goose — or any ACP agent — side by side. Plans, questions and permission requests are answered in place.",
                 image: "shot-sessions.png", alt: "The session list beside a chat with a plan awaiting approval."),
         Feature(title: "Know who changed what.",
-                text: "Every line is coloured by the session that wrote it. Per-session diffs; keep or revert an edit in one click.",
+                text: "Every line is coloured by the session that wrote it, whichever agent that is. Per-session diffs; keep or revert an edit in one click.",
                 image: "shot-changes.png", alt: "Code with each changed line coloured by the session that wrote it."),
         Feature(title: "Sessions that don't collide.",
-                text: "Alloy warns a session before it edits lines another session (or you) is changing, so work doesn't get overwritten.",
+                text: "Alloy warns a session before it edits lines another session (or you) is changing, whichever agents they are, so work doesn't get overwritten.",
                 image: "shot-collisions.png", alt: "An overlap warning on lines two sessions are both editing."),
         Feature(title: "A real code editor, too.",
                 text: "Code mode puts a full editor beside your sessions: language servers, split panes, Git and a built-in terminal, all drawn on the GPU.",
                 image: "shot-code.png", alt: "Alloy's Code mode: the file tree, a Swift file with Git change bars, a second file in a split pane and the terminal below."),
+        Feature(title: "Plugins.",
+                text: "Add themes, language servers, commands, panels and tools for your agents. Install from a folder or git, keep them updated, and run them in the macOS sandbox.",
+                image: "shot-plugins.png", alt: "Settings, Plugins: installed plugins with their permissions."),
+        Feature(title: "CSV as a table.",
+                text: "CSV and TSV files open as a table. Edit cells in place, sort, and keep or revert each change.",
+                image: "shot-csv.png", alt: "A CSV file in Table view with edited cells tinted."),
     ]
 
     public var editorTitle = "Everything you need when you take the wheel."
@@ -67,10 +87,11 @@ public struct LandingContent: Sendable {
         ("Editing", "Multiple cursors, folding, find, and search and replace across the project. Command palette, Quick Open and your own shortcuts."),
         ("Git", "Change bars in the gutter, blame with author and age, compare with the last commit, stage, commit and switch branches."),
         ("Terminal", "A built-in terminal with clickable links, find, and a check before multi-line pastes."),
+        ("Open from the terminal", "alloy <file> opens the file in its enclosing git repository, or else its folder."),
     ]
 
     public var themesTitle = "Dracula by default. Make your own."
-    public var themesSub = "Built-in themes, or describe one to Claude Code and Alloy builds it."
+    public var themesSub = "Built-in themes, themes from plugins, or describe one to your agent and Alloy builds it."
     /// The built-in themes, in registry order (Sources/AlloyCore/Themes/BuiltIn/BuiltInThemes.swift).
     public var themes: [Theme] = [
         Theme(name: "Dracula", dark: true, background: "#20222B", surface: "#282A36", text: "#F8F8F2", keyword: "#FF79C6", string: "#F1FA8C", comment: "#97A2C3", function: "#50FA7B"),
@@ -94,14 +115,16 @@ public struct LandingContent: Sendable {
     public var privacyTitle = "Your code stays yours."
     public var privacyLines = [
         "No telemetry and no account. Alloy runs the agents you already have installed.",
-        "It never changes your Claude Code settings — the optional theme skill is installed only when you click it.",
+        "It never changes your agents' settings — the optional theme skill is installed only when you click it.",
+        "API keys are kept only in your macOS Keychain.",
         "The only requests Alloy itself makes are update checks. Agents and language servers you run make their own connections.",
     ]
 
     public var faq: [Question] = [
         Question(q: "Is it free?", a: "Yes. Alloy is open source under the MIT licence."),
-        Question(q: "Does it work with other agents?", a: "Yes. Claude Code is supported directly. Codex, Gemini CLI, OpenCode, Goose and other agents that speak the Agent Client Protocol work too."),
-        Question(q: "What do I need to run it?", a: "A Mac with Apple silicon on macOS 14 or later, and at least one supported agent installed and signed in."),
+        Question(q: "Which agents and models can I use?", a: "Claude Code, Codex, Gemini CLI, OpenCode and Goose are built in, and Settings › Agents adds any other agent that speaks the Agent Client Protocol. Alloy never talks to a model itself: the model is whatever your agent uses."),
+        Question(q: "Can I use a local model?", a: "Yes, through an agent that supports one. OpenCode or Goose can run a local model with Ollama, and Alloy works with them like any other agent."),
+        Question(q: "What do I need to run it?", a: "A Mac with Apple silicon on macOS 14 or later, and at least one coding agent installed and signed in."),
         Question(q: "Does it run on Intel Macs?", a: "Not yet: Apple silicon only."),
         Question(q: "How do updates work?", a: "Alloy checks for updates once a day in the background. It installs when you quit or when you choose Restart to update — never mid-session."),
         Question(q: "How is it so fast?", a: "It's native Swift drawn straight to the GPU with Metal, and it only does work for what's on screen."),

@@ -109,6 +109,41 @@ import Testing
         await r.stop()
     }
 
+    @Test func themeFallbackWithoutHTTPMCP() async throws {
+        let r = try await Rig.start([
+            #"{"expect":"initialize"}"#, hsInit(#"{"mcpCapabilities":{"http":false,"sse":false},"sessionCapabilities":{"systemPrompt":{}}}"#),
+            #"{"expect":"session/new"}"#, hsNew, #"{"sleep":3000}"#,
+        ], configure: { $0.mcp = mcp; $0.systemPrompt = "GUIDE"; $0.promptWithoutTools = "FILE"; $0.toolsUnavailableNotice = "N" })
+        #expect(await waitUntil { r.events.hasSystemInit })
+        let line = r.lines("session/new")[0]
+        #expect(line.contains(#""mcpServers":[]"#) && line.contains("FILE") && !line.contains("GUIDE"))
+        #expect(r.events.notices.filter { $0 == "N" }.count == 1)
+        #expect(!r.events.notices.contains { $0.contains("Shared notes are unavailable") })
+        await r.stop()
+    }
+
+    @Test func themeToolAutoAllowed() async throws {
+        func steps(_ title: String) -> [String] {
+            [#"{"expect":"initialize"}"#, hsInit(#"{"mcpCapabilities":{"http":true}}"#), #"{"expect":"session/new"}"#, hsNew,
+             #"{"expect":"session/prompt"}"#,
+             #"{"send":{"jsonrpc":"2.0","id":0,"method":"session/request_permission","params":{"sessionId":"s1","toolCall":{"toolCallId":"t1","title":"\#(title)","kind":"other"},"options":[{"optionId":"yes","name":"Yes","kind":"allow_once"},{"optionId":"no","name":"No","kind":"reject_once"}]}}}"#,
+             #"{"expectResponse":0}"#, turnDone, #"{"sleep":3000}"#]
+        }
+        let auto = try await Rig.start(steps("alloy: theme_save"), configure: { $0.mcp = mcp; $0.autoAllowThemeTools = true })
+        #expect(await waitUntil { auto.events.hasSystemInit })
+        try await auto.transport.send(user("go"))
+        #expect(await waitUntil { auto.events.results == 1 })
+        #expect(auto.events.controlRequests.isEmpty)
+        #expect(auto.logText.contains(#""optionId":"yes""#))
+        await auto.stop()
+
+        let off = try await Rig.start(steps("alloy: theme_save"), configure: { $0.mcp = mcp })
+        #expect(await waitUntil { off.events.hasSystemInit })
+        try await off.transport.send(user("go"))
+        #expect(await waitUntil { !off.events.controlRequests.isEmpty })
+        await off.stop()
+    }
+
     @Test func guidanceInSystemPromptOrFirstPromptPreface() async throws {
         // The agent takes a system prompt: it goes in session/new, and no prompt carries it.
         let a = try await Rig.start([

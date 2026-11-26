@@ -22,6 +22,7 @@ private final class THarness: @unchecked Sendable {
 private final class EndWorkshop: ThemeWorkshop {
     var slotCatalog: [ThemeSlotInfo] = []
     var library = ThemeLibrary(builtIns: BuiltInThemes.all, user: [])
+    var themesFolderPath = "/fake/Themes"
     var shownTheme: ResolvedTheme?
     var ended: [UUID] = []
     func preview(_ draft: ThemeFile, resolved: ResolvedTheme, session: UUID) {}

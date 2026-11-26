@@ -130,7 +130,7 @@ import Foundation
         let html = Self.page(Self.run())
         for t in ["Fast. Native. Yours.", "Feel the difference.", "Stop paying to read the same file twice.",
                   "Your sessions share what they learn.",
-                  "never changes your Claude Code settings — the optional theme skill is installed only when you click it",
+                  "never changes your agents' settings — the optional theme skill is installed only when you click it",
                   "The only requests Alloy itself makes are update checks"] {
             #expect(html.contains(t), "missing \(t)")
         }
@@ -229,6 +229,16 @@ import Foundation
         #expect(html.contains("1.0&quot;&gt;&lt;b&gt;"))
     }
 
+    /// Without a hero video the poster is the hero, so the CSS may hide it only beside a video.
+    @Test func posterShowsWithoutVideo() {
+        var c = LandingContent(); c.assets = [c.heroPoster]
+        let html = LandingPage.render(index: PublishedIndex(), runs: [], content: c)
+        #expect(html.contains("<img class=\"poster\""))
+        #expect(!html.contains("<video"))
+        #expect(!html.contains(".app .poster{display:none}"))
+        #expect(html.contains(".app.has-poster .poster{display:none}"))
+    }
+
     @Test func languageServerWordingFollowsTheFlag() {
         var c = LandingContent(); c.hasLanguageServers = true
         let html = LandingPage.render(index: PublishedIndex(), runs: [], content: c)
@@ -243,17 +253,66 @@ import Foundation
         #expect(html.contains("<h2 class=\"sr\">Features</h2>"))
     }
 
-    @Test func copyIsForAgentsNotOnlyClaude() {
+    @Test func heroLeadIsAgentNeutral() {
         let html = Self.page(Self.run())
-        #expect(html.contains("<title>Alloy — the code editor for Claude Code and other AI coding agents</title>"))
-        #expect(html.contains("<p class=\"lead\">The code editor for Claude Code and other AI coding agents"))
-        #expect(!html.contains("Needs the Claude Code CLI"))
-        #expect(html.contains("Needs a supported coding agent"))
+        #expect(html.contains("The native code editor for any AI coding agent, written in Swift, drawn on the GPU."))
+        #expect(!html.contains("for Claude Code and other AI coding agents"))
+    }
+
+    @Test func agentsSectionFollowsRace() throws {
+        let html = Self.page(Self.run())
+        let title = try #require(html.range(of: "Bring your agent. Bring your model."))
+        let race = try #require(html.range(of: "id=\"speed\""))
+        let notes = try #require(html.range(of: "id=\"notes\""))
+        #expect(race.lowerBound < title.lowerBound && title.lowerBound < notes.lowerBound)
+        let section = String(html[title.lowerBound..<notes.lowerBound])
+        for t in ["Claude Code", "Codex", "Gemini CLI", "OpenCode", "Goose", "Agent Client Protocol", "Ollama", "Keychain"] {
+            #expect(section.contains(t), "missing \(t)")
+        }
+        #expect(!html.contains("assets/shot-agents"))
+        let full = Self.page(Self.run(), assets: ["shot-agents.png", "shot-agents-settings.png"])
+        #expect(full.contains("src=\"assets/shot-agents.png\"") && full.contains("src=\"assets/shot-agents-settings.png\""))
+    }
+
+    @Test func newFeatureRows() {
+        let html = Self.page(Self.run())
+        #expect(html.contains("Plugins") && html.contains("CSV as a table"))
+        #expect(html.contains("Many agent sessions. One folder."))
+        #expect(html.contains("Know who changed what.") && html.contains("Sessions that don&#39;t collide.") || html.contains("Sessions that don't collide."))
+        #expect(html.contains("alloy &lt;file&gt;"))
+        let full = Self.page(Self.run(), assets: ["shot-plugins.png", "shot-csv.png"])
+        #expect(full.contains("src=\"assets/shot-plugins.png\"") && full.contains("src=\"assets/shot-csv.png\""))
+    }
+
+    @Test func privacyAndFAQAgentNeutral() throws {
+        let html = Self.page(Self.run())
+        #expect(html.contains("It never changes your agents&#39; settings — the optional theme skill is installed only when you click it.")
+                || html.contains("It never changes your agents' settings — the optional theme skill is installed only when you click it."))
+        #expect(html.contains("API keys are kept only in your macOS Keychain."))
+        #expect(html.contains("Which agents and models can I use?") && html.contains("Can I use a local model?"))
+        #expect(!html.contains("Does it work with other agents?"))
+        let q = try #require(LandingContent().faq.first { $0.q == "What do I need to run it?" })
+        #expect(q.a.contains("at least one coding agent"))
+    }
+
+    @Test func themesSubAnyAgent() {
+        #expect(Self.page(Self.run()).contains("Built-in themes, themes from plugins, or describe one to your agent and Alloy builds it."))
+    }
+
+    @Test func titleAndMetaAgentNeutral() throws {
+        let html = Self.page(Self.run())
+        let title = try #require(html.range(of: "<title>")), end = try #require(html.range(of: "</title>"))
+        #expect(!html[title.upperBound..<end.lowerBound].contains("Claude Code"))
+        let meta = try #require(html.range(of: "<meta name=\"description\" content=\""))
+        let tail = html[meta.upperBound...]
+        let close = try #require(tail.range(of: "\""))
+        #expect(!tail[..<close.lowerBound].contains("Claude Code alone"))
+        #expect(html.contains("<title>Alloy — the native code editor for any AI coding agent</title>"))
     }
 
     @Test func otherAgentsFaqNamesEveryAgent() throws {
-        let q = try #require(LandingContent().faq.first { $0.q == "Does it work with other agents?" })
-        for t in ["Claude Code", "Codex", "Gemini CLI", "OpenCode", "Goose", "Agent Client Protocol", "Claude Code is supported directly"] {
+        let q = try #require(LandingContent().faq.first { $0.q == "Which agents and models can I use?" })
+        for t in ["Claude Code", "Codex", "Gemini CLI", "OpenCode", "Goose", "Agent Client Protocol"] {
             #expect(q.a.contains(t), "missing \(t)")
         }
     }
@@ -262,7 +321,7 @@ import Foundation
         let faq = LandingContent().faq
         #expect(!faq.contains { $0.q == "Do I need a Claude subscription?" })
         let q = try #require(faq.first { $0.q == "What do I need to run it?" })
-        for t in ["at least one supported agent installed and signed in", "Apple silicon", "macOS 14 or later"] { #expect(q.a.contains(t)) }
+        for t in ["at least one coding agent installed and signed in", "Apple silicon", "macOS 14 or later"] { #expect(q.a.contains(t)) }
     }
 
     @Test func privacyLinesFollowTheRule() {
@@ -282,7 +341,7 @@ import Foundation
 
     @Test func editorSectionAndFeature() {
         let c = LandingContent()
-        #expect(c.features.count == 4)
+        #expect(c.features.count == 6)
         let html = Self.page(Self.run())
         #expect(html.contains("A real code editor, too."))
         #expect(html.contains("aria-label=\"Alloy&#39;s Code mode: the file tree") || html.contains("aria-label=\"Alloy's Code mode: the file tree"))

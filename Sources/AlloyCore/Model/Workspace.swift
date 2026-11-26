@@ -737,13 +737,14 @@ public final class Workspace {
     @discardableResult
     public func newSession(name: String) async -> Session { await newSession(name: name, purpose: .coding) }
 
-    /// `/theme [description]`: a new session that makes a theme with the user. Its first message is the description
+    /// `/theme [description]`: a new session that makes a theme with the user, on `backend` (the default agent when nil). Its first message is the description
     /// (or a stock opening line), because a stream-json session sits silent until it gets one.
     @discardableResult
-    public func newThemeSession(description: String?) async -> Session {
+    public func newThemeSession(description: String?, backend: SessionBackend? = nil) async -> Session {
         let trimmed = description?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         let shown = trimmed.count > 40 ? String(trimmed.prefix(40)) + "\u{2026}" : trimmed
-        let s = await newSession(name: trimmed.isEmpty ? "Theme: new" : "Theme: \(shown)", purpose: .theme)
+        let s = await newSession(name: trimmed.isEmpty ? "Theme: new" : "Theme: \(shown)", purpose: .theme,
+                                 backend: backend ?? defaultBackend)
         guard session(s.id) != nil else { return s }
         selectedSessionID = s.id
         let first = trimmed.isEmpty ? "Help me make an Alloy theme." : trimmed
@@ -1345,11 +1346,8 @@ public final class Workspace {
         case .fork where s.backend.isACP:
             s.transcript.appendNotice(kind: .commandOutput, text: "/fork is not available for \(s.agentName).")
             return
-        case .theme where s.backend.isACP:
-            s.transcript.appendNotice(kind: .commandOutput, text: "/theme is not available for \(s.agentName); start a Claude session for it.")
-            return
         case .fork(let name): await fork(id, name: name); return
-        case .theme(let description): await newThemeSession(description: description); return
+        case .theme(let description): await newThemeSession(description: description, backend: s.backend); return
         case .localHelp:
             s.transcript.appendNotice(kind: .commandOutput, text: SlashCommands.helpText(s.slashCommands))
             return

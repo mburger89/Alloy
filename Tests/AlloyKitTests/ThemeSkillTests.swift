@@ -13,19 +13,30 @@ import Testing
         #expect(description.contains("Alloy") && description.contains("theme"))
         let frontmatter = text.components(separatedBy: "\n---\n")[0]
         #expect(frontmatter.split(separator: "\n").count == 3, "frontmatter is name and a one-line description")
-        #expect(text.contains(ThemeGuidance.text), "the guidance verbatim")
+        #expect(text.contains(ThemeGuidance.acpText), "the agent-neutral guidance verbatim")
         #expect(text.contains("## In an Alloy theme session") && text.contains("## Anywhere else"))
         #expect(text.contains(Self.folder + "/<slug>.json"))
         #expect(text.contains("Never overwrite an existing file") && text.contains("\"<name> 2\""))
         #expect(text.contains("4.5:1") && text.contains("3:1") && text.contains("WCAG 2.1"))
         #expect(text.contains("settings.json"), "says never to edit it")
-        #expect(!text.contains("Claude Code"))
+        #expect(text.components(separatedBy: "Claude Code").count == 2, "Claude Code is named once")
         #expect(!text.contains("/Users/"))
+    }
+
+    @Test func skillNamesToolsGenerically() throws {
+        let text = try #require(ThemeSkill.files(themesFolder: Self.folder)["SKILL.md"])
+        #expect(text.hasPrefix("---\nname: alloy-theme\n"))
+        let sentence = "Claude Code shows them as `mcp__alloy__theme_*`"
+        #expect(text.contains(sentence))
+        #expect(!text.replacingOccurrences(of: sentence, with: "").contains("mcp__alloy__theme_"))
+        for tool in ["theme_slots", "theme_read", "theme_check", "theme_preview", "theme_save"] {
+            #expect(text.contains("`\(tool)`"), "\(tool)")
+        }
     }
 
     @Test func everyFileAvoidsBrandingAndPersonalPaths() {
         for (path, text) in ThemeSkill.files(themesFolder: ThemeSkill.docsThemesFolder) {
-            #expect(!text.contains("Claude Code"), "\(path)")
+            #expect(text.components(separatedBy: "Claude Code").count == (path == "SKILL.md" ? 2 : 1), "\(path)")
             #expect(!text.contains("/Users/"), "\(path)")
         }
     }

@@ -381,7 +381,9 @@ struct ThemeSection: Component {
     /// A theme choice that could not be saved; shown next to the controls, not in the page's shared error line.
     @State var saveError: String?
     /// The installed theme skill's status; nil until first read (and always nil without an installer).
-    @State var skillStatus: ThemeSkillStatus?
+    @State var skillStatuses: [ThemeSkillTarget: ThemeSkillStatus] = [:]
+    /// The targets the skill button acts on; both are ticked until the user unticks one.
+    @State var tickedTargets: Set<ThemeSkillTarget> = Set(ThemeSkillTarget.allCases)
     @State var confirmingReplace = false
     @State var skillError: String?
     @State var skillLoaded = false
@@ -424,7 +426,7 @@ struct ThemeSection: Component {
                 Button("Open themes folder") { themes.openThemesFolder(using: themes.folderOpener) }
                     .accessibilityIdentifier("settings-open-themes")
                 if let workspace, let close {
-                    Button("Make a theme with Claude\u{2026}") {
+                    Button("Make a theme with \(workspace.defaultAgentName)\u{2026}") {
                         close()
                         Task { await workspace.newThemeSession(description: nil) }
                     }
@@ -442,26 +444,58 @@ struct ThemeSection: Component {
 
     // MARK: Theme skill
 
+    private static let targetLabels: [ThemeSkillTarget: String] = [
+        .claudeCode: "Claude Code", .sharedAgents: "Codex, Gemini CLI, OpenCode, Goose",
+    ]
+
+    /// The targets with an installer, in a fixed order.
+    private var availableTargets: [ThemeSkillTarget] { ThemeSkillTarget.allCases.filter { themes.skillInstallers[$0] != nil } }
+
+    /// The ticked targets' statuses as one: any edited copy asks first, else any missing copy installs.
+    private var combinedStatus: ThemeSkillStatus? {
+        let ticked = availableTargets.filter { tickedTargets.contains($0) }
+        let statuses = ticked.compactMap { skillStatuses[$0] }
+        guard !ticked.isEmpty, statuses.count == ticked.count else { return nil }
+        if statuses.contains(.different) { return .different }
+        return statuses.contains(.notInstalled) ? .notInstalled : .current
+    }
+
+    private func tickBinding(_ target: ThemeSkillTarget) -> Binding<Bool> {
+        Binding(get: { tickedTargets.contains(target) }, set: { on in
+            if on { tickedTargets.insert(target) } else { tickedTargets.remove(target) }
+            confirmingReplace = false
+        })
+    }
+
     private var skillControls: some ElementGroup {
         VStack(alignment: .leading, spacing: Pixels(6)) {
-            if let status = skillStatus {
+            if skillStatuses.count == availableTargets.count && !availableTargets.isEmpty {
+                let status = combinedStatus
                 switch status {
-                case .notInstalled:
-                    Button("Install theme skill") { install(expecting: .notInstalled) }.accessibilityIdentifier("settings-install-theme-skill")
                 case .different:
                     Button("Update theme skill\u{2026}") { confirmingReplace = true }
                         .accessibilityIdentifier("settings-install-theme-skill")
                 case .current:
                     Button("Theme skill installed") {}.disabled(true).accessibilityIdentifier("settings-install-theme-skill")
+                case .notInstalled:
+                    Button("Install theme skill") { install(confirmed: false) }.accessibilityIdentifier("settings-install-theme-skill")
+                case nil:
+                    Button("Install theme skill") {}.disabled(true).accessibilityIdentifier("settings-install-theme-skill")
                 }
-                Text("Lets Claude make Alloy themes in any session, not just /theme.").font(size: 11).foregroundColor(.mutedInk)
+                ForEach(availableTargets, id: \.rawValue) { target in
+                    Toggle(isOn: tickBinding(target)) { Text(verbatim: Self.targetLabels[target] ?? target.rawValue).font(size: 12) }
+                        .accessibilityIdentifier("settings-theme-skill-target-\(target.rawValue)")
+                }
+                Text("OpenCode and Goose read both folders; the two copies are identical.").font(size: 11).foregroundColor(.mutedInk)
+                    .accessibilityIdentifier("settings-theme-skill-note")
+                Text("Lets your agents make Alloy themes in any session, not just /theme.").font(size: 11).foregroundColor(.mutedInk)
                     .accessibilityIdentifier("settings-theme-skill-hint")
                 if confirmingReplace && status == .different {
                     VStack(alignment: .leading, spacing: Pixels(6)) {
                         Text("Replace the copy in your skills folder? Changes made to it will be lost.").font(size: 11)
                             .accessibilityIdentifier("settings-theme-skill-confirm")
                         HStack(spacing: Pixels(8)) {
-                            Button("Replace") { install(expecting: .different) }.accessibilityIdentifier("settings-theme-skill-replace")
+                            Button("Replace") { install(confirmed: true) }.accessibilityIdentifier("settings-theme-skill-replace")
                             Button("Cancel") { confirmingReplace = false }.accessibilityIdentifier("settings-theme-skill-cancel")
                         }
                     }
@@ -476,34 +510,51 @@ struct ThemeSection: Component {
 
     private func skillFiles() -> [String: String] { ThemeSkill.files(themesFolder: themes.themesFolderPath) }
 
-    /// Reads the status once, off the main actor.
+    /// Reads every target's status once, off the main actor.
     private func loadSkillStatus() {
-        guard !skillLoaded, let installer = themes.skillInstaller else { return }
+        guard !skillLoaded else { return }
+        let installers = availableTargets.compactMap { target in themes.skillInstallers[target].map { (target, $0) } }
+        guard !installers.isEmpty else { return }
         skillLoaded = true
         let files = skillFiles()
         Task {
-            let status = await Task.detached { installer.status(files: files) }.value
-            skillStatus = status
+            let found: [(ThemeSkillTarget, ThemeSkillStatus)] = await Task.detached {
+                installers.map { ($0.0, $0.1.status(files: files)) }
+            }.value
+            skillStatuses = Dictionary(uniqueKeysWithValues: found)
         }
     }
 
-    /// Writes the skill off the main actor, then shows the new status (or the error).
-    private func install(expecting: ThemeSkillStatus) {
-        guard let installer = themes.skillInstaller else { return }
+    /// Writes the skill into each ticked target off the main actor, then shows the new statuses (or the errors). Each
+    /// target is written with its own status as `expecting`: only a copy that was edited asks, and a copy that is
+    /// already current is left alone.
+    private func install(confirmed: Bool) {
+        let work = availableTargets.filter { tickedTargets.contains($0) }.compactMap { target -> (ThemeSkillTarget, ThemeSkillInstaller, ThemeSkillStatus)? in
+            guard let installer = themes.skillInstallers[target], let status = skillStatuses[target], status != .current else { return nil }
+            return (target, installer, status)
+        }
+        guard !work.isEmpty else { return }
         let files = skillFiles()
         confirmingReplace = false
         Task {
-            let result: Result<ThemeSkillStatus, Error> = await Task.detached {
-                do { return .success(try installer.install(files: files, expecting: expecting)) } catch { return .failure(error) }
+            let results: [(ThemeSkillTarget, Result<ThemeSkillStatus, Error>)] = await Task.detached {
+                work.map { target, installer, expecting in
+                    do { return (target, .success(try installer.install(files: files, expecting: expecting))) } catch { return (target, .failure(error)) }
+                }
             }.value
-            switch result {
-            case .success(let status):
-                skillStatus = status
-                skillError = nil
-                // Files appeared since the status was read: ask before replacing them.
-                confirmingReplace = expecting == .notInstalled && status == .different
-            case .failure(let error): skillError = "Could not install the theme skill: \(error.localizedDescription)"
+            var errors: [String] = []
+            var asked = false
+            for (target, result) in results {
+                switch result {
+                case .success(let status):
+                    skillStatuses[target] = status
+                    // Files appeared since the status was read: ask before replacing them.
+                    if status == .different { asked = true }
+                case .failure(let error): errors.append(error.localizedDescription)
+                }
             }
+            skillError = errors.isEmpty ? nil : "Could not install the theme skill: " + errors.joined(separator: "; ")
+            confirmingReplace = asked && !confirmed
         }
     }
 

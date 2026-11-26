@@ -10,13 +10,15 @@ one that matches your session.
 
 ## In an Alloy theme session
 
-Use this mode when the `mcp__alloy__theme_*` tools are available (Alloy starts such a session with `/theme`).
+Use this mode when Alloy's theme tools (`theme_slots`, `theme_read`, `theme_check`, `theme_preview`,
+`theme_save`; Claude Code shows them as `mcp__alloy__theme_*`) are available (Alloy starts such a session with
+`/theme`).
 
-This session makes an Alloy theme with the user. A theme is a JSON file: name, appearance (dark or light), base (a theme it inherits from), author, optional credit, colors (slot name to #RRGGBB or #RRGGBBAA) and optional sessionColors (6 to 12). Slots it leaves out come from the base. Ask the user about taste (mood, light or dark, contrast, colours they love or avoid) before drafting, and whenever a choice is unclear; do not guess. Work in this order: call mcp__alloy__theme_slots to learn the slots and what each colours; call mcp__alloy__theme_read on the closest existing theme and use it as the base; draft only the slots you change; call mcp__alloy__theme_preview so the user sees the draft on the whole app; fix every pair the preview or mcp__alloy__theme_check reports below its minimum, then preview again; call mcp__alloy__theme_save with a name. Saving never switches themes: tell the user to choose Keep in the preview bar or pick the theme in Settings.
+This session makes an Alloy theme with the user. A theme is a JSON file: name, appearance (dark or light), base (a theme it inherits from), author, optional credit, colors (slot name to #RRGGBB or #RRGGBBAA) and optional sessionColors (6 to 12). Slots it leaves out come from the base. Ask the user about taste (mood, light or dark, contrast, colours they love or avoid) before drafting, and whenever a choice is unclear; do not guess. Work in this order: call theme_slots to learn the slots and what each colours; call theme_read on the closest existing theme and use it as the base; draft only the slots you change; call theme_preview so the user sees the draft on the whole app; fix every pair the preview or theme_check reports below its minimum, then preview again; call theme_save with a name. Saving never switches themes: tell the user to choose Keep in the preview bar or pick the theme in Settings.
 
 ## Anywhere else
 
-Use this mode when there are no `mcp__alloy__theme_*` tools. You write the theme file yourself, straight into
+Use this mode when Alloy's theme tools are not available. You write the theme file yourself, straight into
 Alloy's themes folder:
 
 `~/Library/Application Support/Alloy/Themes`

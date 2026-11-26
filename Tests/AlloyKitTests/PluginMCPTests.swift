@@ -112,6 +112,7 @@ private func waitFor(_ timeout: Duration = .seconds(10), _ condition: @MainActor
         #expect(!Guidance.isAlloyToolTitle("mcp__alloy__\(name)", server: "alloy"))
         #expect(!Guidance.isAlloyToolTitle("alloy: \(name)", server: "alloy"))
         #expect(Guidance.isAlloyToolTitle("mcp__alloy__notes_lookup", server: "alloy"))
+        #expect(!Guidance.isAlloyToolTitle("alloy: p_c73409_theme_preview", server: "alloy", includeTheme: true))
         #expect(!Guidance.alloyToolNames.contains { $0.contains("p_c73409") })
         #expect(!Guidance.themeToolNames.contains { $0.contains("p_c73409") })
     }

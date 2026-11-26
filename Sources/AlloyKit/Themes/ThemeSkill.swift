@@ -52,16 +52,6 @@ public enum ThemeSkill {
         return lines.joined(separator: "\n") + "\n"
     }
 
-    /// One bullet per `ThemeContrast.rules` entry, so the skill never drifts from the app's own check.
-    private static func contrastList() -> String {
-        func ratio(_ value: Double) -> String { value == value.rounded() ? "\(Int(value)):1" : "\(value):1" }
-        return ThemeContrast.rules.map { rule in
-            let fgs = rule.foregrounds.map { "`\($0)`" }.joined(separator: ", ")
-            let bgs = rule.backgrounds.map { "`" + $0.joined(separator: "` over `") + "`" }.joined(separator: ", ")
-            return "   - \(fgs) on \(bgs): \(ratio(rule.minimum))" + (rule.note.map { " (\($0))" } ?? "")
-        }.joined(separator: "\n")
-    }
-
     private static func skillText(themesFolder: String) -> String {
         """
         ---
@@ -76,40 +66,18 @@ public enum ThemeSkill {
 
         ## In an Alloy theme session
 
-        Use this mode when the `mcp__alloy__theme_*` tools are available (Alloy starts such a session with `/theme`).
+        Use this mode when Alloy's theme tools (`theme_slots`, `theme_read`, `theme_check`, `theme_preview`,
+        `theme_save`; Claude Code shows them as `mcp__alloy__theme_*`) are available (Alloy starts such a session with
+        `/theme`).
 
-        \(ThemeGuidance.text)
+        \(ThemeGuidance.acpText)
 
         ## Anywhere else
 
-        Use this mode when there are no `mcp__alloy__theme_*` tools. You write the theme file yourself, straight into
+        Use this mode when Alloy's theme tools are not available. You write the theme file yourself, straight into
         Alloy's themes folder:
 
-        `\(themesFolder)`
-
-        1. Ask the user about taste (mood, light or dark, contrast, colours they love or avoid) before drafting, and
-           whenever a choice is unclear; do not guess.
-        2. Pick the closest built-in as `base`. Each one is in `reference/<id>.json` with every slot filled in:
-           `dracula`, `alloy-dark`, `alloy-light`, `solarized-dark`, `solarized-light`, `one-dark`.
-           `reference/slots.md` lists every slot and what it colours, and the optional `terminal.*` tokens (the
-           terminal derives them from the editor slots when a theme leaves them out).
-        3. Write only the slots you change under `colors`; the rest come from the base.
-        4. Name it for what it is, never with a built-in's name (Dracula, Alloy Dark, Alloy Light, Solarized Dark,
-           Solarized Light, One Dark) as the theme name or the file name. Save it as
-           `\(themesFolder)/<slug>.json`, where the slug is the theme name in lowercase with dashes.
-           Never overwrite an existing file. If the name is taken, pick a "<name> 2" style name (and slug) instead.
-           Create the folder if it is missing.
-        5. Check contrast yourself with WCAG 2.1 (contrast ratio = (L1 + 0.05) / (L2 + 0.05), L from linearised sRGB).
-           Text pairs need 4.5:1; UI and glyph pairs need 3:1. Composite a translucent colour over what is under it
-           first. Layers are listed bottom first: "`surface` over `codeSelectionFill`" means codeSelectionFill is drawn on
-           top of surface, so composite them and measure against the result. Check every pair below, using the
-           resolved values (the file's own plus the base's):
-        \(contrastList())
-           Fix every pair under its minimum before telling the user it is ready.
-        6. Tell the user to pick the theme in Alloy's Settings. Alloy re-checks contrast itself and warns before
-           activating a theme that falls short.
-
-        Never edit Alloy's `settings.json` or its built-in themes. Saving a file never switches the theme.
+        \(ThemeGuidance.fileModeBody(themesFolder: themesFolder, referenceFiles: true))
 
         ## The file format
 

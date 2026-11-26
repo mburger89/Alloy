@@ -61,7 +61,7 @@ public final class ThemeController: ThemeWorkshop {
     @ObservationIgnored private let directory: URL
     /// Installs the theme skill from Settings. Nil (the default) hides the button, so nothing can write to a home
     /// directory unless the app, or a test with a temporary home, supplies one.
-    @ObservationIgnored public var skillInstaller: ThemeSkillInstaller?
+    @ObservationIgnored public var skillInstallers: [ThemeSkillTarget: ThemeSkillInstaller] = [:]
     @ObservationIgnored private let watcherBox = TaskBox()
     @ObservationIgnored private var reloading = false
     @ObservationIgnored private var reloadAgain = false

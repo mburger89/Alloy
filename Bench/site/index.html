@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Alloy — the code editor for Claude Code and other AI coding agents</title>
-<meta name="description" content="The code editor for Claude Code and other AI coding agents — written in Swift, drawn on the GPU with Metal.">
+<title>Alloy — the native code editor for any AI coding agent</title>
+<meta name="description" content="The native code editor for any AI coding agent, written in Swift, drawn on the GPU.">
 <meta name="color-scheme" content="dark light">
 <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
 <link rel="icon" href="assets/icon-64.png" type="image/png" sizes="64x64">
@@ -28,7 +28,7 @@ nav .links a{margin-left:20px;color:var(--mute)}nav .links a:hover{color:var(--i
 .hero h1{font-size:clamp(40px,8vw,64px);line-height:1.05;margin:0;letter-spacing:-.02em}.hero .lead{font-size:clamp(17px,2.4vw,20px);color:var(--mute);margin:14px 0 28px}
 .meta{font-size:13px;color:var(--mute);margin-top:12px}.meta a{text-decoration:underline}
 .app{margin:44px auto 0;max-width:960px;border-radius:14px;border:1px solid #44475a;box-shadow:0 30px 120px #bd93f940;overflow:hidden;background:#282a36}
-.app img,.app video{display:block;width:100%;height:auto}.app .poster{display:none}
+.app img,.app video{display:block;width:100%;height:auto}.app.has-poster .poster{display:none}
 .ph{aspect-ratio:16/10;display:flex;align-items:center;justify-content:center;background:#282a36;color:#6272a4;font-weight:700;font-size:28px}
 .strip{border-top:1px solid var(--line);border-bottom:1px solid var(--line);margin-top:56px}.strip .wrap{display:flex;justify-content:space-around;flex-wrap:wrap;gap:16px;padding-top:22px;padding-bottom:22px;text-align:center}
 .strip b{display:block;font-size:30px;color:var(--green)}.strip span{font-size:13px;color:var(--mute)}
@@ -108,15 +108,15 @@ footer{padding:26px 0;color:var(--mute);font-size:13px}footer .wrap{display:flex
 <body>
 <nav aria-label="Main"><div class="wrap">
 <a class="brand" href="./"><img src="assets/icon-64.png" alt="" width="26" height="26"><b>Alloy</b></a>
-<div class="links"><a class="opt" href="#features">Features</a><a class="opt" href="#editor">Editor</a><a class="opt" href="#notes">Shared notes</a><a class="opt" href="#themes">Themes</a><a class="opt" href="benchmarks/">Benchmarks</a><a class="opt" href="#faq">FAQ</a><a class="opt" href="https://github.com/mburger89/Alloy">GitHub</a><span class="dl soon" aria-disabled="true">Coming soon</span></div>
+<div class="links"><a class="opt" href="#features">Features</a><a class="opt" href="#editor">Editor</a><a class="opt" href="#agents">Agents</a><a class="opt" href="#notes">Shared notes</a><a class="opt" href="#themes">Themes</a><a class="opt" href="benchmarks/">Benchmarks</a><a class="opt" href="#faq">FAQ</a><a class="opt" href="https://github.com/mburger89/Alloy">GitHub</a><span class="dl soon" aria-disabled="true">Coming soon</span></div>
 </div></nav>
 <main>
 <header class="hero"><div class="wrap">
 <h1>Fast. Native. Yours.</h1>
-<p class="lead">The code editor for Claude Code and other AI coding agents — written in Swift, drawn on the GPU with Metal.</p>
+<p class="lead">The native code editor for any AI coding agent, written in Swift, drawn on the GPU.</p>
 <p><span class="btn p soon" aria-disabled="true">Coming soon</span><a class="btn s" href="https://github.com/mburger89/Alloy">View on GitHub</a></p>
 <p class="meta">Coming soon for Apple-silicon Macs · macOS 14 or later · free, MIT</p>
-<figure class="app has-poster"><video autoplay muted loop playsinline poster="assets/hero-poster.png" aria-label="Alloy with two Claude Code sessions editing the same function, and the overlap warning that follows, in the Dracula theme."><source src="assets/hero.mp4" type="video/mp4"></video><img class="poster" src="assets/hero-poster.png" alt="Alloy with two Claude Code sessions editing the same function, and the overlap warning that follows, in the Dracula theme." fetchpriority="high"></figure>
+<figure class="app"><img class="poster" src="assets/hero-poster.png" alt="Alloy with a Claude Code session and an OpenCode session in the same folder: the Claude Code edit overlaps a line the OpenCode session changed, and the overlap warning follows. The theme is one an agent built." fetchpriority="high"></figure>
 </div></header>
 <section class="strip" aria-label="Headline numbers"><div class="wrap"><div><b class="n">6 of 7</b><span>benchmarks ahead of Zed</span></div><div><b class="n">77 MiB</b><span>memory with a 2 MB file open</span></div><div><b class="n">0</b><span>web views</span></div></div></section>
 <section id="speed"><div class="wrap">
@@ -190,6 +190,12 @@ footer{padding:26px 0;color:var(--mute);font-size:13px}footer .wrap{display:flex
 </div></div>
 <p class="foot">Mac18,5 · macOS 27.2.1 · 60 Hz display · 2026-11-18, Zed 1.29.2, Delta 0.1.0, VS Code 1.147.0, Cursor 3.30.14, Sublime Text Build 4215, IntelliJ IDEA 2026.3. Medians of repeated runs, measured from outside the apps. <a href="benchmarks/">Every number and method →</a></p>
 </div></section>
+<section id="agents"><div class="wrap">
+<div class="tag">Agents</div><h2>Bring your agent. Bring your model.</h2><p class="sub">Alloy is the editor around your agent, not another model.</p>
+<div class="ben"><div><b>Five agents built in</b><span>Claude Code, Codex, Gemini CLI, OpenCode and Goose. Add any Agent Client Protocol agent in Settings: its command, arguments and environment variables.</span></div><div><b>Any model, even local</b><span>Alloy never talks to a model itself. Use whatever your agent uses, such as OpenCode or Goose running a model on your Mac through Ollama.</span></div><div><b>Keys stay in the Keychain</b><span>Secrets are typed into a secure field and stored only in your macOS Keychain, never in a file.</span></div></div>
+<div class="feat"><div class="txt"><h3>Chat with a local model.</h3><p>OpenCode running qwen2.5-coder:7b through Ollama, inside an Alloy session.</p></div><figure class="shot"><img src="assets/shot-agents.png" alt="An Alloy session with OpenCode answering from a local model." loading="lazy"></figure></div>
+<div class="feat r"><div class="txt"><h3>Add any agent.</h3><p>Settings › Agents lists the built-in agents, and Add agent… adds your own. Secret values never show.</p></div><figure class="shot"><img src="assets/shot-agents-settings.png" alt="Settings, Agents: the built-in agents and the Add agent form." loading="lazy"></figure></div>
+</div></section>
 <section id="notes"><div class="wrap">
 <div class="tag">Shared notes</div><h2>Stop paying to read the same file twice.</h2><p class="sub">Your sessions share what they learn.</p>
 <ol class="flow">
@@ -204,17 +210,19 @@ footer{padding:26px 0;color:var(--mute);font-size:13px}footer .wrap{display:flex
 </div></section>
 <section id="features"><div class="wrap">
 <h2 class="sr">Features</h2>
-<div class="feat"><div class="txt"><h3>Many agent sessions. One folder.</h3><p>Run several Claude Code sessions side by side, or bring Codex, Gemini CLI, OpenCode and Goose. Plans, questions and permission requests are answered in place.</p></div><figure class="shot"><img src="assets/shot-sessions.png" alt="The session list beside a chat with a plan awaiting approval." loading="lazy"></figure></div>
-<div class="feat r"><div class="txt"><h3>Know who changed what.</h3><p>Every line is coloured by the session that wrote it. Per-session diffs; keep or revert an edit in one click.</p></div><figure class="shot"><img src="assets/shot-changes.png" alt="Code with each changed line coloured by the session that wrote it." loading="lazy"></figure></div>
-<div class="feat"><div class="txt"><h3>Sessions that don't collide.</h3><p>Alloy warns a session before it edits lines another session (or you) is changing, so work doesn't get overwritten.</p></div><figure class="shot"><img src="assets/shot-collisions.png" alt="An overlap warning on lines two sessions are both editing." loading="lazy"></figure></div>
+<div class="feat"><div class="txt"><h3>Many agent sessions. One folder.</h3><p>Run Claude Code, Codex, Gemini CLI, OpenCode, Goose — or any ACP agent — side by side. Plans, questions and permission requests are answered in place.</p></div><figure class="shot"><img src="assets/shot-sessions.png" alt="The session list beside a chat with a plan awaiting approval." loading="lazy"></figure></div>
+<div class="feat r"><div class="txt"><h3>Know who changed what.</h3><p>Every line is coloured by the session that wrote it, whichever agent that is. Per-session diffs; keep or revert an edit in one click.</p></div><figure class="shot"><img src="assets/shot-changes.png" alt="Code with each changed line coloured by the session that wrote it." loading="lazy"></figure></div>
+<div class="feat"><div class="txt"><h3>Sessions that don't collide.</h3><p>Alloy warns a session before it edits lines another session (or you) is changing, whichever agents they are, so work doesn't get overwritten.</p></div><figure class="shot"><img src="assets/shot-collisions.png" alt="An overlap warning on lines two sessions are both editing." loading="lazy"></figure></div>
 <div class="feat r"><div class="txt"><h3>A real code editor, too.</h3><p>Code mode puts a full editor beside your sessions: language servers, split panes, Git and a built-in terminal, all drawn on the GPU.</p></div><figure class="shot"><img src="assets/shot-code.png" alt="Alloy's Code mode: the file tree, a Swift file with Git change bars, a second file in a split pane and the terminal below." loading="lazy"></figure></div>
+<div class="feat"><div class="txt"><h3>Plugins.</h3><p>Add themes, language servers, commands, panels and tools for your agents. Install from a folder or git, keep them updated, and run them in the macOS sandbox.</p></div><figure class="shot"><img src="assets/shot-plugins.png" alt="Settings, Plugins: installed plugins with their permissions." loading="lazy"></figure></div>
+<div class="feat r"><div class="txt"><h3>CSV as a table.</h3><p>CSV and TSV files open as a table. Edit cells in place, sort, and keep or revert each change.</p></div><figure class="shot"><img src="assets/shot-csv.png" alt="A CSV file in Table view with edited cells tinted." loading="lazy"></figure></div>
 </div></section>
 <section id="editor"><div class="wrap">
 <div class="tag">Code mode</div><h2>Everything you need when you take the wheel.</h2><p class="sub">When you want to write the code yourself, Alloy is a complete editor.</p>
-<div class="caps"><div><b>Code mode</b><span>File tree, tabs and split panes. Switch between chat and code in one click.</span></div><div><b>Language servers</b><span>Completion with snippets, hover, go to definition and references, rename, quick fixes and formatting, with errors and linter warnings as you type.</span></div><div><b>Editing</b><span>Multiple cursors, folding, find, and search and replace across the project. Command palette, Quick Open and your own shortcuts.</span></div><div><b>Git</b><span>Change bars in the gutter, blame with author and age, compare with the last commit, stage, commit and switch branches.</span></div><div><b>Terminal</b><span>A built-in terminal with clickable links, find, and a check before multi-line pastes.</span></div></div>
+<div class="caps"><div><b>Code mode</b><span>File tree, tabs and split panes. Switch between chat and code in one click.</span></div><div><b>Language servers</b><span>Completion with snippets, hover, go to definition and references, rename, quick fixes and formatting, with errors and linter warnings as you type.</span></div><div><b>Editing</b><span>Multiple cursors, folding, find, and search and replace across the project. Command palette, Quick Open and your own shortcuts.</span></div><div><b>Git</b><span>Change bars in the gutter, blame with author and age, compare with the last commit, stage, commit and switch branches.</span></div><div><b>Terminal</b><span>A built-in terminal with clickable links, find, and a check before multi-line pastes.</span></div><div><b>Open from the terminal</b><span>alloy &lt;file&gt; opens the file in its enclosing git repository, or else its folder.</span></div></div>
 </div></section>
 <section id="themes"><div class="wrap"><div class="themes">
-<div class="tag">Themes</div><h2>Dracula by default. Make your own.</h2><p class="sub">Built-in themes, or describe one to Claude Code and Alloy builds it.</p>
+<div class="tag">Themes</div><h2>Dracula by default. Make your own.</h2><p class="sub">Built-in themes, themes from plugins, or describe one to your agent and Alloy builds it.</p>
 <input class="vh" type="radio" name="theme" id="th-0" checked>
 <input class="vh" type="radio" name="theme" id="th-1">
 <input class="vh" type="radio" name="theme" id="th-2">
@@ -239,13 +247,14 @@ footer{padding:26px 0;color:var(--mute);font-size:13px}footer .wrap{display:flex
 </div></section>
 <section><div class="wrap">
 <div class="tag">Privacy</div><h2>Your code stays yours.</h2>
-<ul class="plain"><li>No telemetry and no account. Alloy runs the agents you already have installed.</li><li>It never changes your Claude Code settings — the optional theme skill is installed only when you click it.</li><li>The only requests Alloy itself makes are update checks. Agents and language servers you run make their own connections.</li></ul>
+<ul class="plain"><li>No telemetry and no account. Alloy runs the agents you already have installed.</li><li>It never changes your agents' settings — the optional theme skill is installed only when you click it.</li><li>API keys are kept only in your macOS Keychain.</li><li>The only requests Alloy itself makes are update checks. Agents and language servers you run make their own connections.</li></ul>
 </div></section>
 <section class="faq" id="faq"><div class="wrap">
 <div class="tag">FAQ</div><h2>Questions</h2>
 <details open><summary>Is it free?</summary><p>Yes. Alloy is open source under the MIT licence.</p></details>
-<details><summary>Does it work with other agents?</summary><p>Yes. Claude Code is supported directly. Codex, Gemini CLI, OpenCode, Goose and other agents that speak the Agent Client Protocol work too.</p></details>
-<details><summary>What do I need to run it?</summary><p>A Mac with Apple silicon on macOS 14 or later, and at least one supported agent installed and signed in.</p></details>
+<details><summary>Which agents and models can I use?</summary><p>Claude Code, Codex, Gemini CLI, OpenCode and Goose are built in, and Settings › Agents adds any other agent that speaks the Agent Client Protocol. Alloy never talks to a model itself: the model is whatever your agent uses.</p></details>
+<details><summary>Can I use a local model?</summary><p>Yes, through an agent that supports one. OpenCode or Goose can run a local model with Ollama, and Alloy works with them like any other agent.</p></details>
+<details><summary>What do I need to run it?</summary><p>A Mac with Apple silicon on macOS 14 or later, and at least one coding agent installed and signed in.</p></details>
 <details><summary>Does it run on Intel Macs?</summary><p>Not yet: Apple silicon only.</p></details>
 <details><summary>How do updates work?</summary><p>Alloy checks for updates once a day in the background. It installs when you quit or when you choose Restart to update — never mid-session.</p></details>
 <details><summary>How is it so fast?</summary><p>It's native Swift drawn straight to the GPU with Metal, and it only does work for what's on screen.</p></details>

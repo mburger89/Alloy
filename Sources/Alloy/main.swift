@@ -71,8 +71,12 @@ StartupTrace.mark("app-created")
 // default look. The controller lives for the whole process: it watches the themes folder.
 let themeController = ThemeController(appSupport: appSupport, settings: settings, host: app,
                                       watcher: FSEventsSource(root: ThemeLibrary.userDirectory(appSupport: appSupport)))
-// The one place Alloy writes under `.claude`, and only when the user clicks "Install theme skill" in Settings.
-themeController.skillInstaller = ThemeSkillInstaller(home: FileManager.default.homeDirectoryForCurrentUser)
+// The only places Alloy writes outside its own data (`~/.claude/skills`, `~/.agents/skills`), and only when the user
+// clicks "Install theme skill" in Settings.
+let skillHome = FileManager.default.homeDirectoryForCurrentUser
+themeController.skillInstallers = Dictionary(uniqueKeysWithValues: ThemeSkillTarget.allCases.map {
+    ($0, ThemeSkillInstaller(home: skillHome, target: $0))
+})
 themeController.folderOpener = { NSWorkspace.shared.open($0) }
 TerminalLinkHooks.openURL = { NSWorkspace.shared.open($0) }
 // The system's own appearance (the windows' scheme follows the forced one, so it can't answer this).

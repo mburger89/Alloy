@@ -16,6 +16,8 @@ public protocol ThemeWorkshop: AnyObject {
     /// Every slot a theme file may set, in display order.
     var slotCatalog: [ThemeSlotInfo] { get }
     var library: ThemeLibrary { get }
+    /// The themes folder's path, where an agent without Alloy's theme tools writes the theme file.
+    var themesFolderPath: String { get }
     /// The theme the app shows right now: the preview when one is active, else the user's active theme.
     var shownTheme: ResolvedTheme? { get }
     func preview(_ draft: ThemeFile, resolved: ResolvedTheme, session: UUID)

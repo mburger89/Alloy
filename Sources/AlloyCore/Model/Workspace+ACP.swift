@@ -7,6 +7,9 @@ extension Workspace {
         return agentDefinitions().first { $0.id == id }?.name ?? id
     }
 
+    /// The name of the default agent ("Claude" when none is set or its definition is gone).
+    public var defaultAgentName: String { agentDisplayName(for: defaultBackend) }
+
     /// Starts the ACP agent of an ACP session. Everything Claude-specific (hooks, `--mcp-config`, resume flags) stays
     /// in `launch`; this path resolves the agent command, its environment and secrets, and hands over to the injected
     /// transport factory.
@@ -40,13 +43,18 @@ extension Workspace {
         var mcp: ACPMCPDescriptor?
         var guidance: String?
         // The server is also offered when only a plugin scope applies (then without the guidance text).
+        let isTheme = s.purpose == .theme
         var scopes: Set<MCPToolScope> = settings.shareKnowledge ? [.shared] : []
+        if isTheme { scopes.insert(.theme) }
         scopes.formUnion(pluginToolScopes())
         if !scopes.isEmpty, let token = await mcpToken(for: s.id, scopes: scopes), let url = serverURL {
             mcp = ACPMCPDescriptor(name: "alloy", url: url.absoluteString, token: token)
+            var texts: [String] = []
             if settings.shareKnowledge {
-                guidance = Guidance.text(shareKnowledge: settings.shareKnowledge, shareAcrossProjects: settings.shareAcrossProjects)
+                texts.append(Guidance.text(shareKnowledge: settings.shareKnowledge, shareAcrossProjects: settings.shareAcrossProjects))
             }
+            if isTheme { texts.append(ThemeGuidance.acpText) }
+            if !texts.isEmpty { guidance = texts.joined(separator: "\n\n") }
         }
         if stoppedDuringLaunch.contains(s.id) || isShuttingDown { markStopped(s); return }
         s.beginProcess()
@@ -59,6 +67,15 @@ extension Workspace {
             fileService: ACPSessionFiles(workspace: self, session: s.id, root: projectRoot))
         configuration.history = ACPHistory(directory: acpHistoryDirectory, sessionID: s.id)
         configuration.autoAllowAlloyTools = mcp != nil && settings.shareKnowledge && !settings.askBeforeSharedNotes
+        if isTheme {
+            // The theme tools are pre-approved like a Claude theme session's; an agent that cannot take them gets the
+            // file-writing prompt and a notice instead (set even when the server is not running).
+            configuration.autoAllowThemeTools = mcp != nil && !settings.askBeforeSharedNotes
+            let folder = themeWorkshop?.themesFolderPath ?? ThemeLibrary.userDirectory(appSupport: appSupport).path
+            configuration.promptWithoutTools = ThemeGuidance.fileModeText(themesFolder: folder)
+            configuration.toolsUnavailableNotice = "\(definition.name) can't use Alloy's theme tools, so it will write the theme "
+                + "file into your themes folder instead; Alloy picks it up live."
+        }
         configuration.leadingContext = { [weak self] in await self?.takeACPOverlapContext(for: sessionID) }
         let transport = factory(configuration)
         let stream: AsyncStream<ProcessEvent>

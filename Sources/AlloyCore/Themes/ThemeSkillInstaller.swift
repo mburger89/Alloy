@@ -18,15 +18,23 @@ public enum ThemeSkillInstallError: Error, Equatable, Sendable, LocalizedError {
     }
 }
 
-/// Installs the theme skill into `<home>/.claude/skills/alloy-theme`. This is the only place Alloy writes under
-/// `.claude`, and only when the user asks (Settings). The home is injected; tests pass a temporary one.
+/// Where the theme skill is installed: Claude Code's own folder, or the shared folder other agents read.
+public enum ThemeSkillTarget: String, CaseIterable, Sendable {
+    case claudeCode, sharedAgents
+}
+
+/// Installs the theme skill into `<home>/.claude/skills/alloy-theme` (`.claudeCode`) or
+/// `<home>/.agents/skills/alloy-theme` (`.sharedAgents`). These are the only places Alloy writes outside its own
+/// data, and only when the user asks (Settings). The home is injected; tests pass a temporary one.
 ///
 /// The calls are synchronous file I/O and not main-actor bound: call them from a detached task.
 public struct ThemeSkillInstaller: Sendable {
     public let directory: URL
+    public let target: ThemeSkillTarget
 
-    public init(home: URL) {
-        directory = home.appendingPathComponent(".claude", isDirectory: true)
+    public init(home: URL, target: ThemeSkillTarget = .claudeCode) {
+        self.target = target
+        directory = home.appendingPathComponent(target == .claudeCode ? ".claude" : ".agents", isDirectory: true)
             .appendingPathComponent("skills", isDirectory: true)
             .appendingPathComponent("alloy-theme", isDirectory: true)
     }

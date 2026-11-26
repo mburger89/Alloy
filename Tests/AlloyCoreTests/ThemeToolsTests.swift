@@ -11,6 +11,7 @@ private final class FakeWorkshop: ThemeWorkshop {
         ThemeSlotInfo(name: "chatFill", purpose: "The chat pane."),
     ]
     var library: ThemeLibrary
+    var themesFolderPath = "/fake/Themes"
     var shownTheme: ResolvedTheme?
     var previews: [(draft: ThemeFile, resolved: ResolvedTheme, session: UUID)] = []
     var saves: [(saved: SavedTheme, file: ThemeFile, session: UUID)] = []

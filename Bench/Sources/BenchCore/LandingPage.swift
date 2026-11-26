@@ -86,10 +86,10 @@ public enum LandingPage {
         var body = nav(c) + hero(c)
         if let latest { body += proofStrip(latest, wins: wins, c) }
         if let latest, !wins.isEmpty { body += race(latest, wins: wins, c, partial: partial) }
-        body += notes(c) + features(c) + editor(c) + themes(c) + languages(c) + built(c) + privacy(c) + faq(c) + closing(c) + footer(c)
+        body += agents(c) + notes(c) + features(c) + editor(c) + themes(c) + languages(c) + built(c) + privacy(c) + faq(c) + closing(c) + footer(c)
         return "<!doctype html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n"
             + "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n"
-            + "<title>Alloy — the code editor for Claude Code and other AI coding agents</title>\n"
+            + "<title>Alloy — the native code editor for any AI coding agent</title>\n"
             + "<meta name=\"description\" content=\"\(esc(c.heroLead))\">\n"
             + "<meta name=\"color-scheme\" content=\"dark light\">\n"
             + "<link rel=\"icon\" href=\"assets/icon.svg\" type=\"image/svg+xml\">\n"
@@ -104,7 +104,7 @@ public enum LandingPage {
         """
         <nav aria-label="Main"><div class="wrap">
         <a class="brand" href="./"><img src="assets/icon-64.png" alt="" width="26" height="26"><b>Alloy</b></a>
-        <div class="links"><a class="opt" href="#features">Features</a><a class="opt" href="#editor">Editor</a><a class="opt" href="#notes">Shared notes</a><a class="opt" href="#themes">Themes</a><a class="opt" href="benchmarks/">Benchmarks</a><a class="opt" href="#faq">FAQ</a><a class="opt" href="\(esc(c.repoURL))">GitHub</a>\(download(c, cls: "dl", label: "Download", soon: "Coming soon"))</div>
+        <div class="links"><a class="opt" href="#features">Features</a><a class="opt" href="#editor">Editor</a><a class="opt" href="#agents">Agents</a><a class="opt" href="#notes">Shared notes</a><a class="opt" href="#themes">Themes</a><a class="opt" href="benchmarks/">Benchmarks</a><a class="opt" href="#faq">FAQ</a><a class="opt" href="\(esc(c.repoURL))">GitHub</a>\(download(c, cls: "dl", label: "Download", soon: "Coming soon"))</div>
         </div></nav>
         <main>
 
@@ -209,15 +209,29 @@ public enum LandingPage {
         """
     }
 
-    private static func features(_ c: LandingContent) -> String {
-        var s = "<section id=\"features\"><div class=\"wrap\">\n<h2 class=\"sr\">Features</h2>\n"
-        for (i, f) in c.features.enumerated() {
+    private static func agents(_ c: LandingContent) -> String {
+        """
+        <section id="agents"><div class="wrap">
+        <div class="tag">Agents</div><h2>\(esc(c.agentsTitle))</h2><p class="sub">\(esc(c.agentsSub))</p>
+        <div class="ben">\(c.agentsPoints.map { "<div><b>\(esc($0.0))</b><span>\(esc($0.1))</span></div>" }.joined())</div>
+        \(featureRows(c.agentsImages, c))</div></section>
+
+        """
+    }
+
+    private static func featureRows(_ rows: [LandingContent.Feature], _ c: LandingContent) -> String {
+        var s = ""
+        for (i, f) in rows.enumerated() {
             let shot = c.assets.contains(f.image)
                 ? "<img src=\"assets/\(esc(f.image))\" alt=\"\(esc(f.alt))\" loading=\"lazy\">"
                 : "<div class=\"ph\" role=\"img\" aria-label=\"\(esc(f.alt))\"></div>"
             s += "<div class=\"feat\(i % 2 == 1 ? " r" : "")\"><div class=\"txt\"><h3>\(esc(f.title))</h3><p>\(esc(f.text))</p></div><figure class=\"shot\">\(shot)</figure></div>\n"
         }
-        return s + "</div></section>\n"
+        return s
+    }
+
+    private static func features(_ c: LandingContent) -> String {
+        "<section id=\"features\"><div class=\"wrap\">\n<h2 class=\"sr\">Features</h2>\n" + featureRows(c.features, c) + "</div></section>\n"
     }
 
     private static func editor(_ c: LandingContent) -> String {
@@ -361,7 +375,7 @@ public enum LandingPage {
     .hero h1{font-size:clamp(40px,8vw,64px);line-height:1.05;margin:0;letter-spacing:-.02em}.hero .lead{font-size:clamp(17px,2.4vw,20px);color:var(--mute);margin:14px 0 28px}
     .meta{font-size:13px;color:var(--mute);margin-top:12px}.meta a{text-decoration:underline}
     .app{margin:44px auto 0;max-width:960px;border-radius:14px;border:1px solid #44475a;box-shadow:0 30px 120px #bd93f940;overflow:hidden;background:#282a36}
-    .app img,.app video{display:block;width:100%;height:auto}.app .poster{display:none}
+    .app img,.app video{display:block;width:100%;height:auto}.app.has-poster .poster{display:none}
     .ph{aspect-ratio:16/10;display:flex;align-items:center;justify-content:center;background:#282a36;color:#6272a4;font-weight:700;font-size:28px}
     .strip{border-top:1px solid var(--line);border-bottom:1px solid var(--line);margin-top:56px}.strip .wrap{display:flex;justify-content:space-around;flex-wrap:wrap;gap:16px;padding-top:22px;padding-bottom:22px;text-align:center}
     .strip b{display:block;font-size:30px;color:var(--green)}.strip span{font-size:13px;color:var(--mute)}

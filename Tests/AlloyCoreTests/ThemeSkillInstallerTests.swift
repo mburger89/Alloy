@@ -25,6 +25,22 @@ import Testing
         #expect(ThemeSkillInstaller(home: home).directory.path == home.path + "/.claude/skills/alloy-theme")
     }
 
+    @Test func sharedAgentsDirectory() throws {
+        let home = try tempHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        #expect(ThemeSkillInstaller(home: home, target: .sharedAgents).directory.path.hasSuffix("/.agents/skills/alloy-theme"))
+    }
+
+    @Test func targetsAreIndependent() throws {
+        let home = try tempHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let shared = ThemeSkillInstaller(home: home, target: .sharedAgents)
+        try shared.install(files: files)
+        #expect(shared.status(files: files) == .current)
+        #expect(ThemeSkillInstaller(home: home, target: .claudeCode).status(files: files) == .notInstalled)
+        #expect(!FileManager.default.fileExists(atPath: home.appendingPathComponent(".claude").path))
+    }
+
     @Test func notInstalledThenCurrentAfterInstall() throws {
         let home = try tempHome()
         defer { try? FileManager.default.removeItem(at: home) }

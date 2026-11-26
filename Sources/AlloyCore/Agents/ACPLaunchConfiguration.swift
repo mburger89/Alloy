@@ -34,6 +34,12 @@ public struct ACPLaunchConfiguration: Sendable {
     public var history: ACPHistory?
     /// Auto-select the allow option for permission requests on Alloy's own tools (`askBeforeSharedNotes` off).
     public var autoAllowAlloyTools = false
+    /// Also auto-select the allow option for Alloy's theme tools (a theme session with `askBeforeSharedNotes` off).
+    public var autoAllowThemeTools = false
+    /// A theme session's prompt for an agent that cannot use Alloy's tools: write the theme file into the themes folder.
+    public var promptWithoutTools: String?
+    /// The one notice the transcript gets when `promptWithoutTools` replaces the tools.
+    public var toolsUnavailableNotice: String?
     /// Notices (overlap and the like) that lead the next prompt; asked for each time a prompt is actually sent.
     public var leadingContext: (@Sendable () async -> String?)?
 

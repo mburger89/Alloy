@@ -150,12 +150,18 @@ public actor ACPTransport: SessionTransport {
             if capabilities?.acceptsHTTPMCP == true {
                 servers.append(.http(name: mcp.name, url: mcp.url,
                                      headers: [ACPNameValue(name: "Authorization", value: "Bearer \(mcp.token)")]))
-            } else {
+            } else if configuration.promptWithoutTools == nil {
                 emit([.notice(kind: .commandOutput,
                               text: "Shared notes are unavailable: \(configuration.agent.name) does not take HTTP MCP servers.")])
             }
         }
-        if servers.isEmpty { guidance = nil }
+        if servers.isEmpty {
+            // A theme session never starts silently without its tools: it says so and gets the file-writing prompt.
+            guidance = configuration.promptWithoutTools
+            if guidance != nil, let notice = configuration.toolsUnavailableNotice {
+                emit([.notice(kind: .commandOutput, text: notice)])
+            }
+        }
         var systemPrompt: ACPSystemPrompt?
         if let guidance, !guidance.isEmpty {
             if capabilities?.acceptsSystemPrompt == true { systemPrompt = ACPSystemPrompt(text: guidance) }
@@ -382,7 +388,9 @@ public actor ACPTransport: SessionTransport {
         }
         let tool = translator.permissionTool(request.toolCall)
         emit(tool.messages)
-        if configuration.autoAllowAlloyTools, isAlloyTool(tool.name) || isAlloyTool(request.toolCall.title ?? ""),
+        let titles = [tool.name, request.toolCall.title ?? ""]
+        if (configuration.autoAllowAlloyTools && titles.contains { isAlloyTool($0) })
+            || (configuration.autoAllowThemeTools && titles.contains { isAlloyTool($0, includeTheme: true) }),
            let option = ["allow_once", "allow_always"].lazy.compactMap({ k in request.options.first { $0.kind == k } }).first {
             await conn.respond(id: id, result: ACPPermissionOutcome.selected(optionId: option.optionId).json)
             return
@@ -400,9 +408,9 @@ public actor ACPTransport: SessionTransport {
     }
 
     /// Whether a permission request is about one of Alloy's own tools (notes and coordination), by the name the agent shows.
-    private func isAlloyTool(_ title: String) -> Bool {
+    private func isAlloyTool(_ title: String, includeTheme: Bool = false) -> Bool {
         guard let server = configuration.mcp?.name else { return false }
-        return Guidance.isAlloyToolTitle(title, server: server)
+        return Guidance.isAlloyToolTitle(title, server: server, includeTheme: includeTheme)
     }
 
     private func answerPermission(_ rid: String, allow: Bool, updated: [JSONValue]?) async {
