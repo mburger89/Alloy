@@ -43,7 +43,14 @@ import Testing
     private func typing(_ layout: Perf.Layout, steady: Int) async throws {
         let keeper = Keeper()
         let perf = Perf()
-        try await perf.guardTyping(layout, steady: steady, install: { Self.install($0, keeper: keeper) })
+        // The plugins start as processes: the guard measures once the flooding one's first set has landed, so the typing it
+        // counts runs under the flood (typing takes milliseconds headless; a plugin takes up to seconds to start under load).
+        try await perf.guardTyping(layout, steady: steady, install: { Self.install($0, keeper: keeper) }, settle: { window in
+            let deadline = ContinuousClock().now.advanced(by: .seconds(10))
+            while (keeper.rigs.first?.coordinator.decorations.applyCount ?? 0) == 0, ContinuousClock().now < deadline {
+                window.tick(); try? await Task.sleep(for: .milliseconds(20))
+            }
+        })
         let applied = keeper.rigs.first?.coordinator.decorations.applyCount ?? 0
         #expect(applied > 0, "decorations arrived while the guard measured: \(applied)")
         for p in keeper.rigs { await p.coordinator.shutdown() }

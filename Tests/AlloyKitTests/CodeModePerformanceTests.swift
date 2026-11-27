@@ -163,8 +163,10 @@ import Testing
     static let steadyCode3 = 72
 
     func guardTyping(_ layout: Layout, steady: Int, git useGit: Bool = false, gitTab: Bool = false, blame: Bool = false, carets: Int = 1,
-                     install: ((Rig) -> Void)? = nil) async throws {
+                     install: ((Rig) -> Void)? = nil, settle: ((TestWindow) async -> Void)? = nil) async throws {
         let (rig, window, id) = try await rigged(layout, git: useGit, gitTab: gitTab, lines: carets > 1 ? carets : 0, install: install)
+        // Whatever `install` started (a plugin process) is up before anything is measured.
+        await settle?(window)
         if blame {
             // File blame on before anything is measured: the lane is reserved once, at the toggle.
             let g0 = rig.workspace.codeLayout.focusedGroupID

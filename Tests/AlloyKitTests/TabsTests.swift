@@ -205,17 +205,20 @@ import Testing
         #expect(FileTabStrip.titles(["a/x.swift", "y.swift"]) == ["x.swift", "y.swift"])
     }
 
-    /// Regression guard on the keymap order: the global keys are shortcuts, which run after the panel's own ⌘F.
+    /// ⌘F and ⌘P are menu key equivalents (Edit > Find…, File > Quick Open), which AppKit routes to the menu item; the
+    /// headless window's `typeKey` never reaches the menu bar, so the test performs the same items.
     @Test func cmdFStillReachesCodeView() async throws {
         let (rig, _) = try await editedRig()
         await rig.workspace.open("login.swift")
         let window = try alloyWindow(rig.workspace)
         try await window.runUntil { (try? window.element(identifier: "code-view")) != nil }
         try window.click(window.element(identifier: "code-view"))
-        window.typeKey("f", modifierFlags: .command)
+        // The click's focus reaches the workspace a few frames later; Find… is enabled once the code view has it.
+        for _ in 0..<5 { window.tick(); await Task.yield() }
+        try window.testApp.performMenuBarItem(accessibilityIdentifier: "edit-find")
         try await window.runUntil { (try? window.element(identifier: "find-field")) != nil }
-        // The global keys are not swallowed by the code view either.
-        window.typeKey("p", modifierFlags: .command)
+        // Quick Open is not swallowed by the code view either.
+        try window.testApp.performMenuBarItem(accessibilityIdentifier: "file-quick-open")
         try await window.runUntil { (try? window.element(identifier: "quick-open-field")) != nil }
     }
 
