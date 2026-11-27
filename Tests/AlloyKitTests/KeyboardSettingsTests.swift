@@ -125,18 +125,11 @@ import Testing
             guard let e = try? window.element(identifier: identifier) else { return false }
             return e.visibleFrame.size.width.value > 0 && e.visibleFrame.size.height.value > 0
         }
-        // This retry exists because a non-overflowing TextArea (the search excludes field) currently swallows the wheel:
-        // a step that moves nothing is tried again at the next point.
-        let points = [300, 100, 700, 1500].map { Point(x: Pixels(300), y: Pixels(Float($0))) }
-        func contentTop() -> Float? { try? window.element(identifier: "settings-claude-path").frame.origin.y.value }
+        let point = Point(x: Pixels(300), y: Pixels(300))
         for dy: Float in [-300, 300] {
             for _ in 0..<60 {
                 if visible() { return }
-                let before = contentTop()
-                for point in points {
-                    window.scroll(at: point, byDeltaX: 0, deltaY: dy)
-                    if contentTop() != before { break }
-                }
+                window.scroll(at: point, byDeltaX: 0, deltaY: dy)
             }
         }
     }
