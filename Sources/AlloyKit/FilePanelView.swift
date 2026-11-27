@@ -102,25 +102,10 @@ struct FilePanelView: Component {
 }
 
 extension ElementGroup {
-    /// The code panel's keys for `pane`'s active tab: Cmd-F (Ctrl-F off macOS) opens find, Cmd-S saves, F8 / Shift-F8 step through
+    /// The code panel's keys for `pane`'s active tab: F8 / Shift-F8 step through
     /// the problems, F12 goes to the definition, Shift-F12 lists the references, Cmd-I shows the hover, Cmd-. lists the quick fixes. A text field elsewhere, such as the composer, keeps its keys.
     func codeKeyHandlers(workspace: Workspace, panel: CodePanelStore, pane: PaneID) -> some ElementGroup {
         self
-            .onKeyPress(keys: ["f"], phases: .down) { press in
-                guard press.modifiers == .primary, let path = workspace.activeTab(in: pane), let document = workspace.document(path),
-                      let view = panel.view(for: document, in: pane) else { return .ignored }
-                // Find lives in the text view: a table switches to Text first.
-                if workspace.presentation(of: path, in: pane) == .table { workspace.setPresentation(.plain, of: path, in: pane) }
-                view.showFind()
-                return .handled
-            }
-            // Cmd-S: a deliberate save of the pane's active tab, so the format-on-save hook runs. A key handler, not a
-            // hidden button: a button would add elements to every frame.
-            .onKeyPress(keys: ["s"], phases: .down) { press in
-                guard press.modifiers == .primary, workspace.activeTab(in: pane) != nil else { return .ignored }
-                workspace.requestSaveActive(in: pane)
-                return .handled
-            }
             // Cmd-I: the hover of the symbol at the primary caret.
             .onKeyPress(keys: ["i"], phases: .down) { press in
                 guard press.modifiers == .primary, let path = workspace.activeTab(in: pane), let document = workspace.document(path),

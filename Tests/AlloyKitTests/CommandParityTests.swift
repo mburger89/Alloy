@@ -51,11 +51,11 @@ import Testing
         ])
         #expect(gitMenu.items.allSatisfy { $0.shortcut == nil })
         let edit = window.testApp.menuBar.first { $0.title == "Edit" }
-        #expect(edit?.items.map(\.title).suffix(12) == [
+        #expect(edit?.items.dropLast().map(\.title).suffix(12) == [
             "Rename Symbol", "Format Document", "Format Selection", "Show Hover", "Trigger Completion", "Signature Help", "Quick Fix",
             "Add Next Occurrence", "Select All Occurrences", "Skip to Next Occurrence", "Add Caret Above", "Add Caret Below",
         ])
-        #expect(edit?.items.suffix(5).compactMap(\.accessibilityIdentifier) == [
+        #expect(edit?.items.dropLast().suffix(5).compactMap(\.accessibilityIdentifier) == [
             "cmd-editor.addNextOccurrence", "cmd-editor.selectAllOccurrences", "cmd-editor.skipNextOccurrence",
             "cmd-editor.addCaretAbove", "cmd-editor.addCaretBelow",
         ])
@@ -65,7 +65,7 @@ import Testing
         #else
         let skipShortcut: PlatformKeyEquivalent? = PlatformKeyEquivalent(key: "d", modifiers: [.option, .command])
         #endif
-        #expect(edit?.items.suffix(5).map(\.shortcut) == [
+        #expect(edit?.items.dropLast().suffix(5).map(\.shortcut) == [
             PlatformKeyEquivalent(key: "d", modifiers: [.command]),
             PlatformKeyEquivalent(key: "l", modifiers: [.command, .shift]),
             skipShortcut,
@@ -76,12 +76,12 @@ import Testing
         #expect(view.items.map(\.title) == [
             "Chat Mode", "Code Mode", "Split Right", "Split Down", "Focus Left Group", "Focus Right Group",
             "Focus Up Group", "Focus Down Group", "Reveal in Tree", "Toggle Chat Column",
-            "Find in Files", "Replace in Files", "Toggle Terminal", "New Terminal", "Command Palette…", "Folding",
+            "Toggle Terminal", "New Terminal", "Command Palette…", "Folding",
         ])
         #expect(view.items.compactMap(\.accessibilityIdentifier) == [
             "view-mode-chat", "view-mode-code", "view-split-right", "view-split-down", "view-focus-left",
             "view-focus-right", "view-focus-up", "view-focus-down", "view-reveal-in-tree", "view-toggle-chat-column",
-            "view-find-in-files", "view-replace-in-files", "view-toggle-terminal", "view-new-terminal", "view-command-palette",
+            "view-toggle-terminal", "view-new-terminal", "view-command-palette",
         ])
         #expect(menuItem(window, "app-settings")?.shortcut == PlatformKeyEquivalent(key: ",", modifiers: [.command]))
         #expect(menuItem(window, "view-split-down")?.shortcut == PlatformKeyEquivalent(key: "\\", modifiers: [.option, .command]))
@@ -98,7 +98,9 @@ import Testing
         for command in registry.commands where command.descriptor.menu != nil {
             let item = try #require(menuItem(window, command.descriptor.menuID))
             #expect(item.title == command.descriptor.title)
-            #expect(!item.isEnabled, "\(command.descriptor.id) needs a workspace")
+            // Close Tab and Close Window close the chooser's window (File > Close was MetalUI's, and is replaced).
+            let closesChooser = ["tab.close", "window.close"].contains(command.descriptor.id)
+            #expect(item.isEnabled == closesChooser, "\(command.descriptor.id) needs a workspace")
         }
     }
 
@@ -137,13 +139,15 @@ import Testing
     @Test func globalKeyCountsUnchanged() async throws {
         let rig = Rig()
         let registry = testCenter(for: rig.workspace).registry
-        #expect(registry.commands.filter { $0.descriptor.binding == .global }.count == 18)
-        #expect(registry.commands.filter { $0.descriptor.binding == .globalInCode }.map(\.descriptor.id) == ["session.new"])
+        // Every chord with a menu item is delivered by the item: only the terminal's four commands keep a hidden key, so
+        // the frame carries four elements for them, not eighteen.
+        #expect(registry.commands.filter { $0.descriptor.binding == .global }.count == 4)
+        #expect(!registry.commands.contains { $0.descriptor.binding == .globalInCode })
         let window = try alloyWindow(rig.workspace)
         // The buttons are hidden from the element tree, so the registry is the record; the keys still work (see
-        // globalKeysRunThroughRegistry). Chat mode has no ⌘N global key, Code mode adds one.
+        // globalKeysRunThroughRegistry).
         window.tick()
-        #expect(registry.commands.filter { $0.descriptor.binding == .global }.map(\.descriptor.keyID).contains("global-key-tab-9"))
+        #expect(registry.commands.filter { $0.descriptor.binding == .global }.map(\.descriptor.keyID).contains("global-key-terminal-copy"))
     }
 
     @Test func disabledCommandNeverRuns() async throws {

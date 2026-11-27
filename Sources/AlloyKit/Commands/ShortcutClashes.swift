@@ -69,10 +69,8 @@ struct ShortcutClashes {
 
     /// The read-only "Built-in" group: the code view's keys, then Alloy's own in-place keys.
     var builtInRows: [ClaimedShortcut] {
-        let primary = platform.primaryModifiers
         let alloy = [
             ClaimedShortcut(title: "Close Settings or Quick Open", shortcut: KeyboardShortcut(.escape, modifiers: []), source: .command),
-            ClaimedShortcut(title: "Find", shortcut: KeyboardShortcut("f", modifiers: primary), source: .command),
             ClaimedShortcut(title: "Send Message (composer)", shortcut: KeyboardShortcut(.return, modifiers: []), source: .command),
         ]
         return codeViewKeys + alloy

@@ -32,7 +32,7 @@ public enum CommandBinding: String, Hashable, Codable, Sendable {
 
 /// The menu a command appears in; nil means the palette only.
 public enum MenuPlacement: String, Hashable, Codable, Sendable {
-    case appSettings, edit, go, git, view, folding, plugins
+    case appSettings, file, fileSave, edit, find, go, git, view, folding, window, plugins
 }
 
 /// What a command is, with no closures: Codable and Sendable so it can be listed, tested and (later) shown in settings.

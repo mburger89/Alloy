@@ -1058,10 +1058,30 @@ final class CodePanelStore {
             guard let self, let workspace else { return }
             self.focusedView(workspace: workspace)?.beginRename(workspace: workspace)
         }
+        workspace.intelHooks.run[.find] = { [weak self, weak workspace] in
+            guard let self, let workspace, let view = self.focusedView(workspace: workspace) else { return }
+            // Find lives in the text view: a table switches to Text first.
+            let path = view.document.path
+            if workspace.presentation(of: path, in: view.pane) == .table { workspace.setPresentation(.plain, of: path, in: view.pane) }
+            view.showFind()
+        }
+        workspace.intelHooks.run[.findNext] = { [weak self, weak workspace] in
+            guard let self, let workspace else { return }
+            self.focusedView(workspace: workspace)?.step(1)
+        }
+        workspace.intelHooks.run[.findPrevious] = { [weak self, weak workspace] in
+            guard let self, let workspace else { return }
+            self.focusedView(workspace: workspace)?.step(-1)
+        }
         workspace.intelHooks.isEnabled = { [weak self, weak workspace] command in
             guard let self, let workspace, let view = self.focusedView(workspace: workspace) else { return false }
             let editable = view.document.state == .editable
             switch command {
+            case .find, .findNext, .findPrevious:
+                // The code view has focus, or its find bar is up (the field has the keys then), or a table shows (it is
+                // switched to Text first). Never from the composer or another text field with the bar closed.
+                return workspace.focusedCodePane == view.pane || view.findVisible
+                    || workspace.presentation(of: view.document.path, in: view.pane) == .table
             case .showHover: return view.hoverAttached(editable: editable)
             case .goToSymbol: return view.symbolsAttached(editable: editable)
             case .findReferences: return view.referencesAttached(editable: editable)

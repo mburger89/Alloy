@@ -60,10 +60,10 @@ import Testing
         let rig = Rig()
         let window = try alloyWindow(rig.workspace)
         let edit = try #require(window.testApp.menuBar.first { $0.title == "Edit" })
-        let tail = edit.items.suffix(11)
+        let tail = edit.items.dropLast().suffix(11)   // the Find submenu comes last
         #expect(tail.map(\.title) == ["Format Document", "Format Selection", "Show Hover", "Trigger Completion", "Signature Help",
                                       "Quick Fix"] + Self.titles)
-        let new = Array(edit.items.suffix(5))
+        let new = Array(edit.items.dropLast().suffix(5))
         #expect(new.compactMap(\.accessibilityIdentifier) == Self.ids.map { "cmd-\($0)" })
         #expect(new.map(\.shortcut) == [
             PlatformKeyEquivalent(key: "d", modifiers: [.command]),

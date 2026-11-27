@@ -320,7 +320,7 @@ import Testing
         let (rig, window, store) = try await codeWindowWithStore()
         store.toggle(); settle(window)
         let registry = testCenter(for: rig.workspace).registry
-        #expect(registry.command(id: "tab.new")?.descriptor.keyID == "global-key-new-terminal-tab")
+        #expect(registry.command(id: "tab.new")?.descriptor.menuID == "file-new-terminal-tab")
         #expect(registry.command(id: "tab.new")?.descriptor.title == "New Terminal Tab")
         runCommand(rig, "tab.new")
         #expect(terminalTabs(rig) == 1)

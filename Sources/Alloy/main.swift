@@ -154,6 +154,35 @@ StartupTrace.mark("frame-timing-installed")
 FrameTimingRecorder.installStartupTrace(on: window)
 BuiltinCommands.register(into: center, launcher: model, settings: { settingsWindow }, themes: { themeController })
 StartupTrace.mark("builtin-commands-registered")
+// File > Open…: the system open dialog (any file type, several files), and, for a file outside the project, a new Alloy
+// started with the file as its argument, which is what `alloy <file>` does (the file's own repository becomes the project).
+center.chooseFiles = { directory in
+    do {
+        return try await window.fileDialogs.openFiles(allowedContentTypes: [], allowsMultipleSelection: true, directory: directory)
+    } catch { return [] }
+}
+center.chooseSaveURL = { name, directory in
+    // A cancelled dialog and a dialog error both save nothing.
+    (try? await window.fileDialogs.saveFile(defaultFilename: name, directory: directory)) ?? nil
+}
+// File > Close Window, and ⌘W with no project: the key window's own close, which asks as its close button does.
+center.isProjectWindowKey = { window.controlActiveState == .key }
+center.closeKeyWindow = { NSApp.keyWindow?.performClose(nil) }
+center.openOutsideProject = { url in
+    let bundle = Bundle.main.bundleURL
+    if bundle.pathExtension == "app" {
+        let configuration = NSWorkspace.OpenConfiguration()
+        configuration.arguments = [url.path]
+        configuration.createsNewApplicationInstance = true
+        NSWorkspace.shared.openApplication(at: bundle, configuration: configuration)
+    } else if let executable = Bundle.main.executableURL {
+        // `swift run` and development builds have no bundle: start the executable itself.
+        let process = Process()
+        process.executableURL = executable
+        process.arguments = [url.path]
+        try? process.run()
+    }
+}
 Task { await center.plugins?.activate() }
 app.commands {
     alloyCommands(center: center, updates: updatesEnabled ? updateModel : nil, checkForUpdates: { updateController.checkForUpdates() },

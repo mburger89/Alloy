@@ -13,7 +13,7 @@ import Testing
         let rows = ShortcutClashes(center: testCenter(for: rig.workspace), platform: platform).builtInRows
         let codeView = CodeView.builtInKeyBindings(platform: platform)
         #expect(!codeView.isEmpty)
-        #expect(rows.count == codeView.count + 3)
+        #expect(rows.count == codeView.count + 2)
         #expect(Array(rows.prefix(codeView.count)) == codeView)
         for entry in codeView {
             #expect(rows.contains { $0.shortcut == entry.shortcut && $0.title == entry.title })

@@ -157,12 +157,19 @@ import Testing
         let rows = groups.flatMap { $0.rows }
         for id in Self.terminalCommandIDs {
             let row = try #require(rows.first { $0.id == id }, "\(id)")
+            #if os(macOS)
+            // ⌘F is Edit > Find…, which runs the terminal's find while a terminal has focus: no chord of its own.
+            if id == "terminal.find" { #expect(row.chordText == "None"); continue }
+            #endif
             #expect(row.chordText != "None", "\(id)")
         }
         // No terminal chord is held by another built-in command.
         let clashes = ShortcutClashes(center: center)
         for id in Self.terminalCommandIDs {
-            let chord = try #require(center.registry.command(id: id)?.descriptor.shortcut)
+            guard let chord = center.registry.command(id: id)?.descriptor.shortcut else {
+                #expect(id == "terminal.find", "\(id) has no chord")
+                continue
+            }
             for clash in clashes.clashes(for: chord, excluding: id, overrides: [:]) {
                 if case .command(let other) = clash.kind {
                     Issue.record("\(id) clashes with command \(other)")

@@ -12,6 +12,20 @@ public final class CommandCenter {
     let palette: CommandPaletteModel
     /// Raises the project window (set by the entry point; the palette and plugin commands call it).
     public var bringProjectWindowForward: @MainActor () -> Void = {}
+    /// File > Open…'s chooser: the files the user picked (empty for Cancel or an error), given the folder to start in (the
+    /// project's). The entry point sets the system open dialog; tests set a stub.
+    public var chooseFiles: @MainActor (_ directory: URL?) async -> [URL] = { _ in [] }
+    /// Opens a file outside the project the way `alloy <file>` does (a new Alloy on the file's own project). Set by the
+    /// entry point.
+    public var openOutsideProject: @MainActor (URL) -> Void = { _ in }
+    /// File > Save As…'s dialog: the file name to propose and the folder to start in; nil for Cancel or an error. The entry
+    /// point sets the system save dialog; tests set a stub.
+    public var chooseSaveURL: @MainActor (_ name: String, _ directory: URL) async -> URL? = { _, _ in nil }
+    /// Closes the key window as its close button does (File > Close Window). Set by the entry point.
+    public var closeKeyWindow: @MainActor () -> Void = {}
+    /// Whether the project window is the key window. ⌘W (Close Tab) closes the key window instead of a tab when it is not,
+    /// so it never closes an editor tab from behind Settings. Set by the entry point; true by default.
+    public var isProjectWindowKey: @MainActor () -> Bool = { true }
     /// The app's standard menu items and their keys (`App.standardMenuShortcuts()`), set by the entry point; read only
     /// when the Keyboard settings classify a clash.
     public var standardMenuClaims: @MainActor () -> [ClaimedShortcut] = { [] }

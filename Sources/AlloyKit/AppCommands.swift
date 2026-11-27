@@ -2,7 +2,7 @@ import AlloyCore
 import MetalUI
 
 /// Alloy's additions to MetalUI's default menu bar, generated from the command registry: "Settings…" in the
-/// application menu (MetalUI's `.appSettings` group, which sits in its own section after About), a Go menu, a Git menu and a View
+/// application menu (MetalUI's `.appSettings` group, which sits in its own section after About), a File, Find and Window group, a Go menu, a Git menu and a View
 /// menu. Items, titles, accessibility ids and shortcuts come from the registered `CommandDescriptor`s and the keymap
 /// (so user overrides apply); see docs/command-registry.md. The content closures run when the bar is shown or a key
 /// reaches the command stage, so enabled state and shortcuts are live.
@@ -27,8 +27,23 @@ public func alloyCommands(center: CommandCenter, updates: UpdateModel? = nil, ch
     CommandGroup(replacing: .appSettings) {
         for command in registry.commands(in: .appSettings) { registryMenuItem(command, registry: registry) }
     }
+    // File: New Session, New Terminal Tab, Open…, Quick Open. MetalUI's `.newItem` group is empty by default.
+    CommandGroup(after: .newItem) {
+        for command in registry.commands(in: .file) { registryMenuItem(command, registry: registry) }
+    }
+    // Close Tab, Close Window, Save, Save As… and Save All replace MetalUI's standard Close.
+    CommandGroup(replacing: .saveItem) {
+        for command in registry.commands(in: .fileSave) { registryMenuItem(command, registry: registry) }
+    }
     CommandGroup(after: .pasteboard) {
         for command in registry.commands(in: .edit) { registryMenuItem(command, registry: registry) }
+        Menu("Find") {
+            for command in registry.commands(in: .find) { registryMenuItem(command, registry: registry) }
+        }
+    }
+    // Window: after MetalUI's Minimize/Zoom group come the tab commands.
+    CommandGroup(after: .windowArrangement) {
+        for command in registry.commands(in: .window) { registryMenuItem(command, registry: registry) }
     }
     CommandMenu("Go") {
         for command in registry.commands(in: .go) { registryMenuItem(command, registry: registry) }

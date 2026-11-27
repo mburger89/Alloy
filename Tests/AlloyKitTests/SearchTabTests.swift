@@ -73,7 +73,11 @@ import Testing
         settle(window)
         #expect(rig.workspace.codeLayout.sidebarTab == .search)
         _ = try window.element(identifier: "search-replace")
-        let items = window.testApp.menuBar.flatMap(\.items)
+        let edit = try #require(window.testApp.menuBar.first { $0.title == "Edit" })
+        let items = edit.items.flatMap { item -> [PlatformMenuItem] in
+            if case .submenu(let sub) = item.kind { return sub }
+            return [item]
+        } + window.testApp.menuBar.filter { $0.title != "Edit" }.flatMap(\.items)
         let find = try #require(items.first { $0.title == "Find in Files" })
         #expect(find.shortcut?.key == "f" && find.shortcut?.modifiers == [.command, .shift])
         let replace = try #require(items.first { $0.title == "Replace in Files" })

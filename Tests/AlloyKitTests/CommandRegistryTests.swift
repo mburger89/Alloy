@@ -148,6 +148,8 @@ extension CommandRegistryTests {
         let window = try TestWindow(size: Size(width: Pixels(1200), height: Pixels(800))) {
             rootView(workspace: h.workspace, center: testCenter(for: h.workspace))
         }
+        // ⌘P is a File menu item now, so the menu bar must be installed for the key to reach it.
+        window.installAlloyMenu(h.workspace)
         window.tick(); window.tick()
         #expect(!center.quickOpen.isShowing)
         window.typeKey("p", modifierFlags: .command)

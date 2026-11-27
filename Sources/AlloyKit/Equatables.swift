@@ -12,7 +12,7 @@ extension AlloyScreen: Equatable {
 
 extension SidebarView: Equatable {
     nonisolated static func == (a: Self, b: Self) -> Bool {
-        MainActor.assumeIsolated { a.workspace === b.workspace && a.keymap === b.keymap && a.updates === b.updates }
+        MainActor.assumeIsolated { a.workspace === b.workspace && a.updates === b.updates }
     }
 }
 

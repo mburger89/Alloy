@@ -135,3 +135,30 @@ extension Workspace {
         }
     }
 }
+
+extension Workspace {
+    /// File > Save As…: writes the buffer of `path` to `target`.
+    /// - Inside the project: the original is saved first (Alloy autosaves, so typing is never discarded), then the copy is
+    ///   written, then the tab is replaced in place (same pane, same index, now active) by the new path and the original
+    ///   document is closed, without a second tab. A `target` that is the file's own path is a plain deliberate save.
+    /// - Outside the project: the copy is written and the tab stays as it is.
+    /// A failed save or write throws and changes nothing further.
+    public func saveAs(_ path: String, to target: URL, in pane: PaneID? = nil) async throws {
+        let pane = pane ?? defaultPane
+        guard let doc = documents[path] else { return }
+        let root = projectRoot.resolvingSymlinksInPath().standardizedFileURL.path
+        let resolved = target.resolvingSymlinksInPath().standardizedFileURL.path
+        let relative = resolved.hasPrefix(root + "/") ? String(resolved.dropFirst(root.count + 1)) : nil
+        if relative == path { try await save(path, format: true); return }
+        if relative != nil { try await save(path) }
+        try doc.buffer.snapshot().text.write(to: target, atomically: true, encoding: .utf8)
+        guard let relative else { return }
+        let index = tabs(in: pane).firstIndex(of: path)
+        await open(relative, in: pane)
+        // `open` appends the new tab; put it where the original was, then close the original.
+        if let index, let from = tabs(in: pane).firstIndex(of: relative), from != index,
+           tabs(in: pane).indices.contains(index) { moveTab(from: from, to: index, in: pane) }
+        await close(path, in: pane)
+        setActive(relative, in: pane)
+    }
+}

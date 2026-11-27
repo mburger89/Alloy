@@ -88,10 +88,67 @@ public enum BuiltinCommands {
         addFold("unfold", "Unfold", chord([.alt, .cmd], .named(.right)), .unfold)
         addFold("foldAll", "Fold All", chord([.alt, .shift, .cmd], .named(.left)), .foldAll)
         addFold("unfoldAll", "Unfold All", chord([.alt, .shift, .cmd], .named(.right)), .unfoldAll)
-        // ⌘S: MetalUI has no File menu placement for it, and a hidden key button would add elements to every frame, so
-        // the code panel's key handler delivers the chord and this entry is the palette's.
-        add("file.save", "Save", .file, chord(.cmd, ch("s")), .none, recents: true,
-            enabled: { current()?.activeTab != nil }) { current()?.requestSaveActive() }
+        // File menu, in menu order.
+        // ⌘N is delivered by the File menu item (the sidebar's + button has no shortcut of its own).
+        add("session.new", "New Session", .session, chord(.cmd, ch("n")), .menu, menu: .file, recents: true,
+            menuID: "file-new-session", enabled: hasWorkspace) { current()?.startNewSession() }
+        // ⌘T does nothing outside a focused terminal, so the key never shadows anything.
+        add("tab.new", "New Terminal Tab", .tab, chord(.primary, ch("t")), .menu, menu: .file,
+            menuID: "file-new-terminal-tab", enabled: { current()?.terminalHasFocus ?? false }) {
+            current()?.terminalFocusActions?.newTab()
+        }
+        // Every picked file opens in a tab; one outside the project opens as `alloy <file>` would (see `CommandCenter`).
+        add("file.open", "Open\u{2026}", .file, chord(.primary, ch("o")), .menu, menu: .file, menuID: "file-open",
+            enabled: hasWorkspace) { [weak center] in
+            guard let center else { return }
+            Task { @MainActor in
+                let urls = await center.chooseFiles(center.workspace?.projectRoot)
+                guard let workspace = center.workspace else { return }
+                let root = workspace.projectRoot.resolvingSymlinksInPath().standardizedFileURL.path
+                for url in urls {
+                    let path = url.resolvingSymlinksInPath().standardizedFileURL.path
+                    if path.hasPrefix(root + "/") { await workspace.open(String(path.dropFirst(root.count + 1))) } else { center.openOutsideProject(url) }
+                }
+            }
+        }
+        add("go.quickOpen", "Quick Open", .go, chord(.primary, ch("p")), .menu, menu: .file, recents: true,
+            menuID: "file-quick-open", enabled: hasWorkspace) {
+            guard let workspace = current() else { return }
+            palette.hide()
+            if quickOpen.isShowing { quickOpen.hide() } else { quickOpen.show(workspace: workspace) }
+        }
+        // Close Tab ... Save All: MetalUI's `.saveItem` group, which replaces its standard Close. Esc closes quick-open first; a
+        // tab never closes under it. With no project (the chooser) ⌘W closes the window, as the standard Close did.
+        add("tab.close", "Close Tab", .tab, chord(.primary, ch("w")), .menu, menu: .fileSave, menuID: "file-close-tab",
+            enabled: { [weak center] in
+                !hasWorkspace() || !(center?.isProjectWindowKey() ?? true) || (!quickOpen.isShowing && !palette.isShowing)
+            }) { [weak center] in
+            // No project, or another window (Settings…) is key: ⌘W closes that window, never an editor tab behind it.
+            guard current() != nil, center?.isProjectWindowKey() ?? true else { center?.closeKeyWindow(); return }
+            if let t = current()?.terminalFocusActions, t.isFocused() { t.closeTab(); return }
+            current()?.closeActiveTab()
+        }
+        add("window.close", "Close Window", .app, chord([.primary, .shift], ch("w")), .menu, menu: .fileSave,
+            menuID: "window-close", enabled: { true }) { [weak center] in center?.closeKeyWindow() }
+        // ⌘S is delivered by this item alone (the code panel has no key handler for it).
+        add("file.save", "Save", .file, chord(.cmd, ch("s")), .menu, menu: .fileSave, recents: true, menuID: "file-save",
+            enabled: { current().flatMap { $0.activeTab(in: $0.defaultPane) } != nil }) { current()?.requestSaveActive() }
+        add("file.saveAs", "Save As\u{2026}", .file, chord([.cmd, .shift], ch("s")), .menu, menu: .fileSave, menuID: "file-save-as",
+            enabled: { current().flatMap { $0.activeTab(in: $0.defaultPane).flatMap($0.document) } != nil }) { [weak center] in
+            guard let center, let workspace = current(), case let pane = workspace.defaultPane,
+                  let path = workspace.activeTab(in: pane), workspace.document(path) != nil else { return }
+            Task { @MainActor in
+                let name = (path as NSString).lastPathComponent
+                let folder = workspace.projectRoot.appendingPathComponent((path as NSString).deletingLastPathComponent)
+                guard let target = await center.chooseSaveURL(name, folder) else { return }
+                try? await workspace.saveAs(path, to: target, in: pane)
+            }
+        }
+        add("file.saveAll", "Save All", .file, chord([.alt, .cmd], ch("s")), .menu, menu: .fileSave, menuID: "file-save-all",
+            enabled: hasWorkspace) { [weak center] in
+            guard let workspace = center?.workspace else { return }
+            Task { @MainActor in await workspace.saveAll() }
+        }
 
         add("search.nextResult", "Next Result", .go, chord([], .named(.f4)), .menu, menu: .go,
             menuID: "go-next-result", enabled: hasWorkspace) { current()?.search.step(1) }
@@ -142,9 +199,25 @@ public enum BuiltinCommands {
             menuID: "view-reveal-in-tree", enabled: inCode) { current()?.revealInTree() }
         add("view.toggleChatColumn", "Toggle Chat Column", .view, chord([.cmd, .shift], ch("c")), .menu, menu: .view, recents: true,
             menuID: "view-toggle-chat-column", enabled: inCode) { current()?.codeLayout.chatCollapsed.toggle() }
-        add("search.findInFiles", "Find in Files", .view, chord([.cmd, .shift], ch("f")), .menu, menu: .view, recents: true,
+        // Edit > Find. ⌘F with a terminal focused is the terminal's find (this item is its only owner on a Mac); ⌘G and
+        // ⇧⌘G reach the items only when the code view declined them (it claims them while it has matches).
+        add("editor.find", "Find\u{2026}", .edit, chord(.primary, ch("f")), .menu, menu: .find, menuID: "edit-find",
+            enabled: { (current()?.terminalHasFocus ?? false) || (current()?.intelHooks.isEnabled(.find) ?? false) }) {
+            if let t = current()?.terminalFocusActions, t.isFocused() { t.openFind(); return }
+            current()?.intelHooks.run[.find]?()
+        }
+        add("editor.findNext", "Find Next", .edit, chord(.primary, ch("g")), .menu, menu: .find, menuID: "edit-find-next",
+            enabled: { !(current()?.terminalHasFocus ?? false) && (current()?.intelHooks.isEnabled(.findNext) ?? false) }) {
+            current()?.intelHooks.run[.findNext]?()
+        }
+        add("editor.findPrevious", "Find Previous", .edit, chord([.primary, .shift], ch("g")), .menu, menu: .find,
+            menuID: "edit-find-previous",
+            enabled: { !(current()?.terminalHasFocus ?? false) && (current()?.intelHooks.isEnabled(.findPrevious) ?? false) }) {
+            current()?.intelHooks.run[.findPrevious]?()
+        }
+        add("search.findInFiles", "Find in Files", .view, chord([.cmd, .shift], ch("f")), .menu, menu: .find, recents: true,
             menuID: "view-find-in-files", enabled: hasWorkspace) { current()?.showSearch(replace: false) }
-        add("search.replaceInFiles", "Replace in Files", .view, chord([.cmd, .shift], ch("h")), .menu, menu: .view, recents: true,
+        add("search.replaceInFiles", "Replace in Files", .view, chord([.cmd, .shift], ch("h")), .menu, menu: .find, recents: true,
             menuID: "view-replace-in-files", enabled: hasWorkspace) { current()?.showSearch(replace: true) }
 
         // The terminal panel lives in Code mode only; Chat mode has none, so both commands are disabled there.
@@ -160,32 +233,20 @@ public enum BuiltinCommands {
             quickOpen.hide()
             palette.toggle(registry: registry, workspace: workspace)
         }
-        add("go.quickOpen", "Quick Open", .go, chord(.primary, ch("p")), .global, recents: true,
-            keyID: "global-key-quick-open", enabled: hasWorkspace) {
-            guard let workspace = current() else { return }
-            palette.hide()
-            if quickOpen.isShowing { quickOpen.hide() } else { quickOpen.show(workspace: workspace) }
-        }
-        // Esc closes quick-open first; a tab never closes under it.
-        add("tab.close", "Close Tab", .tab, chord(.primary, ch("w")), .global,
-            keyID: "global-key-close-tab", enabled: { hasWorkspace() && !quickOpen.isShowing && !palette.isShowing }) {
-            if let t = current()?.terminalFocusActions, t.isFocused() { t.closeTab(); return }
-            current()?.closeActiveTab()
-        }
-        add("tab.next", "Next Tab", .tab, chord(.ctrl, .named(.tab)), .global,
-            keyID: "global-key-next-tab", enabled: hasWorkspace) {
+        // Window menu: tab cycling and selection. Each acts on the focused terminal's tabs while a terminal has focus.
+        add("tab.next", "Next Tab", .tab, chord(.ctrl, .named(.tab)), .menu, menu: .window,
+            menuID: "window-next-tab", enabled: hasWorkspace) {
             if let t = current()?.terminalFocusActions, t.isFocused() { t.cycleTab(1); return }
             current()?.cycleTab(1)
         }
-        add("tab.previous", "Previous Tab", .tab, chord([.ctrl, .shift], .named(.tab)), .global,
-            keyID: "global-key-previous-tab", enabled: hasWorkspace) {
+        add("tab.previous", "Previous Tab", .tab, chord([.ctrl, .shift], .named(.tab)), .menu, menu: .window,
+            menuID: "window-previous-tab", enabled: hasWorkspace) {
             if let t = current()?.terminalFocusActions, t.isFocused() { t.cycleTab(-1); return }
             current()?.cycleTab(-1)
         }
-        // ⌘T does nothing outside a focused terminal, so the key never shadows anything.
-        add("tab.new", "New Terminal Tab", .tab, chord(.primary, ch("t")), .global,
-            keyID: "global-key-new-terminal-tab", enabled: { current()?.terminalHasFocus ?? false }) {
-            current()?.terminalFocusActions?.newTab()
+        for n in 1...9 {
+            add("tab.select\(n)", "Go to Tab \(n)", .tab, chord(.primary, ch(Character(String(n)))), .menu, menu: .window,
+                menuID: "window-tab-\(n)", enabled: hasWorkspace) { current()?.selectTab(number: n) }
         }
         // Terminal commands: each acts only while a terminal pane is focused, so its chord never shadows the editor's
         // copy, find or select-all. Elsewhere Ctrl belongs to the program, so they take primary+Shift.
@@ -195,23 +256,24 @@ public enum BuiltinCommands {
         let terminalMods: ChordModifiers = [.primary, .shift]
         #endif
         let terminalFocused: @MainActor () -> Bool = { current()?.terminalHasFocus ?? false }
-        func addTerminal(_ id: String, _ title: String, _ key: Character, keyID: String,
+        func addTerminal(_ id: String, _ title: String, _ key: Character, keyID: String, defaultChord: Bool = true,
                          _ run: @escaping @MainActor (TerminalFocusActions) -> Void) {
-            add(id, title, .terminal, chord(terminalMods, ch(key)), .global, keyID: keyID, enabled: terminalFocused) {
+            add(id, title, .terminal, defaultChord ? chord(terminalMods, ch(key)) : nil, .global, keyID: keyID, enabled: terminalFocused) {
                 if let actions = current()?.terminalFocusActions, actions.isFocused() { run(actions) }
             }
         }
         addTerminal("terminal.copy", "Copy", "c", keyID: "global-key-terminal-copy") { $0.copy() }
         addTerminal("terminal.selectAll", "Select All", "a", keyID: "global-key-terminal-select-all") { $0.selectAll() }
-        addTerminal("terminal.find", "Find in Terminal", "f", keyID: "global-key-terminal-find") { $0.openFind() }
+        // On a Mac ⌘F belongs to Edit > Find…, which opens this find while a terminal has focus; elsewhere the terminal's
+        // chord (primary+Shift+F) differs from the editor's, so it keeps its own key.
+        #if os(macOS)
+        let terminalFindChord = false
+        #else
+        let terminalFindChord = true
+        #endif
+        addTerminal("terminal.find", "Find in Terminal", "f", keyID: "global-key-terminal-find",
+                    defaultChord: terminalFindChord) { $0.openFind() }
         addTerminal("terminal.clearScrollback", "Clear Terminal Scrollback", "k",
                     keyID: "global-key-terminal-clear") { $0.clearScrollback() }
-        for n in 1...9 {
-            add("tab.select\(n)", "Go to Tab \(n)", .tab, chord(.primary, ch(Character(String(n)))), .global,
-                keyID: "global-key-tab-\(n)", enabled: hasWorkspace) { current()?.selectTab(number: n) }
-        }
-        // Chat mode's sidebar button owns ⌘N; Code mode has no sidebar sessions list, so the key lives in GlobalKeys.
-        add("session.new", "New Session", .session, chord(.cmd, ch("n")), .globalInCode, recents: true,
-            keyID: "global-key-new-session", enabled: hasWorkspace) { current()?.startNewSession() }
     }
 }

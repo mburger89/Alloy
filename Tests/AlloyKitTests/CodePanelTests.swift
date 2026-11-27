@@ -463,6 +463,8 @@ func emitEdit(_ rig: Rig, old: String, new: String, toolUseID: String) async thr
         window.tick()
         #expect((try? window.element(identifier: "find-field")) == nil)
         try window.click(window.element(identifier: "code-view"))
+        // The focus change reaches the workspace on the next frame; Edit > Find… reads it.
+        window.tick()
         window.typeKey("f", modifierFlags: .command)
         try await window.runUntil { (try? window.element(identifier: "find-field")) != nil }
     }

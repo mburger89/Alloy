@@ -206,7 +206,7 @@ struct IslandRow: Component, Equatable {
         let _ = BodyProbe.hit("IslandRow")
         let gutter = Pixels(Float(style.gutter))
         HSplitView {
-            SidebarView(workspace: workspace, keymap: keymap, updates: updates).equatable()
+            SidebarView(workspace: workspace, updates: updates).equatable()
                 .island(style: style, identifier: "island-sidebar")
                 .frame(minWidth: Pixels(200), idealWidth: Pixels(250), maxWidth: Pixels(380))
             ChatIslandBody(workspace: workspace, store: store, themes: themes).equatable()
@@ -227,9 +227,9 @@ struct IslandRow: Component, Equatable {
 /// Each button carries an identifier (`global-key-<name>`). The group is `accessibilityHidden`, and MetalUI leaves
 /// hidden elements out of the accessibility tree, so the ids are not observable there (tests drive the shortcuts by key).
 ///
-/// ⌘P, ⌘W, ⌃Tab, ⌃⇧Tab and ⌘1-9 as button shortcuts. A shortcut runs only after the focused view declined the key,
-/// so a text field mid-IME-composition (which owns every key then) never triggers one, and the panel's own ⌘F (an
-/// `onKeyPress`) and the code view's ⌘G still win. ⌘F and ⌘G are deliberately not registered here.
+/// The terminal's commands (copy, select all, find, clear scrollback) as button shortcuts. A shortcut runs only
+/// after the focused view declined the key, so a text field mid-IME-composition (which owns every key then) never
+/// triggers one. Every other chord is delivered by its menu item, so no hidden key remains for it.
 struct GlobalKeys: Component, Equatable {
     let workspace: Workspace
     let registry: CommandRegistry

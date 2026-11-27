@@ -5,15 +5,11 @@ import MetalUI
 /// Sessions list, New session button, changed files and any workspace errors.
 struct SidebarView: Component {
     let workspace: Workspace
-    /// The resolved keys: the New session button's ⌘N follows the user's binding for `session.new`.
-    let keymap: ResolvedKeymap
     /// Only handed to the banner child: the sidebar itself never reads the update state.
     var updates: UpdateModel?
 
     var content: some ElementGroup {
         let _ = BodyProbe.hit("SidebarView")
-        let _ = keymap.revision
-        let newSessionShortcut = keymap.chord(for: "session.new")?.shortcut
         // Once per body, for every row below.
         let warnings = workspace.coordinationWarnings
         VStack(alignment: .leading, spacing: 0) {
@@ -29,7 +25,6 @@ struct SidebarView: Component {
                 .buttonStyle(.plain)
                 .help("New session")
                 .accessibilityLabel("New session")
-                .keyboardShortcut(newSessionShortcut)
                 .accessibilityIdentifier("new-session")
                 .padding(inset(6, 0))
                 NewSessionMenu(workspace: workspace)
