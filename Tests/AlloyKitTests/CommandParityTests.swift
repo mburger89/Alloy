@@ -126,11 +126,11 @@ import Testing
         try await window.runUntil { (try? window.element(identifier: "quick-open-field")) == nil }
         window.typeKey("w", modifierFlags: .command)
         try await window.runUntil { rig.workspace.tabs == ["a.txt"] }
-        // ⌘N is the sidebar button's in Chat mode and a global key in Code mode; either way the registry command runs.
+        // ⇧⌘N starts a session from the File menu item; ⌘N is New File.
         rig.workspace.setMode(.code)
         window.tick()
         let before = rig.workspace.sessions.count
-        window.typeKey("n", modifierFlags: .command)
+        window.typeKey("n", modifierFlags: [.command, .shift])
         try await window.runUntil { rig.workspace.sessions.count > before }
         #expect(rig.workspace.recentCommands.contains("session.new"))
         #expect(registry.command(id: "session.new") != nil)

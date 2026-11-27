@@ -339,7 +339,7 @@ final class OpenDocumentView {
 
     /// Registers with the git coordinator (once) and tells its marks the presentation: they show in a plain view only.
     private func attachGit(workspace: Workspace) {
-        if gitMarks == nil, let coordinator = workspace.gitServices as? GitCoordinator { coordinator.attach(self) }
+        if gitMarks == nil, !document.isUntitled, let coordinator = workspace.gitServices as? GitCoordinator { coordinator.attach(self) }
         gitMarks?.presentationSeen(workspace.presentation(of: document.path, in: pane))
     }
 

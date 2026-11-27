@@ -86,7 +86,7 @@ import Testing
     @Test func noSessionShowsHint() async throws {
         let rig = Rig()
         let window = try alloyWindow(rig.workspace)
-        #expect((try? window.element(label: "Start a session with ⌘N")) != nil)
+        #expect((try? window.element(label: "Start a session with ⇧⌘N")) != nil)
     }
 
     @Test func toolBlockShowsKindAndSummary() async throws {

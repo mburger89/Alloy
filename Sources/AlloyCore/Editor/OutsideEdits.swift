@@ -286,7 +286,8 @@ extension Workspace {
 
     /// Open documents, tabs and ledger files at or below the directory `rel` ("" is the whole project).
     private func knownPaths(under rel: String) -> Set<String> {
-        let all = Set(documents.keys).union(heldPaths()).union(ledger.files.keys)
+        var all = Set(documents.keys).union(heldPaths()).union(ledger.files.keys)
+        all.subtract(untitledNumbers.keys)   // an Untitled tab has no file to watch
         if rel.isEmpty { return all }
         return all.filter { $0 == rel || $0.hasPrefix(rel + "/") }
     }

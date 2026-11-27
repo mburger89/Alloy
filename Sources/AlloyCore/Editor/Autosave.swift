@@ -60,7 +60,7 @@ final class Autosave {
             // Fires synchronously inside the mutation, which is always on the main actor.
             MainActor.assumeIsolated {
                 guard let self, let doc, self.watched[doc.path] == token, isCurrent(doc) else { return }
-                self.schedule(doc.path)
+                if !doc.isUntitled { self.schedule(doc.path) }   // an Untitled buffer is never autosaved; only its dirty dot follows typing
                 // Re-arm once the mutation has finished (this callback runs before the new value is stored).
                 Task { @MainActor [weak self, weak doc] in
                     guard let self, let doc, self.watched[doc.path] == token, isCurrent(doc) else { return }

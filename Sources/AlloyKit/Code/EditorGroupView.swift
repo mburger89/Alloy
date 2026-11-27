@@ -185,7 +185,7 @@ struct GroupTabStrip: Component {
         let workspace = workspace, groupID = groupID
         let pane = PaneID.group(groupID)
         let tabs = workspace.tabs(in: pane)
-        let titles = FileTabStrip.titles(tabs)
+        let titles = FileTabStrip.titles(tabs, in: workspace)
         let items = zip(tabs, titles).map { path, title in
             TabStripItem(id: path, title: title, icon: Image(systemName: "doc.text"),
                          isDirty: workspace.document(path)?.tabDirty == true,

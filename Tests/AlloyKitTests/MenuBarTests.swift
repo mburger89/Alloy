@@ -32,7 +32,7 @@ import Testing
         let wanted = ["New Session", "New Terminal Tab", "Quick Open"]
         let found = items.filter { wanted.contains($0.title) }
         #expect(found.map(\.title) == wanted, "\(titles(items))")
-        #expect(found.map(\.shortcut) == [key("n", [.command]), key("t", [.command]), key("p", [.command])])
+        #expect(found.map(\.shortcut) == [key("n", [.command, .shift]), key("t", [.command]), key("p", [.command])])
     }
 
     @Test func windowMenuListsTabCommandsWithChords() async throws {
@@ -78,12 +78,12 @@ import Testing
                 "\(hidden)")
     }
 
-    @Test func cmdNInChatModeMakesOneSession() async throws {
+    @Test func shiftCmdNInChatModeMakesOneSession() async throws {
         let rig = Rig()
         #expect(rig.workspace.mode == .chat)
         let window = try alloyWindow(rig.workspace)
         let before = rig.workspace.sessions.count
-        window.typeKey("n", modifierFlags: .command)
+        window.typeKey("n", modifierFlags: [.command, .shift])
         try await window.runUntil { rig.workspace.sessions.count > before }
         for _ in 0..<10 { window.tick(); await Task.yield() }
         #expect(rig.workspace.sessions.count == before + 1)

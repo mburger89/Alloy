@@ -213,7 +213,7 @@ final class DocumentServices {
     /// Tells the language server about this document when one handles its file. Read-only documents (truncated or
     /// not valid UTF-8) never reach a server: their text is not the file's.
     private func reportOpenToLSP(_ snapshot: CodeSnapshot) {
-        guard let lsp, document.state == .editable, lsp.wants(document.path) else { return }
+        guard let lsp, document.state == .editable, !document.isUntitled, lsp.wants(document.path) else { return }
         lspWanted = true
         guard snapshot.utf8Count <= DocumentSync.maxFileBytes else { return }
         lspOpen = true
@@ -254,7 +254,7 @@ final class DocumentServices {
     /// After the server settings changed: reports the document if a server now handles it, and forgets it if none does.
     func lspSettingsChanged() {
         guard let lsp, !closed else { return }
-        if lsp.wants(document.path) {
+        if !document.isUntitled, lsp.wants(document.path) {
             if !lspOpen { drainEdits(); lspWanted = false; reportOpenToLSP(document.buffer.snapshot()) }
         } else {
             lspOpen = false

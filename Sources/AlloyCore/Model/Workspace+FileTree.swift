@@ -25,7 +25,8 @@ extension Workspace {
     /// View > Reveal in Tree: opens every folder above the focused group's active file, selects it and asks the tree to
     /// scroll to it, all in one go. Does nothing outside Code mode, without an active file, or for a file the tree lacks.
     public func revealInTree() {
-        guard mode == .code, let path = codeLayout.focusedGroup.activeTab else { return }
+        guard mode == .code, let path = codeLayout.focusedGroup.activeTab,
+              untitledNumbers[path] == nil else { return }
         let before = fileTree.expandedPaths
         guard fileTree.reveal(path) != nil else { return }
         fileTreeSelection = path

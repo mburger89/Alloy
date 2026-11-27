@@ -89,8 +89,13 @@ public enum BuiltinCommands {
         addFold("foldAll", "Fold All", chord([.alt, .shift, .cmd], .named(.left)), .foldAll)
         addFold("unfoldAll", "Unfold All", chord([.alt, .shift, .cmd], .named(.right)), .unfoldAll)
         // File menu, in menu order.
-        // ⌘N is delivered by the File menu item (the sidebar's + button has no shortcut of its own).
-        add("session.new", "New Session", .session, chord(.cmd, ch("n")), .menu, menu: .file, recents: true,
+        // ⌘N is delivered by the File menu item: an empty Untitled tab in the focused code group.
+        add("file.new", "New File", .file, chord(.cmd, ch("n")), .menu, menu: .file, recents: true,
+            menuID: "file-new", enabled: hasWorkspace) { [weak center] in
+            if let workspace = current() { center?.newFile(in: workspace) }
+        }
+        // ⇧⌘N (the sidebar's + button has no shortcut of its own).
+        add("session.new", "New Session", .session, chord([.cmd, .shift], ch("n")), .menu, menu: .file, recents: true,
             menuID: "file-new-session", enabled: hasWorkspace) { current()?.startNewSession() }
         // ⌘T does nothing outside a focused terminal, so the key never shadows anything.
         add("tab.new", "New Terminal Tab", .tab, chord(.primary, ch("t")), .menu, menu: .file,
@@ -132,11 +137,20 @@ public enum BuiltinCommands {
             menuID: "window-close", enabled: { true }) { [weak center] in center?.closeKeyWindow() }
         // ⌘S is delivered by this item alone (the code panel has no key handler for it).
         add("file.save", "Save", .file, chord(.cmd, ch("s")), .menu, menu: .fileSave, recents: true, menuID: "file-save",
-            enabled: { current().flatMap { $0.activeTab(in: $0.defaultPane) } != nil }) { current()?.requestSaveActive() }
+            enabled: { current().flatMap { $0.activeTab(in: $0.defaultPane) } != nil }) { [weak center] in
+            guard let workspace = current() else { return }
+            // An Untitled tab has no file yet: the first save asks where.
+            if let key = workspace.activeTab(in: workspace.defaultPane), workspace.isUntitled(key), let center {
+                Task { @MainActor in await center.saveUntitledTab(key, in: workspace) }
+                return
+            }
+            workspace.requestSaveActive()
+        }
         add("file.saveAs", "Save As\u{2026}", .file, chord([.cmd, .shift], ch("s")), .menu, menu: .fileSave, menuID: "file-save-as",
             enabled: { current().flatMap { $0.activeTab(in: $0.defaultPane).flatMap($0.document) } != nil }) { [weak center] in
             guard let center, let workspace = current(), case let pane = workspace.defaultPane,
                   let path = workspace.activeTab(in: pane), workspace.document(path) != nil else { return }
+            if workspace.isUntitled(path) { Task { @MainActor in await center.saveUntitledTab(path, in: workspace) }; return }
             Task { @MainActor in
                 let name = (path as NSString).lastPathComponent
                 let folder = workspace.projectRoot.appendingPathComponent((path as NSString).deletingLastPathComponent)

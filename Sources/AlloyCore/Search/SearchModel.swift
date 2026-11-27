@@ -243,7 +243,7 @@ public final class SearchModel {
         guard ticket == generation else { return }
         indexTruncated = truncated
         var overlays: [String: CodeSnapshot] = [:]
-        for doc in workspace.documents.values { overlays[doc.path] = doc.buffer.snapshot() }
+        for doc in workspace.documents.values where !doc.isUntitled { overlays[doc.path] = doc.buffer.snapshot() }
         let engine = SearchEngine(root: workspace.projectRoot, limits: limits)
         await engine.setScanGate(scanGate)
         let stream = await engine.run(query, paths: paths, indexTruncated: truncated, overlays: overlays,

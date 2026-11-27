@@ -195,7 +195,7 @@ struct FileTabStrip: Component {
         let _ = BodyProbe.hit("FileTabStrip")
         let workspace = workspace
         let tabs = workspace.tabs
-        let titles = Self.titles(tabs)
+        let titles = Self.titles(tabs, in: workspace)
         let items = zip(tabs, titles).map { path, title in
             TabStripItem(id: path, title: title, icon: Image(systemName: "doc.text"),
                          isDirty: workspace.document(path)?.tabDirty == true,
@@ -218,6 +218,12 @@ struct FileTabStrip: Component {
     }
 
     /// The file name, or the whole path when another open tab has the same name.
+    static func titles(_ paths: [String], in workspace: Workspace) -> [String] {
+        let real = titles(paths.filter { !workspace.isUntitled($0) })
+        var named = real.makeIterator()
+        return paths.map { workspace.isUntitled($0) ? workspace.title(of: $0) : (named.next() ?? $0) }
+    }
+
     static func titles(_ paths: [String]) -> [String] {
         let names = paths.map { ($0 as NSString).lastPathComponent }
         return zip(paths, names).map { path, name in names.filter { $0 == name }.count > 1 ? path : name }
@@ -275,7 +281,7 @@ struct FilePanelHeader: Component {
         HStack(spacing: Pixels(8)) {
             // The read-only notice gives up space first (priority -1), then the path truncates in the middle (0); the
             // buttons keep theirs (1), so the file name outlives the notice.
-            Text(verbatim: path).font(size: 12).lineLimit(1).truncationMode(.middle)
+            Text(verbatim: workspace.isUntitled(path) ? workspace.title(of: path) : path).font(size: 12).lineLimit(1).truncationMode(.middle)
                 .accessibilityIdentifier(ids.path)
             if document?.tabDirty == true {
                 Circle().fill(Color.mutedInk).frame(width: Pixels(7), height: Pixels(7))

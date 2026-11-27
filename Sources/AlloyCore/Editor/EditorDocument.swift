@@ -34,6 +34,9 @@ public final class EditorDocument: Identifiable {
     /// The disk text last merged into the buffer since the last save.
     @ObservationIgnored var lastMergedBytes: [UInt8]?
 
+    /// True for an Untitled document (File > New File): it has no file, so autosave, git, LSP and plugins skip it.
+    public internal(set) var isUntitled = false
+
     public var isDirty: Bool { buffer.version != savedVersion }
 
     /// `isDirty` as a stored value that changes only when the document goes clean to dirty or back, so the tab

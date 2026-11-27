@@ -72,9 +72,7 @@ extension Workspace {
     }
 
     /// Closes the tab for `path` in a tracked task (`settle()` waits for it); the strip's close button and ⌘W both use it.
-    public func requestClose(_ path: String) {
-        track { [weak self] in await self?.close(path) }
-    }
+    public func requestClose(_ path: String) { requestClose(path, in: defaultPane) }
 
     /// The author of the newest edit to `path` that a session made and that was not reverted; nil when none.
     /// Cached per path by the ledger's `version`, so the tab strip does not rescan the edits on every render.

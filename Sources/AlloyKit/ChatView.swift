@@ -16,7 +16,7 @@ struct ChatView: Component {
                 .equatable()
                 .id(session.id.uuidString)
         } else {
-            Text("Start a session with ⌘N").foregroundColor(.mutedInk)
+            Text("Start a session with ⇧⌘N").foregroundColor(.mutedInk)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }

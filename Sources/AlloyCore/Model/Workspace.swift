@@ -207,6 +207,14 @@ public final class Workspace {
     /// Why a tab has no document ("Binary file", unreadable, outside the project).
     public internal(set) var tabMessages: [String: String] = [:]
     var documents: [String: EditorDocument] = [:]
+    /// Untitled documents (File > New File) by their reserved key, with the number their title shows. Membership is the
+    /// only test for "is Untitled"; the key's text is never parsed. See Workspace+Untitled.swift.
+    public internal(set) var untitledNumbers: [String: Int] = [:]
+    /// The "Save changes?" question for an Untitled tab with text, while it is showing (the screen presents it).
+    public internal(set) var untitledPrompt: UntitledPrompt?
+    /// Runs the first-save flow (the save dialog, then `saveUntitled`) for an Untitled key; true once it is saved. Set by
+    /// the command center; nil means Save… cannot run, so it counts as cancelled.
+    @ObservationIgnored public var saveUntitledHandler: (@MainActor (String) async -> Bool)?
     /// How many times a save has written a file (for tests).
     @ObservationIgnored public private(set) var writeCount = 0
     /// Saves in flight, by path; a second save of the same file waits for the first.
@@ -374,7 +382,7 @@ public final class Workspace {
     /// False once a newer Alloy's `ui-state.json` was read: that file is never overwritten by this run.
     @ObservationIgnored var uiStateWritable = true
     @ObservationIgnored private var autosaveStore: Autosave?
-    private var autosave: Autosave {
+    var autosave: Autosave {
         if let a = autosaveStore { return a }
         let a = Autosave(clock: autosaveClock) { [weak self] path in try? await self?.save(path) }
         autosaveStore = a
@@ -556,7 +564,7 @@ public final class Workspace {
     /// Sessions whose current process run already reported `ended`.
     @ObservationIgnored var sessionRunEnded: Set<UUID> = []
     /// The project-relative paths of the open documents, sorted.
-    public var openDocumentPaths: [String] { documents.keys.sorted() }
+    public var openDocumentPaths: [String] { documents.keys.filter { untitledNumbers[$0] == nil }.sorted() }
     /// Called when a settings update changed the language-server overrides.
     @ObservationIgnored public var onLanguageServersChanged: (@MainActor ([String: ServerConfigOverride]) -> Void)?
     /// Run concurrently at the end of `stopAll()`: whatever else must stop before the app quits (the language
@@ -1885,6 +1893,8 @@ public final class Workspace {
         guard tabs(in: pane).contains(path), closing.insert(key).inserted else { return }
         reopened.remove(key)
         defer { closing.remove(key); reopened.remove(key) }
+        // An Untitled tab has no file to save to: closing it drops its text (the UI asks first, see UntitledPrompt).
+        if untitledNumbers[path] != nil { dropUntitled(path, from: pane); return }
         if let doc = documents[path], doc.isDirty {
             do { try await save(path, format: true) } catch { return }
             if doc.isDirty || reopened.contains(key) { return }
@@ -1929,7 +1939,7 @@ public final class Workspace {
 
     /// Saves every dirty open document.
     public func saveAll() async {
-        for path in Array(documents.keys) { try? await save(path) }
+        for path in Array(documents.keys) where untitledNumbers[path] == nil { try? await save(path) }
     }
 
     /// Writes the buffer to disk and records the change as the user's. The write is atomic and keeps the file's
@@ -1941,6 +1951,8 @@ public final class Workspace {
     /// `formatBeforeSave` hook then runs once, after the clean/editable check and before the write, and the buffer it
     /// leaves is what gets written. Autosave, tab switches and `saveAll` pass false and never format.
     public func save(_ path: String, format: Bool = false, group: UUID? = nil) async throws {
+        // An Untitled buffer is never written: it has no file until the user picks one (saveUntitled).
+        guard untitledNumbers[path] == nil else { return }
         while let running = saving[path] { _ = try? await running.value }
         guard let doc = documents[path], doc.state == .editable, doc.isDirty else { return }
         let task = Task<Void, Error> { @MainActor [weak self] in

@@ -29,7 +29,11 @@ extension Workspace {
 
     func currentUIState() -> UIState {
         let groups = codeLayout.tree.groupIDs.compactMap { id in
-            codeLayout.groups[id].map { GroupState(id: id, tabs: $0.tabs, active: $0.activeTab) }
+            // Untitled tabs are not saved: they are never restored.
+            codeLayout.groups[id].map { group in
+                GroupState(id: id, tabs: group.tabs.filter { untitledNumbers[$0] == nil },
+                           active: group.activeTab.flatMap { untitledNumbers[$0] == nil ? $0 : nil })
+            }
         }
         let layout = CodeLayoutState(tree: codeLayout.tree, groups: groups, focused: codeLayout.focusedGroupID)
         // Sizes of splits no longer in the tree are dropped.

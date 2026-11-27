@@ -62,6 +62,10 @@ public final class CommandCenter {
             self?.registry.overrides = overrides
             self?.plugins?.keybindingsChanged()
         }
+        workspace.saveUntitledHandler = { [weak self, weak workspace] key in
+            guard let self, let workspace else { return false }
+            return await saveUntitledTab(key, in: workspace)
+        }
         plugins?.bind(workspace)
     }
 

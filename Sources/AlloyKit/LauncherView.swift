@@ -29,16 +29,48 @@ public final class LauncherModel {
         pendingReplies.append(reply)
         guard !shuttingDown else { return .later }
         // One alert covers every request that arrives while it is open.
-        guard quitPrompt == nil else { return .later }
+        guard quitPrompt == nil, !askingAboutUntitled else { return .later }
+        // Untitled tabs with text ask first (Save… / Don't Save / Cancel), in tab order; a Cancel stops the quit.
+        let untitled = workspace.untitledKeysWithText()
+        if !untitled.isEmpty {
+            askingAboutUntitled = true
+            Task { @MainActor [weak self] in
+                for key in untitled {
+                    guard await workspace.resolveUntitled(key) else {
+                        self?.askingAboutUntitled = false
+                        self?.refuseWaitingRequests()
+                        return
+                    }
+                }
+                self?.askingAboutUntitled = false
+                self?.continueShutdown(workspace)
+            }
+            return .later
+        }
+        continueShutdown(workspace)
+        return .later
+    }
+
+    /// True while the Untitled tabs are being asked about, so a second request waits on the same answers.
+    private var askingAboutUntitled = false
+
+    /// The busy-terminal check, then the shutdown itself.
+    private func continueShutdown(_ workspace: Workspace) {
         let busy = workspace.busyTerminalCount?() ?? 0
         if busy > 0 {
             quitPrompt = busy == 1
                 ? "1 terminal is running a process. Quit anyway?"
                 : "\(busy) terminals are running a process. Quit anyway?"
-            return .later
+            return
         }
         beginShutdown(workspace)
-        return .later
+    }
+
+    /// Replies `false` to every waiting close or quit request.
+    private func refuseWaitingRequests() {
+        let replies = pendingReplies
+        pendingReplies = []
+        for r in replies { r(false) }
     }
 
     /// Non-nil while the busy-terminal alert is showing; its text is the alert message.
@@ -51,9 +83,7 @@ public final class LauncherModel {
         if quit, let workspace {
             beginShutdown(workspace)
         } else {
-            let replies = pendingReplies
-            pendingReplies = []
-            for r in replies { r(false) }
+            refuseWaitingRequests()
         }
     }
 
@@ -109,6 +139,18 @@ public func launcherRoot(model: LauncherModel, themes: ThemeController? = nil, u
             .accessibilityIdentifier("quit-terminal-cancel")
     } message: {
         Text(verbatim: model.quitPrompt ?? "")
+    }
+    .alert(UntitledPrompt.question(for: model.workspace?.untitledPrompt?.title ?? ""),
+           isPresented: Binding(get: { model.workspace?.untitledPrompt != nil },
+                                set: { if !$0 { model.workspace?.untitledPrompt?.answer(.cancel) } })) {
+        Button("Save\u{2026}") { model.workspace?.untitledPrompt?.answer(.save) }
+            .accessibilityIdentifier("untitled-save")
+        Button("Don't Save") { model.workspace?.untitledPrompt?.answer(.discard) }
+            .accessibilityIdentifier("untitled-discard")
+        Button("Cancel", role: .cancel) { model.workspace?.untitledPrompt?.answer(.cancel) }
+            .accessibilityIdentifier("untitled-cancel")
+    } message: {
+        Text(verbatim: UntitledPrompt.message)
     }
 }
 

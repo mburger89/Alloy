@@ -117,7 +117,12 @@ extension Workspace {
     }
 
     public func requestClose(_ path: String, in pane: PaneID) {
-        track { [weak self] in await self?.close(path, in: pane) }
+        track { [weak self] in
+            guard let self else { return }
+            // An Untitled tab with text asks first; Cancel (or a cancelled save dialog) keeps it.
+            if isUntitled(path), !(await resolveUntitled(path, closing: pane)) { return }
+            await close(path, in: pane)
+        }
     }
 
     public func requestOpen(_ path: String, edit: UUID? = nil, line: Int? = nil, mode: DiffMode? = nil, in pane: PaneID) {
@@ -153,12 +158,69 @@ extension Workspace {
         if relative != nil { try await save(path) }
         try doc.buffer.snapshot().text.write(to: target, atomically: true, encoding: .utf8)
         guard let relative else { return }
-        let index = tabs(in: pane).firstIndex(of: path)
-        await open(relative, in: pane)
-        // `open` appends the new tab; put it where the original was, then close the original.
-        if let index, let from = tabs(in: pane).firstIndex(of: relative), from != index,
-           tabs(in: pane).indices.contains(index) { moveTab(from: from, to: index, in: pane) }
-        await close(path, in: pane)
-        setActive(relative, in: pane)
+        await replaceTab(path, with: relative, in: pane)
+    }
+
+    /// The pane holding `path`'s tab: the default pane when it does, else the first that does.
+    public func paneHolding(_ path: String) -> PaneID? {
+        let panes = panesHolding(path)
+        return panes.contains(defaultPane) ? defaultPane : panes.first
+    }
+
+    /// Opens `new` in `pane`, puts its tab where `old`'s was (a tab `new` already had in `pane` is removed, not
+    /// duplicated), closes `old` and makes `new` the active tab. Closing `old` does not save it: callers that need that
+    /// (Save As) save first.
+    public func replaceTab(_ old: String, with new: String, in pane: PaneID) async {
+        let index = tabs(in: pane).firstIndex(of: old)
+        await open(new, in: pane)
+        // `open` appends the new tab unless the pane already held it; put it where the original was, then close the
+        // original, so there is one tab for `new` either way.
+        if let index, let from = tabs(in: pane).firstIndex(of: new), from != index, tabs(in: pane).indices.contains(index) {
+            moveTab(from: from, to: index, in: pane)
+        }
+        if isUntitled(old) { dropUntitled(old, from: pane) } else { await close(old, in: pane) }
+        setActive(new, in: pane)
+    }
+
+    /// First save of an Untitled document: writes its text atomically to `target`.
+    /// - Inside the project, the file is opened and its tab replaces the Untitled tab in `pane` (same index, active);
+    ///   returns nil.
+    /// - Outside the project, the Untitled tab closes and `target` is returned for the caller to open the way Open… does.
+    /// A target that is already open takes the text through its own document (a user edit, then a save); one that is
+    /// read-only throws. A write error throws and changes nothing.
+    public func saveUntitled(_ key: String, to target: URL, in pane: PaneID) async throws -> URL? {
+        guard isUntitled(key), let doc = documents[key] else { return nil }
+        let root = projectRoot.resolvingSymlinksInPath().standardizedFileURL.path
+        let resolved = target.resolvingSymlinksInPath().standardizedFileURL.path
+        let text = doc.buffer.snapshot().text
+        if resolved.hasPrefix(root + "/") {
+            let relative = String(resolved.dropFirst(root.count + 1))
+            // The file is already open: its document takes the text as a user edit and saves it, so undo, the ledger and
+            // the outside-edit watcher agree and no pending autosave can write the old buffer over it.
+            if let open = documents[relative] {
+                guard open.state == .editable else {
+                    report("Can't save \(title(of: key)) over \(relative): the open file is read-only.")
+                    throw CocoaError(.fileWriteNoPermission)
+                }
+                _ = open.buffer.replace(0..<open.buffer.snapshot().utf8Count, with: text)
+                try await save(relative)
+                for holder in panesHolding(key) where holder != pane { await replaceTab(key, with: relative, in: holder) }
+                await replaceTab(key, with: relative, in: pane)
+                return nil
+            }
+        }
+        do { try text.write(to: target, atomically: true, encoding: .utf8) } catch {
+            report("Can't save \(title(of: key)) to \(target.lastPathComponent): \(error.localizedDescription)")
+            throw error
+        }
+        guard resolved.hasPrefix(root + "/") else {
+            for holder in panesHolding(key) { dropUntitled(key, from: holder) }
+            return target
+        }
+        let relative = String(resolved.dropFirst(root.count + 1))
+        // A split can show the same Untitled document in several groups: each becomes the file, `pane`'s last (it stays active).
+        for holder in panesHolding(key) where holder != pane { await replaceTab(key, with: relative, in: holder) }
+        await replaceTab(key, with: relative, in: pane)
+        return nil
     }
 }

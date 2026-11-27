@@ -82,7 +82,7 @@ extension Workspace {
     func foldSnapshot() -> [String: [String: [FoldLines]]] {
         var out: [String: [String: [FoldLines]]] = [:]
         func put(_ pane: PaneID, _ path: String, _ folds: [FoldLines]) {
-            guard !folds.isEmpty else { return }
+            guard !folds.isEmpty, untitledNumbers[path] == nil else { return }
             out[Self.paneKey(pane), default: [:]][path] = Array(folds.prefix(Self.foldCap))
         }
         for (pane, byPath) in paneFolds {
