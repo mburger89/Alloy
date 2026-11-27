@@ -112,42 +112,40 @@ struct TranscriptView: Component {
         // The rows keep their old margin from the island's edge: what the viewport inset takes, their padding gives back.
         let rowPadding = Edges(top: Pixels(12), right: Pixels(max(0, Self.rowMargin - viewportInset)),
                                bottom: Pixels(12), left: Pixels(max(0, Self.rowMargin - leftInset)))
-        VStack(spacing: 0) {
-            ScrollViewReader { proxy in
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: Pixels(10)) {
-                        ForEach(rows) { row in
-                            switch row {
-                            case .block(let block):
-                                ChatBlockView(workspace: workspace, session: session, block: block,
-                                              collapsed: Self.binding(for: block.id, default: defaults[block.id], overrides: overrides),
-                                              draft: Self.draftBinding(for: block, drafts: drafts), cache: cache,
-                                              codeState: codeState,
-                                              sharedExpanded: Self.sharedBinding(for: block, overrides: overrides),
-                                              defaultCollapsed: defaults[block.id]).equatable()
-                            case .replyPiece(let blockID, let block):
-                                ReplyPiece(blockID: blockID, block: block).equatable()
-                            }
+        ScrollViewReader { proxy in
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: Pixels(10)) {
+                    ForEach(rows) { row in
+                        switch row {
+                        case .block(let block):
+                            ChatBlockView(workspace: workspace, session: session, block: block,
+                                          collapsed: Self.binding(for: block.id, default: defaults[block.id], overrides: overrides),
+                                          draft: Self.draftBinding(for: block, drafts: drafts), cache: cache,
+                                          codeState: codeState,
+                                          sharedExpanded: Self.sharedBinding(for: block, overrides: overrides),
+                                          defaultCollapsed: defaults[block.id]).equatable()
+                        case .replyPiece(let blockID, let block):
+                            ReplyPiece(blockID: blockID, block: block).equatable()
                         }
                     }
-                    .padding(rowPadding)
                 }
-                .defaultScrollAnchor(.bottom)
-                .contentMargins(.bottom, Pixels(Float(bottomInset)), for: .scrollContent)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .onChange(of: ScrollRequest(target: ui.scrollTarget, blockCount: blocks.count), initial: true) {
-                    switch Self.scrollDecision(target: ui.scrollTarget, blocks: blocks,
-                                               historyPending: workspace.isHistoryPending(session.id)) {
-                    case .scroll(let id): ui.scrollTarget = nil; proxy.scrollTo(id, anchor: .center)
-                    case .drop: ui.scrollTarget = nil
-                    case .keep: break
-                    }
+                .padding(rowPadding)
+            }
+            .defaultScrollAnchor(.bottom)
+            .padding(Edges(top: Pixels(0), right: Pixels(viewportInset), bottom: Pixels(0), left: Pixels(leftInset)))
+            .accessibilityIdentifier("transcript")
+            .contentMargins(.trailing, -2, for: .scrollIndicators)
+            .contentMargins(.bottom, Pixels(Float(bottomInset)), for: .scrollContent)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .onChange(of: ScrollRequest(target: ui.scrollTarget, blockCount: blocks.count), initial: true) {
+                switch Self.scrollDecision(target: ui.scrollTarget, blocks: blocks,
+                                           historyPending: workspace.isHistoryPending(session.id)) {
+                case .scroll(let id): ui.scrollTarget = nil; proxy.scrollTo(id, anchor: .center)
+                case .drop: ui.scrollTarget = nil
+                case .keep: break
                 }
             }
         }
-        .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("transcript")
-        .padding(Edges(top: Pixels(0), right: Pixels(viewportInset), bottom: Pixels(0), left: Pixels(leftInset)))
     }
 
     enum ScrollDecision: Equatable { case scroll(String), keep, drop }
