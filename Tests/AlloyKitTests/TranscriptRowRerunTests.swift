@@ -9,7 +9,7 @@ import Testing
 /// While a reply streams, only the streaming row's bodies run: the rows above it replay (`.equatable()`).
 @MainActor
 @Suite struct TranscriptRowRerunTests {
-    static let names = ["ChatBlockView", "AssistantText", "MarkdownText", "TranscriptView", "UserBubble", "ThinkingRow", "NoticeRow", "SessionMessageRow", "PermissionCard", "ToolBlockView", "BlockChrome", "QuestionCard", "PlanCard"]
+    static let names = ["ChatBlockView", "AssistantText", "MarkdownText", "TranscriptView", "UserBubble", "ThinkingRow", "NoticeRow", "SessionMessageRow", "PermissionCard", "ToolBlockView", "BlockChrome", "QuestionCard", "PlanCard", "MarkdownTopBlock"]
 
     struct Run { var rerun: [String: Int] = [:]; var requests = 0; var prepaints = 0; var deltas = 0 }
 
@@ -21,7 +21,9 @@ import Testing
 
     /// `extras` adds a command-output notice, a session message, a pending question and a pending plan before the
     /// streamed block.
-    private func scenario(deltas: Int = 30, extras: Bool = false) async throws -> (Rig, Session, TestWindow, Run) {
+    /// `streamed` makes the reply one block that really streams (a block start, then a text delta per step): it takes the
+    /// delta's index and returns the text to append. Without it each step emits a new block, as the older benchmarks do.
+    private func scenario(deltas: Int = 30, extras: Bool = false, streamed: ((Int) -> String)? = nil) async throws -> (Rig, Session, TestWindow, Run) {
         let rig = Rig()
         let other = extras ? await rig.workspace.newSession(name: "Bea") : nil
         let session = await rig.workspace.newSession(name: "A")
@@ -51,9 +53,12 @@ import Testing
         for _ in 0..<30 { window.tick(); await Task.yield() }
         var run = Run()
         var text = "streaming"
+        if streamed != nil { await t.emit(.delta(.blockStart(index: 0, kind: "text"))) }
         for i in 0..<deltas {
-            text += " word\(i)"
-            await t.emit(.assistantBlock(messageID: "stream", block: .text(text)))
+            if let streamed { await t.emit(.delta(.text(index: 0, streamed(i)))) } else {
+                text += " word\(i)"
+                await t.emit(.assistantBlock(messageID: "stream", block: .text(text)))
+            }
             for _ in 0..<5 { await Task.yield() }
             window.resetFrameWork()
             let before = Self.names.map(BodyProbe.count)
@@ -71,6 +76,46 @@ import Testing
         let d = Double(run.deltas)
         print("ROWS ALL " + Self.names.map { "\($0)=\(Double(run.rerun[$0]!) / d)" }.joined(separator: " "))
         print("ROWS blocks=\(session.transcript.blocks.count) per-delta chat=\(Double(run.rerun["ChatBlockView"]!) / d) assistant=\(Double(run.rerun["AssistantText"]!) / d) markdown=\(Double(run.rerun["MarkdownText"]!) / d) transcript=\(Double(run.rerun["TranscriptView"]!) / d) requests=\(Double(run.requests) / d) prepaints=\(Double(run.prepaints) / d)")
+    }
+
+    /// About 25 KB of Markdown in about 150 top-level blocks (paragraphs, three fences, a list and a table).
+    static func longReply() -> String {
+        var parts: [String] = []
+        for i in 0..<150 {
+            switch i {
+            case 30, 80, 130: parts.append("```swift\nlet value\(i) = compute(\(i))\nprint(value\(i))\n```")
+            case 50: parts.append((0..<6).map { "- item \($0) of the list" }.joined(separator: "\n"))
+            case 100: parts.append("| name | value |\n| --- | --- |\n| alpha | 1 |\n| beta | 2 |\n| gamma | 3 |")
+            default: parts.append("Paragraph \(i) of the long reply with **bold** and `code`, then plain words to fill a line or two of the transcript so the block wraps. " + String(repeating: "more words ", count: 3))
+            }
+        }
+        return parts.joined(separator: "\n\n")
+    }
+
+    /// `longReply()` cut into `count` consecutive chunks.
+    static func longReplyChunks(_ count: Int) -> [String] {
+        let characters = Array(longReply())
+        let size = (characters.count + count - 1) / count
+        return stride(from: 0, to: characters.count, by: size).map { String(characters[$0..<min($0 + size, characters.count)]) }
+    }
+
+    /// The long reply streamed in 30 deltas at the bottom, then scrolled from the bottom to the top in 20 equal steps.
+    @Test func measureLongReply() async throws {
+        let chunks = Self.longReplyChunks(30)
+        let (_, _, window, run) = try await scenario(deltas: chunks.count) { chunks[$0] }
+        let d = Double(run.deltas)
+        print("LONG per-delta requests=\(Double(run.requests) / d) prepaints=\(Double(run.prepaints) / d) markdownTopBlock=\(Double(run.rerun["MarkdownTopBlock"]!) / d)")
+        let centre = Point(x: Pixels(400), y: Pixels(300))
+        var requests = 0, prepaints = 0
+        let steps = 20
+        for _ in 0..<steps {
+            window.resetFrameWork()
+            window.scroll(at: centre, byDeltaX: 0, deltaY: 500)
+            await Task.yield()
+            requests += window.frameWork.map(\.elementRequests).reduce(0, +)
+            prepaints += window.frameWork.map(\.elementPrepaints).reduce(0, +)
+        }
+        print("LONG per-scroll-step requests=\(Double(requests) / Double(steps)) prepaints=\(Double(prepaints) / Double(steps))")
     }
 
     /// Before: 23.9 ChatBlockView, 17.9 AssistantText, 17.9 MarkdownText, 1.4 UserBubble, 1.8 ThinkingRow, 2.0 ToolBlockView and

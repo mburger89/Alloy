@@ -46,7 +46,7 @@ struct ChatBlockView: Component, @MainActor Equatable {
             case .user(let id, let text, let images, let state): UserBubble(blockID: id.uuidString, text: text, imageCount: images, state: state,
                                                                   shared: workspace.sharedFiles[id] ?? [], sharedExpanded: sharedExpanded,
                                                                   sendNow: Self.sendNowAction(workspace, session, id, state)).equatable()
-            case .assistantText(let id, let text): AssistantText(blockID: id, text: text, cache: cache).equatable()
+            case .assistantText(let id, let text): MarkdownText(blockID: id, text: text, cache: cache).equatable()
             case .thinking(let id, let text, let tokens): ThinkingRow(id: id, text: text, tokens: tokens, collapsed: collapsed, defaultCollapsed: defaultCollapsed).equatable()
             case .tool(let tool): ToolBlockView(workspace: workspace, tool: tool, collapsed: collapsed, codeState: codeState).equatable()
             case .permission(let p): PermissionCard(workspace: workspace, sessionID: session.id, agentName: session.agentName, block: p).equatable()
@@ -155,21 +155,6 @@ struct UserBubble: Component, @MainActor Equatable {
             .background(.sidebarFill)
             .cornerRadius(Pixels(10))
         }
-    }
-}
-
-struct AssistantText: Component, @MainActor Equatable {
-    let blockID: String
-    let text: String
-    let cache: MarkdownCache
-
-    static func == (l: AssistantText, r: AssistantText) -> Bool {
-        l.blockID == r.blockID && l.text == r.text && l.cache === r.cache
-    }
-
-    var content: some ElementGroup {
-        let _ = BodyProbe.hit("AssistantText")
-        MarkdownText(blockID: blockID, text: text, cache: cache).equatable()
     }
 }
 

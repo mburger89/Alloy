@@ -94,16 +94,22 @@ struct TranscriptView: Component {
         let drafts = Binding(get: { ui.drafts }, set: { ui.drafts = $0 })
         let cache = ui.markdownCache
         let _ = ui.codeBlocks.prune(keepingBlockIDs: Set(blocks.map(\.id)))
+        let rows = TranscriptRow.rows(blocks, cache: cache)
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: Pixels(10)) {
-                    ForEach(blocks, id: \.id) { block in
-                        ChatBlockView(workspace: workspace, session: session, block: block,
-                                      collapsed: Self.binding(for: block.id, default: defaults[block.id], overrides: overrides),
-                                      draft: Self.draftBinding(for: block, drafts: drafts), cache: cache,
-                                      codeState: codeState,
-                                      sharedExpanded: Self.sharedBinding(for: block, overrides: overrides),
-                                      defaultCollapsed: defaults[block.id]).equatable()
+                    ForEach(rows) { row in
+                        switch row {
+                        case .block(let block):
+                            ChatBlockView(workspace: workspace, session: session, block: block,
+                                          collapsed: Self.binding(for: block.id, default: defaults[block.id], overrides: overrides),
+                                          draft: Self.draftBinding(for: block, drafts: drafts), cache: cache,
+                                          codeState: codeState,
+                                          sharedExpanded: Self.sharedBinding(for: block, overrides: overrides),
+                                          defaultCollapsed: defaults[block.id]).equatable()
+                        case .replyPiece(let blockID, let block):
+                            ReplyPiece(blockID: blockID, block: block).equatable()
+                        }
                     }
                 }
                 .padding(inset(16, 12))

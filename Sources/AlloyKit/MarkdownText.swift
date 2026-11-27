@@ -91,6 +91,7 @@ struct MarkdownTopBlock: Component, @MainActor Equatable {
     let block: MarkdownBlock
 
     var content: some ElementGroup {
+        let _ = BodyProbe.hit("MarkdownTopBlock")
         MarkdownBlockView(block).markdownTheme(Self.theme(blockID: blockID, blockNumber: block.id))
             .codeHighlighter(FenceHighlighter.shared).equatable()
     }
