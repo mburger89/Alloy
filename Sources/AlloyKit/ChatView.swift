@@ -34,6 +34,9 @@ struct ChatColumn: Component {
     /// (``SessionUIStore/BarMetrics``) or the style's estimate, so a session switch does not draw the last message under the bar for a frame.
     @State var composerHeight: Double = 0
 
+    /// The session stripe's width.
+    static let stripeWidth: Float = 4
+
     var content: some ElementGroup {
         let _ = BodyProbe.hit("ChatColumn")
         let style = themes?.style ?? .defaults
@@ -43,12 +46,12 @@ struct ChatColumn: Component {
         HStack(spacing: 0) {
             // Inset by the corner radius so its ends stay inside the island's rounded corners.
             Rectangle().fill(Color.sessionColor(session.colorIndex))
-                .frame(width: Pixels(4))
+                .frame(width: Pixels(Self.stripeWidth))
                 .padding(Edges(top: Pixels(Float(style.cornerRadius)), right: Pixels(0), bottom: Pixels(Float(style.cornerRadius)), left: Pixels(0)))
                 .frame(maxHeight: .infinity)
             ZStack(alignment: .bottom) {
                 TranscriptView(workspace: workspace, session: session, ui: ui,
-                               bottomInset: inset).equatable()
+                               bottomInset: inset, cornerRadius: style.cornerRadius).equatable()
                 VStack(spacing: 0) {
                     VStack(spacing: 0) {
                         ComposerView(workspace: workspace, session: session, model: ui.composer, style: style).equatable()
@@ -83,6 +86,15 @@ struct TranscriptView: Component {
     /// The scroll content's bottom margin (MetalUI `contentMargins`, G43), so the floating composer never covers the last
     /// block: the glass bar with its gutter above and below.
     var bottomInset: Double = 0
+    /// The island's corner radius: the viewport is inset by it (``viewportInset(cornerRadius:)``) and the rows' padding shrinks to match.
+    var cornerRadius: Double = 10
+
+    /// How far the scroll viewport's side edges sit from the island's: the corner radius plus 1 px, so a fractional layout value cannot
+    /// reach into a corner square (MetalUI's `boxReachesACornerCut`).
+    static func viewportInset(cornerRadius: Double) -> Float { Float(cornerRadius) + 1 }
+
+    /// The rows' inner margin from the island's edge, as it was before the viewport inset.
+    static let rowMargin: Float = 16
 
     var content: some ElementGroup {
         let _ = BodyProbe.hit("TranscriptView")
@@ -95,37 +107,47 @@ struct TranscriptView: Component {
         let cache = ui.markdownCache
         let _ = ui.codeBlocks.prune(keepingBlockIDs: Set(blocks.map(\.id)))
         let rows = TranscriptRow.rows(blocks, cache: cache)
-        ScrollViewReader { proxy in
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: Pixels(10)) {
-                    ForEach(rows) { row in
-                        switch row {
-                        case .block(let block):
-                            ChatBlockView(workspace: workspace, session: session, block: block,
-                                          collapsed: Self.binding(for: block.id, default: defaults[block.id], overrides: overrides),
-                                          draft: Self.draftBinding(for: block, drafts: drafts), cache: cache,
-                                          codeState: codeState,
-                                          sharedExpanded: Self.sharedBinding(for: block, overrides: overrides),
-                                          defaultCollapsed: defaults[block.id]).equatable()
-                        case .replyPiece(let blockID, let block):
-                            ReplyPiece(blockID: blockID, block: block).equatable()
+        let viewportInset = Self.viewportInset(cornerRadius: cornerRadius)
+        let leftInset = viewportInset - ChatColumn.stripeWidth
+        // The rows keep their old margin from the island's edge: what the viewport inset takes, their padding gives back.
+        let rowPadding = Edges(top: Pixels(12), right: Pixels(max(0, Self.rowMargin - viewportInset)),
+                               bottom: Pixels(12), left: Pixels(max(0, Self.rowMargin - leftInset)))
+        VStack(spacing: 0) {
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: Pixels(10)) {
+                        ForEach(rows) { row in
+                            switch row {
+                            case .block(let block):
+                                ChatBlockView(workspace: workspace, session: session, block: block,
+                                              collapsed: Self.binding(for: block.id, default: defaults[block.id], overrides: overrides),
+                                              draft: Self.draftBinding(for: block, drafts: drafts), cache: cache,
+                                              codeState: codeState,
+                                              sharedExpanded: Self.sharedBinding(for: block, overrides: overrides),
+                                              defaultCollapsed: defaults[block.id]).equatable()
+                            case .replyPiece(let blockID, let block):
+                                ReplyPiece(blockID: blockID, block: block).equatable()
+                            }
                         }
                     }
+                    .padding(rowPadding)
                 }
-                .padding(inset(16, 12))
-            }
-            .defaultScrollAnchor(.bottom)
-            .contentMargins(.bottom, Pixels(Float(bottomInset)), for: .scrollContent)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .onChange(of: ScrollRequest(target: ui.scrollTarget, blockCount: blocks.count), initial: true) {
-                switch Self.scrollDecision(target: ui.scrollTarget, blocks: blocks,
-                                           historyPending: workspace.isHistoryPending(session.id)) {
-                case .scroll(let id): ui.scrollTarget = nil; proxy.scrollTo(id, anchor: .center)
-                case .drop: ui.scrollTarget = nil
-                case .keep: break
+                .defaultScrollAnchor(.bottom)
+                .contentMargins(.bottom, Pixels(Float(bottomInset)), for: .scrollContent)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .onChange(of: ScrollRequest(target: ui.scrollTarget, blockCount: blocks.count), initial: true) {
+                    switch Self.scrollDecision(target: ui.scrollTarget, blocks: blocks,
+                                               historyPending: workspace.isHistoryPending(session.id)) {
+                    case .scroll(let id): ui.scrollTarget = nil; proxy.scrollTo(id, anchor: .center)
+                    case .drop: ui.scrollTarget = nil
+                    case .keep: break
+                    }
                 }
             }
         }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("transcript")
+        .padding(Edges(top: Pixels(0), right: Pixels(viewportInset), bottom: Pixels(0), left: Pixels(leftInset)))
     }
 
     enum ScrollDecision: Equatable { case scroll(String), keep, drop }
