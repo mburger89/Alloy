@@ -133,19 +133,19 @@ import Testing
         #expect(rig.workspace.uiStateRestored)
     }
 
-    @Test func cmdNCreatesASessionInCodeMode() async throws {
+    @Test func shiftCmdNCreatesASessionInCodeMode() async throws {
         let (rig, window) = try await codeWindow()
         let before = rig.workspace.sessions.count
-        window.typeKey("n", modifierFlags: .command)
+        window.typeKey("n", modifierFlags: [.command, .shift])
         try await window.runUntil { rig.workspace.sessions.count == before + 1 }
         #expect(rig.workspace.sessions.count == before + 1)
     }
 
-    @Test func cmdNStillFiresOnceInChatMode() async throws {
+    @Test func shiftCmdNStillFiresOnceInChatMode() async throws {
         let rig = Rig()
         let window = try alloyWindow(rig.workspace)
         let before = rig.workspace.sessions.count
-        window.typeKey("n", modifierFlags: .command)
+        window.typeKey("n", modifierFlags: [.command, .shift])
         try await window.runUntil { rig.workspace.sessions.count >= before + 1 }
         for _ in 0..<20 { await Task.yield() }
         #expect(rig.workspace.sessions.count == before + 1)
