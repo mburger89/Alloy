@@ -110,9 +110,20 @@ final class Env {
     }
 }
 
+/// Waits until `cond` holds. It yields first, which is how a condition that only needs the main actor (a manual clock,
+/// a scripted transport) is reached at once, then polls every few milliseconds, so work that needs a thread or the disk
+/// (a search, a git run, a file read) is not starved by a spinning waiter. Only a condition that never comes fails, after a
+/// wall-clock hang guard: how many yields fit in a given time depends on the load, so a count would not be one.
 @MainActor
 func waitUntil(_ what: String = "condition", _ cond: @MainActor () -> Bool) async {
-    for _ in 0..<500_000 { if cond() { return }; await Task.yield() }
+    for _ in 0..<1000 { if cond() { return }; await Task.yield() }
+    let clock = ContinuousClock()
+    let deadline = clock.now.advanced(by: .seconds(30))
+    while clock.now < deadline {
+        if cond() { return }
+        try? await Task.sleep(for: .milliseconds(2))
+    }
+    if cond() { return }
     Issue.record("timed out waiting for \(what)")
 }
 

@@ -87,7 +87,7 @@ import Testing
         let rig = Rig()
         await rig.workspace.restoreUIState()
         rig.workspace.setMode(.code)
-        let store = TerminalPanelStore(workspace: rig.workspace)
+        let store = TerminalPanelStore(workspace: rig.workspace, spawner: ScriptedPtySpawner())
         let window = try alloyWindow(rig.workspace, terminal: store)
         store.toggle()
         for _ in 0..<3 { window.tick() }

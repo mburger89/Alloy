@@ -17,7 +17,7 @@ import Testing
         let rig = Rig()
         await rig.workspace.restoreUIState()
         rig.workspace.setMode(.code)
-        let store = TerminalPanelStore(workspace: rig.workspace)
+        let store = TerminalPanelStore(workspace: rig.workspace, spawner: ScriptedPtySpawner())
         let window = try alloyWindow(rig.workspace, terminal: store)
         for _ in 0..<3 { window.tick() }
         return (rig, window, store)
@@ -89,7 +89,7 @@ import Testing
     @Test func storeToggleHidesAndReturnsFocusToEditor() async throws {
         let rig = Rig()
         await rig.workspace.restoreUIState()
-        let store = TerminalPanelStore(workspace: rig.workspace)
+        let store = TerminalPanelStore(workspace: rig.workspace, spawner: ScriptedPtySpawner())
         let group = rig.workspace.codeLayout.focusedGroupID
         store.toggle()
         #expect(store.visible)

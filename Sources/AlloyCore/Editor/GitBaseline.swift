@@ -26,8 +26,20 @@ enum GitBaseline {
         return path.isEmpty ? nil : path
     }
 
+    /// How often a run that hit the limit is started again. The limit counts from the spawn, and on a loaded machine a
+    /// git that is only waiting for a processor (rev-parse seen taking five seconds and more to start) looks the same as
+    /// a hung one. Nothing re-checks a commit later, so reading a starved run as "no repository" or "no HEAD text" kept
+    /// the edits as changes for good. Each run keeps the same limit; a failure that is not a timeout is final.
+    static let attempts = 3
+
     private static func run(_ args: [String], _ root: URL) async -> Data? {
-        await Workspace.gitRun(["-C", root.path] + args, in: root, terminateAfter: terminateAfter, killAfter: killAfter)
+        for _ in 0..<attempts {
+            let r = await GitProcess.run(["-C", root.path] + args, in: root, readOnly: true,
+                                         terminateAfter: terminateAfter, killAfter: killAfter)
+            if !r.timedOut { return r.status == 0 ? r.stdout : nil }
+            if Task.isCancelled { break }
+        }
+        return nil
     }
 }
 

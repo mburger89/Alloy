@@ -135,20 +135,28 @@ private final class Reader: @unchecked Sendable {
         #expect(status == 143)
     }
 
+    /// The delay is measured from the process's own last act, not from the spawn: starting a process (fork, exec, the
+    /// interpreter's start-up) takes seconds on a loaded machine and is not what this checks. The child prints its
+    /// clock just before it exits; the delay is from that stamp to the moment `.exited` arrives.
     @Test func fastExitDeliversExitedPromptly() async throws {
         let cfg = LaunchConfiguration(executable: URL(fileURLWithPath: "/bin/sh"),
                                       projectDirectory: URL(fileURLWithPath: NSTemporaryDirectory()),
                                       sessionID: UUID(), resume: false)
-        let proc = ClaudeProcess(configuration: cfg, environment: [:],
-                                 argumentsPrefix: ["-c", "exit 3", "sh"])
-        let clock = ContinuousClock()
-        let start = clock.now
+        let script = #"exec /usr/bin/perl -MTime::HiRes=time -e '$| = 1; printf qq({"type":"t-%.6f"}\n), time; exit 3'"#
+        let proc = ClaudeProcess(configuration: cfg, environment: [:], argumentsPrefix: ["-c", script, "sh"])
         let it = Reader(try await proc.start())
+        var stamp: Double?
         var last: ProcessEvent?
-        while let e = await it.next() { last = e }
-        let elapsed = clock.now - start
+        var arrived = Date()
+        while let e = await it.next() {
+            if case .message(.unknown(let type)) = e, type.hasPrefix("t-") { stamp = Double(type.dropFirst(2)) }
+            last = e
+            if case .exited = e { arrived = Date() }
+        }
         #expect(last == .exited(status: 3, stderrTail: ""))
-        #expect(elapsed < .seconds(1), "elapsed \(elapsed)")
+        let exitedAt = try #require(stamp, "the child printed no clock")
+        let delay = arrived.timeIntervalSince1970 - exitedAt
+        #expect(delay < 1, "exit delivered \(delay) s after the process's last act")
     }
 
     @Test func stopAndWaitReturnsOnlyAfterExit() async throws {

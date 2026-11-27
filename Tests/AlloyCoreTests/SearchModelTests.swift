@@ -260,14 +260,15 @@ import Testing
 
     // MARK: Results
 
-    @Test func dismissRemovesALineAndAnEmptyFile() async {
+    @Test func dismissRemovesALineAndAnEmptyFile() async throws {
         let e = env(); defer { e.cleanup() }
         let model = e.ws.search
         model.setQuery(query("beta")); model.submit()
         await finished(model)
         #expect(model.matchCount == 3)
         model.dismiss(file: 1, line: 0)
-        #expect(model.groups[1].matches.count == 1 && model.summary == "2 results in 2 files")
+        let second = try #require(model.groups.dropFirst().first, "a second file group")
+        #expect(second.matches.count == 1 && model.summary == "2 results in 2 files")
         model.dismiss(file: 1, line: 0)
         #expect(model.groups.map(\.path) == ["a.txt"] && model.summary == "1 result in 1 file")
         model.dismiss(file: 0)

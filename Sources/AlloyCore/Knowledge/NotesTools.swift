@@ -399,21 +399,43 @@ extension Workspace {
             // Let the burst land before the batch is taken.
             await Task.yield()
             guard let self else { return }
-            let batch = self.pendingNoteChecks, scope = self.knowledgeScope
+            let batch = self.pendingNoteChecks, scope = self.knowledgeScope, noted = self.notes.paths
             self.pendingNoteChecks = []
             self.noteCheckQueued = false
             self.noteCheckRuns += 1
             // Notes are keyed by the real path, so typed paths are resolved off the main actor.
-            let found = await Task.detached { () -> [String: FileStamp?] in
-                var out: [String: FileStamp?] = [:]
-                for path in batch {
-                    let key = Self.canonicalReadKey(path, scope: scope)
-                    if out[key] == nil { out[key] = FileStamp.read(scope.absolute(key)) }
-                }
-                return out
-            }.value
+            let found = await Task.detached { Self.noteStamps(of: batch, scope: scope, noted: noted) }.value
             for (key, stamp) in found where self.notes.paths.contains(key) { self.reconcileNotes(key, stamp: stamp) }
         }
+    }
+
+    /// The stamp of every file in `paths` that has a note, by canonical key. A burst can hold hundreds of paths, and on a
+    /// loaded disk each `realpath` walks its whole path, so the work is kept to what the batch needs: a directory is
+    /// resolved once for all its files, and only a file with a note is stamped.
+    nonisolated static func noteStamps(of paths: Set<String>, scope: KnowledgeScope, noted: Set<String>) -> [String: FileStamp?] {
+        var directories: [String: String?] = [:]
+        var out: [String: FileStamp?] = [:]
+        for path in paths {
+            let key = canonicalKey(of: path, scope: scope, directories: &directories)
+            if out[key] == nil, noted.contains(key) { out[key] = FileStamp.read(scope.absolute(key)) }
+        }
+        return out
+    }
+
+    /// `canonicalReadKey` for a file that is not a symlink, using `directories` (path to real path) for its folder.
+    /// A symlink or an unresolvable folder takes the full `realpath` route.
+    private nonisolated static func canonicalKey(of path: String, scope: KnowledgeScope, directories: inout [String: String?]) -> String {
+        let absolute = URL(fileURLWithPath: scope.absolute(path)).standardizedFileURL.path
+        let folder = (absolute as NSString).deletingLastPathComponent, name = (absolute as NSString).lastPathComponent
+        var info = stat()
+        if lstat(absolute, &info) == 0 {
+            guard (info.st_mode & S_IFMT) != S_IFLNK else { return canonicalReadKey(path, scope: scope) }
+        } else if errno != ENOENT {
+            return canonicalReadKey(path, scope: scope)
+        }
+        if directories[folder] == nil { directories[folder] = .some(NotePath.realPath(folder)) }
+        guard let real = directories[folder] ?? nil else { return canonicalReadKey(path, scope: scope) }
+        return scope.key(forReal: (real == "/" ? "" : real) + "/" + name) ?? path
     }
 
     /// `path` is the file as the session typed it (for display); `key` is its canonical (real-path) key.

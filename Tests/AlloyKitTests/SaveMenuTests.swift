@@ -78,7 +78,7 @@ import Testing
         rig.workspace.setMode(.code)
         try "x\n".write(to: rig.root.appendingPathComponent("a.txt"), atomically: true, encoding: .utf8)
         await rig.workspace.open("a.txt")
-        let store = TerminalPanelStore(workspace: rig.workspace)
+        let store = TerminalPanelStore(workspace: rig.workspace, spawner: ScriptedPtySpawner())
         let window = try alloyWindow(rig.workspace, terminal: store)
         store.toggle(); store.newTab()
         for _ in 0..<3 { window.tick() }

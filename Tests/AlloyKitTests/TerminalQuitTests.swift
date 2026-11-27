@@ -140,7 +140,7 @@ import Testing
 
     @Test func menuTogglePathClearsFocus() {
         let rig = Rig()
-        let store = TerminalPanelStore(workspace: rig.workspace)
+        let store = TerminalPanelStore(workspace: rig.workspace, spawner: ScriptedPtySpawner())
         Self.kept = [store]
         rig.workspace.toggleTerminal()
         store.hasFocus = true
