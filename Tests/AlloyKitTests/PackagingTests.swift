@@ -1,4 +1,5 @@
 import Foundation
+import AlloyTestSupport
 import Testing
 
 /// Reads the packaging files and runs `scripts/bundle-macos.sh` in a temp copy with a stub `swift`
@@ -27,7 +28,7 @@ import Testing
 
     @Test func bundleScriptAcceptsVersion() throws {
         let fm = FileManager.default
-        let tmp = fm.temporaryDirectory.appendingPathComponent("alloy-pkg-\(UUID().uuidString)")
+        let tmp = TempFiles.url("alloy-pkg")
         defer { try? fm.removeItem(at: tmp) }
         let repo = tmp.appendingPathComponent("repo")
         try fm.createDirectory(at: repo.appendingPathComponent("scripts"), withIntermediateDirectories: true)
@@ -90,7 +91,7 @@ import Testing
         let fm = FileManager.default
         let tmp: URL, repo: URL, log: URL, stubs: URL
         init(failOnSign: Int? = nil) throws {
-            tmp = fm.temporaryDirectory.appendingPathComponent("alloy-pkg-\(UUID().uuidString)")
+            tmp = TempFiles.url("alloy-pkg")
             repo = tmp.appendingPathComponent("repo")
             try fm.createDirectory(at: repo.appendingPathComponent("scripts"), withIntermediateDirectories: true)
             try fm.createDirectory(at: repo.appendingPathComponent("Packaging"), withIntermediateDirectories: true)
@@ -224,7 +225,7 @@ import Testing
         let fm = FileManager.default
         let tmp: URL, repo: URL, bin: URL, stubs: URL
         init(withSparkle: Bool) throws {
-            tmp = fm.temporaryDirectory.appendingPathComponent("alloy-pkg-\(UUID().uuidString)")
+            tmp = TempFiles.url("alloy-pkg")
             repo = tmp.appendingPathComponent("repo"); bin = tmp.appendingPathComponent("bin-out"); stubs = tmp.appendingPathComponent("stubs")
             try fm.createDirectory(at: repo.appendingPathComponent("scripts"), withIntermediateDirectories: true)
             try fm.createDirectory(at: repo.appendingPathComponent("Packaging"), withIntermediateDirectories: true)

@@ -1,5 +1,6 @@
 @testable import AlloyCore
 import Foundation
+import AlloyTestSupport
 import Testing
 
 @Suite struct ThemeLibraryTests {
@@ -19,7 +20,7 @@ import Testing
     }
 
     private func tempDir() throws -> URL {
-        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("themes-\(UUID().uuidString)")
+        let dir = TempFiles.url("themes")
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         return dir
     }
@@ -175,7 +176,7 @@ import Testing
     }
 
     @Test func missingFolderIsEmptyNotAnError() {
-        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("nope-\(UUID().uuidString)")
+        let dir = TempFiles.url("nope")
         let library = load(dir)
         #expect(library.user.isEmpty)
         #expect(library.errors.isEmpty)

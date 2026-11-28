@@ -23,7 +23,7 @@ private final class WEnv {
     let base: URL, project: URL, support: URL
     let secrets = InMemorySecretStore()
     init() {
-        base = FileManager.default.temporaryDirectory.appendingPathComponent("alloy-acpw-\(UUID().uuidString)")
+        base = TempFiles.url("alloy-acpw")
         project = base.appendingPathComponent("p"); support = base.appendingPathComponent("s")
         try? FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
         try? FileManager.default.createDirectory(at: support, withIntermediateDirectories: true)

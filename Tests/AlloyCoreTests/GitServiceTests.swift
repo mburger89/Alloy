@@ -166,7 +166,7 @@ final class UpdateBox: @unchecked Sendable {
     }
 
     @Test func notARepo() async throws {
-        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("alloy-norepo-" + UUID().uuidString)
+        let dir = TempFiles.url("alloy-norepo")
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true); defer { cleanup(dir) }
         let probe = RunnerProbe()
         let service = GitService(root: dir, clock: ManualClock(), runner: probe.runner)

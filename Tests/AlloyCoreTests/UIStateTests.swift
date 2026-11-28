@@ -81,7 +81,7 @@ import Testing
     }
 
     @Test func versionZeroOrMissingIsCorrupt() throws {
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("ui-\(UUID().uuidString).json")
+        let url = TempFiles.url("ui", ext: ".json")
         defer { try? FileManager.default.removeItem(at: url) }
         try "{\"version\":0,\"mode\":\"code\"}".write(to: url, atomically: true, encoding: .utf8)
         #expect(UIStateFile.load(url) == .corrupt)
@@ -410,7 +410,7 @@ import Testing
     }
 
     @Test func olderFileWithoutNewFieldsLoadsWithDefaults() throws {
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("ui-\(UUID().uuidString).json")
+        let url = TempFiles.url("ui", ext: ".json")
         defer { try? FileManager.default.removeItem(at: url) }
         try "{\"version\":1,\"mode\":\"code\",\"layout\":{\"nope\":1},\"chatCollapsed\":\"x\"}".write(to: url, atomically: true, encoding: .utf8)
         #expect(UIStateFile.load(url) == .state(UIState(mode: .code)))
@@ -427,7 +427,7 @@ import Testing
     @Test func terminalRoundTripsThroughSaveAndLoad() throws {
         var layout = TerminalLayout()
         layout.toggle(defaultCwd: "/p")
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("ui-\(UUID().uuidString).json")
+        let url = TempFiles.url("ui", ext: ".json")
         defer { try? FileManager.default.removeItem(at: url) }
         try UIStateFile.save(UIState(terminal: layout), to: url)
         guard case .state(let loaded) = UIStateFile.load(url) else { Issue.record("state"); return }
@@ -436,7 +436,7 @@ import Testing
 
     @Test func malformedTerminalValueDecodesAsNilNotCorrupt() throws {
         for bad in ["5", #"{"tabs":"x"}"#, "[]", "null"] {
-            let url = FileManager.default.temporaryDirectory.appendingPathComponent("ui-\(UUID().uuidString).json")
+            let url = TempFiles.url("ui", ext: ".json")
             defer { try? FileManager.default.removeItem(at: url) }
             try #"{"version":1,"mode":"code","terminal":\#(bad)}"#.write(to: url, atomically: true, encoding: .utf8)
             guard case .state(let loaded) = UIStateFile.load(url) else { Issue.record("not state for \(bad)"); return }
@@ -556,7 +556,7 @@ import Testing
 @MainActor @Suite struct UIStateGitFieldTests {
     @Test func gitFieldsRoundTripWithoutVersionBump() throws {
         let state = UIState(mode: .code, sidebarTab: .git, gitCommitDraft: "wip")
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("uistate-\(UUID().uuidString).json")
+        let url = TempFiles.url("uistate", ext: ".json")
         defer { try? FileManager.default.removeItem(at: url) }
         try UIStateFile.save(state, to: url)
         let json = try String(contentsOf: url, encoding: .utf8)
@@ -567,7 +567,7 @@ import Testing
     }
 
     @Test func nilFieldsAreNotWritten() throws {
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("uistate-\(UUID().uuidString).json")
+        let url = TempFiles.url("uistate", ext: ".json")
         defer { try? FileManager.default.removeItem(at: url) }
         try UIStateFile.save(UIState(mode: .chat), to: url)
         let json = try String(contentsOf: url, encoding: .utf8)
@@ -575,7 +575,7 @@ import Testing
     }
 
     @Test func olderFileWithoutGitFieldsLoads() throws {
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("uistate-\(UUID().uuidString).json")
+        let url = TempFiles.url("uistate", ext: ".json")
         defer { try? FileManager.default.removeItem(at: url) }
         try #"{"version":1,"mode":"code","paneSizes":{},"chatCollapsed":false,"expandedFolders":[]}"#.write(to: url, atomically: true, encoding: .utf8)
         guard case .state(let loaded) = UIStateFile.load(url) else { Issue.record("did not load"); return }
@@ -583,7 +583,7 @@ import Testing
     }
 
     @Test func wrongTypedGitFieldsFallBackToNil() throws {
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("uistate-\(UUID().uuidString).json")
+        let url = TempFiles.url("uistate", ext: ".json")
         defer { try? FileManager.default.removeItem(at: url) }
         try #"{"version":1,"mode":"code","sidebarTab":5,"gitCommitDraft":[]}"#.write(to: url, atomically: true, encoding: .utf8)
         guard case .state(let loaded) = UIStateFile.load(url) else { Issue.record("did not load"); return }

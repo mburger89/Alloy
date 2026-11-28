@@ -1,4 +1,5 @@
 import Foundation
+import AlloyTestSupport
 import Testing
 @testable import AlloyCore
 
@@ -123,7 +124,7 @@ struct LiveCoordinationTests {
 
     @Test @MainActor func coordinationAgainstTheRealCLI() async throws {
         let fm = FileManager.default
-        let base = fm.temporaryDirectory.appendingPathComponent("alloy-live-coord-\(UUID().uuidString.prefix(8))")
+        let base = TempFiles.url("alloy-live-coord")
         let repo = base.appendingPathComponent("repo"), support = base.appendingPathComponent("support")
         try fm.createDirectory(at: repo, withIntermediateDirectories: true)
         try fm.createDirectory(at: support, withIntermediateDirectories: true)

@@ -1,4 +1,5 @@
 import Foundation
+import AlloyTestSupport
 import MetalUICodeBuffer
 import Testing
 
@@ -23,7 +24,7 @@ private actor Probe {
 }
 
 private func makeProject(_ files: [String: Data]) throws -> URL {
-    let root = FileManager.default.temporaryDirectory.appendingPathComponent("alloy-search-\(UUID().uuidString)")
+    let root = TempFiles.url("alloy-search")
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
     for (name, data) in files {
         let url = root.appendingPathComponent(name)

@@ -1,4 +1,5 @@
 import AlloyCore
+import AlloyTestSupport
 import Foundation
 import Testing
 @testable import AlloyACP
@@ -90,7 +91,7 @@ private let liveEnabled = ProcessInfo.processInfo.environment["ALLOY_ACP_LIVE"] 
     }
 
     private func project(_ name: String) throws -> URL {
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("acp-live-\(name)-\(UUID().uuidString)")
+        let url = TempFiles.url("acp-live-\(name)")
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         return url
     }

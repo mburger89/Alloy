@@ -31,7 +31,7 @@ private let opencode = AgentDefinition(id: "opencode", name: "OpenCode", command
     private let shop = TWorkshop()
 
     init() {
-        base = FileManager.default.temporaryDirectory.appendingPathComponent("alloy-tacp-\(UUID().uuidString)")
+        base = TempFiles.url("alloy-tacp")
         try? FileManager.default.createDirectory(at: base.appendingPathComponent("p"), withIntermediateDirectories: true)
         try? FileManager.default.createDirectory(at: base.appendingPathComponent("s"), withIntermediateDirectories: true)
     }

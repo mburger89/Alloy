@@ -276,7 +276,7 @@ import Testing
     // MARK: Unbound controller
 
     @Test func unboundControllerAppliesToTheHost() throws {
-        let support = FileManager.default.temporaryDirectory.appendingPathComponent("alloy-theme-\(UUID().uuidString)")
+        let support = TempFiles.url("alloy-theme")
         defer { try? FileManager.default.removeItem(at: support) }
         let probe = try Probe([.chatFill])
         _ = ThemeController(appSupport: support, settings: AlloySettings(theme: "one-dark"), host: probe.window.window, watcher: nil)

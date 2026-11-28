@@ -1,5 +1,6 @@
 @testable import AlloyCore
 import Foundation
+import AlloyTestSupport
 import Testing
 
 @Suite struct KeybindingSettingsTests {
@@ -20,7 +21,7 @@ import Testing
     }
 
     @Test func noneAndUnknownIdsSurviveSave() throws {
-        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("kb-\(UUID().uuidString)")
+        let dir = TempFiles.url("kb")
         defer { try? FileManager.default.removeItem(at: dir) }
         let s = AlloySettings(keybindings: ["file.save": "none", "ghost.command": "primary+shift+x", "bad": "shift"])
         try s.save(appSupport: dir)

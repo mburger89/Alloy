@@ -52,7 +52,7 @@ private func alive(_ pid: Int32) -> Bool { kill(pid, 0) == 0 }
 
 @Suite("PluginHost", .serialized)
 struct PluginHostTests {
-    let root = FileManager.default.temporaryDirectory.appendingPathComponent("alloy-host-tests-\(UUID().uuidString)")
+    let root = TempFiles.url("alloy-host-tests")
     let paths: PluginPaths
 
     init() {

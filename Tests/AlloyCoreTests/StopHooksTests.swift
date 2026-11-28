@@ -13,9 +13,9 @@ private final class Counter {
 @MainActor
 struct StopHooksTests {
     private func makeWS() -> Workspace {
-        let root = FileManager.default.temporaryDirectory.appendingPathComponent("alloy-stop-\(UUID().uuidString)")
+        let root = TempFiles.url("alloy-stop")
         try? FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-        let support = FileManager.default.temporaryDirectory.appendingPathComponent("alloy-stop-s-\(UUID().uuidString)")
+        let support = TempFiles.url("alloy-stop-s")
         return Workspace(projectRoot: root, appSupport: support, settings: AlloySettings(),
                          locate: { _ in URL(fileURLWithPath: "/fake/claude") },
                          makeTransport: { _ in ScriptedTransport() }, now: { Date() })

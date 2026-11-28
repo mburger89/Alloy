@@ -1,10 +1,11 @@
 import Foundation
+import AlloyTestSupport
 import Testing
 @testable import AlloyCore
 
 @Suite struct LanguageServerSettingsTests {
     private func tempSupport() -> URL {
-        FileManager.default.temporaryDirectory.appendingPathComponent("alloy-ls-settings-\(UUID().uuidString)")
+        TempFiles.url("alloy-ls-settings")
     }
 
     @Test func oldSettingsFileWithoutLanguageServersStillLoads() throws {
@@ -72,7 +73,7 @@ import Testing
 
 @Suite struct FormatSettingsTests {
     private func tempSupport() -> URL {
-        FileManager.default.temporaryDirectory.appendingPathComponent("alloy-fmt-settings-\(UUID().uuidString)")
+        TempFiles.url("alloy-fmt-settings")
     }
 
     private func write(_ json: String, to support: URL) throws {

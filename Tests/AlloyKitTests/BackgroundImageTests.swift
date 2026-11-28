@@ -43,7 +43,7 @@ import UniformTypeIdentifiers
     }
 
     private func tempDirectory() throws -> URL {
-        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("alloy-bgimage-" + UUID().uuidString)
+        let dir = TempFiles.url("alloy-bgimage")
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         return dir
     }
@@ -307,7 +307,7 @@ import UniformTypeIdentifiers
     }
 
     @Test func decodeCapsTheLongEdge() throws {
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("alloy-bg-big-\(UUID().uuidString).png")
+        let url = TempFiles.url("alloy-bg-big", ext: ".png")
         defer { try? FileManager.default.removeItem(at: url) }
         try writePNG(url, red: 10, green: 20, blue: 30, width: 4000, height: 3000)
         let bitmap = try #require(BackgroundImageLayer.decode(path: url.path))
@@ -316,7 +316,7 @@ import UniformTypeIdentifiers
     }
 
     @Test func decodeKeepsASmallImageAtItsSize() throws {
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("alloy-bg-small-\(UUID().uuidString).png")
+        let url = TempFiles.url("alloy-bg-small", ext: ".png")
         defer { try? FileManager.default.removeItem(at: url) }
         try writePNG(url, red: 10, green: 20, blue: 30, width: 1000, height: 800)
         let bitmap = try #require(BackgroundImageLayer.decode(path: url.path))

@@ -24,7 +24,7 @@ private struct SemRig {
         let script = tokens
             ? #"{"capabilities":{"textDocumentSync":2,"semanticTokensProvider":{"legend":{"tokenTypes":["keyword"],"tokenModifiers":[]},"full":true}},"semanticTokens":{"data":[0,0,5,0,0]}}"#
             : #"{"capabilities":{"textDocumentSync":2}}"#
-        let log = FileManager.default.temporaryDirectory.appendingPathComponent("alloy-sem-\(UUID().uuidString).jsonl")
+        let log = TempFiles.serverLog("alloy-sem")
         self.log = log
         let launcher = ServerLauncher { _, resolved, root in
             var env = ProcessInfo.processInfo.environment

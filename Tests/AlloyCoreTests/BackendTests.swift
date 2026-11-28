@@ -27,7 +27,7 @@ private let fakeAgent = AgentDefinition(id: "fake", name: "Fake", command: "/abs
     deinit { dirs.forEach { try? FileManager.default.removeItem(at: $0) } }
 
     private func tempDir() -> URL {
-        let u = FileManager.default.temporaryDirectory.appendingPathComponent("alloy-be-\(UUID().uuidString)")
+        let u = TempFiles.url("alloy-be")
         try? FileManager.default.createDirectory(at: u, withIntermediateDirectories: true)
         let r = u.resolvingSymlinksInPath()
         dirs.append(r)

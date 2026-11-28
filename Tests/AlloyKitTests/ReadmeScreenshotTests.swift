@@ -1,4 +1,5 @@
 import AlloyCore
+import AlloyTestSupport
 @testable import AlloyKit
 import Foundation
 import MetalUI
@@ -144,7 +145,7 @@ struct ReadmeScreenshotTests {
         let repo = URL(fileURLWithPath: "/tmp/weather")
         try? fm.removeItem(at: repo)
         try fm.copyItem(atPath: src, toPath: repo.path)
-        let supportRoot = fm.temporaryDirectory.appendingPathComponent("alloy-shots-support-\(UUID().uuidString.prefix(8))")
+        let supportRoot = TempFiles.url("alloy-shots-support")
         defer { try? fm.removeItem(at: repo); try? fm.removeItem(at: supportRoot) }
         let images = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
             .deletingLastPathComponent().appendingPathComponent("docs/images")

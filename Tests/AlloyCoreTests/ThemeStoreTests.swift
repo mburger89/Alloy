@@ -1,5 +1,6 @@
 @testable import AlloyCore
 import Foundation
+import AlloyTestSupport
 import Testing
 
 @Suite struct ThemeStoreTests {
@@ -10,7 +11,7 @@ import Testing
     }
 
     private func tempSupport() throws -> URL {
-        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("store-\(UUID().uuidString)")
+        let dir = TempFiles.url("store")
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         return dir
     }

@@ -88,7 +88,7 @@ private actor RecordingTransport: SessionTransport {
 
 extension LauncherTests {
     @Test func quitSavesBeforeStop() async throws {
-        let root = FileManager.default.temporaryDirectory.appendingPathComponent("alloy-q-\(UUID().uuidString)").resolvingSymlinksInPath()
+        let root = TempFiles.url("alloy-q").resolvingSymlinksInPath()
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
         let file = root.appendingPathComponent("a.txt")

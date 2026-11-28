@@ -1,12 +1,12 @@
 import Testing
+import AlloyTestSupport
 import Foundation
 import SQLite3
 @testable import AlloyCore
 
 @Suite struct KnowledgePoolTests {
     private func tempFile() -> URL {
-        FileManager.default.temporaryDirectory
-            .appendingPathComponent("kp-\(UUID().uuidString)", isDirectory: true)
+        TempFiles.url("kp")
             .appendingPathComponent("knowledge.sqlite")
     }
     private func pool(_ url: URL, _ onError: @escaping @Sendable (String) -> Void = { _ in }) throws -> KnowledgePool {
@@ -191,7 +191,7 @@ import SQLite3
     }
 
     @Test func parentPathIsAFileThrowsWithoutMovingAnything() throws {
-        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("kp-\(UUID().uuidString)")
+        let dir = TempFiles.url("kp")
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         let blocker = dir.appendingPathComponent("blocker")
         try "x".write(to: blocker, atomically: true, encoding: .utf8)

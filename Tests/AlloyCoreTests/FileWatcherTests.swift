@@ -1,5 +1,6 @@
 @testable import AlloyCore
 import Foundation
+import AlloyTestSupport
 import Testing
 
 @Suite struct FileWatcherTests {
@@ -16,7 +17,7 @@ import Testing
     }
 
     @Test(.timeLimit(.minutes(1))) func projectUnderNodeModulesStillReports() async throws {
-        let base = FileManager.default.temporaryDirectory.appendingPathComponent("alloy-fs-\(UUID().uuidString)")
+        let base = TempFiles.url("alloy-fs")
         let dir = base.appendingPathComponent("node_modules/proj")
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: base) }
@@ -49,7 +50,7 @@ import Testing
     }
 
     @Test(.timeLimit(.minutes(1))) func fsEventsIntegration() async throws {
-        let base = FileManager.default.temporaryDirectory.appendingPathComponent("alloy-fs-\(UUID().uuidString)")
+        let base = TempFiles.url("alloy-fs")
         let dir = base.appendingPathComponent("p")
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: base) }

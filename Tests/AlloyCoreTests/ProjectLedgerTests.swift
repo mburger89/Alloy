@@ -1,4 +1,5 @@
 import Foundation
+import AlloyTestSupport
 import Testing
 @testable import AlloyCore
 
@@ -13,7 +14,7 @@ private func hunks(_ old: String, _ new: String) -> [PatchHunk] {
     let root: URL
 
     init() throws {
-        root = FileManager.default.temporaryDirectory.appendingPathComponent("alloy-ledger-\(UUID().uuidString)")
+        root = TempFiles.url("alloy-ledger")
         try FileManager.default.createDirectory(at: root.appendingPathComponent("Sources"), withIntermediateDirectories: true)
     }
 
@@ -92,7 +93,7 @@ private func hunks(_ old: String, _ new: String) -> [PatchHunk] {
     @Test func saveLoadRoundTrip() throws {
         var p = ProjectLedger(projectRoot: root)
         _ = edit(&p, "a.txt", "1\n2\n", "1\nX\n", A)
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("ledger-\(UUID().uuidString)/ledger.json")
+        let url = TempFiles.url("ledger").appendingPathComponent("ledger.json")
         try p.save(to: url)
         #expect(try ProjectLedger.load(from: url) == p)
         let support = URL(fileURLWithPath: "/tmp/support")
@@ -109,7 +110,7 @@ private func hunks(_ old: String, _ new: String) -> [PatchHunk] {
         let e = edit(&p, "a.txt", "1\n2\n3\n", "1\nX\n3\n", A)[0].id
         _ = edit(&p, "a.txt", "1\nX\n3\n", "top\n1\nX\n3\n", B)
         let anchor = p.files["a.txt"]!.anchor(atOffset: 6, bias: .right)
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("ledger-\(UUID().uuidString)/l.json")
+        let url = TempFiles.url("ledger").appendingPathComponent("l.json")
         try p.save(to: url)
         var loaded = try ProjectLedger.load(from: url)
         let direct = p.files["a.txt"]!.revertOutcomeForTest(e)

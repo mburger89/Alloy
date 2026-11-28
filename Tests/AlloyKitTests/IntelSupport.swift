@@ -25,7 +25,7 @@ struct IntelRig {
 
     init(rig: Rig = Rig(), script: String) {
         self.rig = rig
-        let log = FileManager.default.temporaryDirectory.appendingPathComponent("alloy-intel-\(UUID().uuidString).jsonl")
+        let log = TempFiles.serverLog("alloy-intel")
         self.log = log
         let launcher = ServerLauncher { _, resolved, root in
             var env = ProcessInfo.processInfo.environment

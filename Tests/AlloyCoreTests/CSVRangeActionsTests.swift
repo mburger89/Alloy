@@ -26,8 +26,8 @@ private final class CSVTransports: @unchecked Sendable {
 
     private func fixture(base: String = CSVRangeActionsTests.base, new: String = CSVRangeActionsTests.agent,
                          author: Author? = nil, readOnly: Bool = false) async throws -> Fixture {
-        let root = FileManager.default.temporaryDirectory.appendingPathComponent("alloy-csvr-\(UUID().uuidString)")
-        let support = FileManager.default.temporaryDirectory.appendingPathComponent("alloy-csvr-\(UUID().uuidString)")
+        let root = TempFiles.url("alloy-csvr")
+        let support = TempFiles.url("alloy-csvr")
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         try FileManager.default.createDirectory(at: support, withIntermediateDirectories: true)
         try base.write(to: root.appendingPathComponent("d.csv"), atomically: true, encoding: .utf8)

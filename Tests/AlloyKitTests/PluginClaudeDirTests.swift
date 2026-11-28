@@ -16,7 +16,7 @@ import Testing
     }
 
     @Test func noPluginPathWritesADotClaude() async throws {
-        let home = FileManager.default.temporaryDirectory.appendingPathComponent("alloy-home-\(UUID().uuidString)").resolvingSymlinksInPath()
+        let home = TempFiles.url("alloy-home").resolvingSymlinksInPath()
         try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: home) }
         let rig = Rig()

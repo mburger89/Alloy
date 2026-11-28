@@ -29,7 +29,7 @@ private final class Transports: @unchecked Sendable {
 
     private func tempDir() -> URL {
         // Deliberately not symlink-resolved: /var/... while the real path is /private/var/...
-        let u = FileManager.default.temporaryDirectory.appendingPathComponent("alloy-on-\(UUID().uuidString)")
+        let u = TempFiles.url("alloy-on")
         try? FileManager.default.createDirectory(at: u, withIntermediateDirectories: true)
         dirs.append(u)
         return u

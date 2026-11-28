@@ -1,4 +1,5 @@
 import Foundation
+import AlloyTestSupport
 import Testing
 @testable import AlloyCore
 
@@ -7,7 +8,7 @@ import Testing
 /// the `/private` prefix again, so it cannot be the resolver.
 struct HookRootFormsTests {
     @Test func rootIncludesTheRealPathTheCLIReports() throws {
-        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("hook-root-\(UUID().uuidString.prefix(8))")
+        let dir = TempFiles.url("hook-root")
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: dir) }
         var buffer = [CChar](repeating: 0, count: Int(PATH_MAX))

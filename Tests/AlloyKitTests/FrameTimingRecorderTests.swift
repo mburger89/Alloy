@@ -1,4 +1,5 @@
 import AlloyCore
+import AlloyTestSupport
 import Foundation
 import MetalUI
 import MetalUITesting
@@ -30,7 +31,7 @@ private struct KeyBox: Component {
     }
 
     @Test func onWithFlagAndDataDir() throws {
-        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("alloy-ft-\(UUID().uuidString)")
+        let dir = TempFiles.url("alloy-ft")
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: dir) }
         let window = try makeWindow()

@@ -30,7 +30,7 @@ private func settle(_ condition: @escaping @Sendable () -> Bool, seconds: Double
 }
 
 private func tempDir() -> String {
-    let url = FileManager.default.temporaryDirectory.appendingPathComponent("alloy-mgr-\(UUID().uuidString)")
+    let url = TempFiles.url("alloy-mgr")
     try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
     return url.path
 }

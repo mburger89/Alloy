@@ -184,7 +184,7 @@ import Testing
         let ws = rig.workspace
         let key = ws.newUntitled()
         try type(rig, key, "away\n")
-        let elsewhere = FileManager.default.temporaryDirectory.appendingPathComponent("alloy-newfile-\(UUID().uuidString).txt")
+        let elsewhere = TempFiles.url("alloy-newfile", ext: ".txt")
         defer { try? FileManager.default.removeItem(at: elsewhere) }
         let center = testCenter(for: ws)
         var outside: [URL] = []

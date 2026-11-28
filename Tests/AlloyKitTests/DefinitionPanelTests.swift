@@ -19,7 +19,7 @@ private struct DefRig {
     let log: URL
 
     init(delayMs: Int = 0, hold: Bool = false, answer: @escaping @Sendable (URL) -> String) {
-        let log = FileManager.default.temporaryDirectory.appendingPathComponent("alloy-defpanel-\(UUID().uuidString).jsonl")
+        let log = TempFiles.serverLog("alloy-defpanel")
         self.log = log
         let launcher = ServerLauncher { _, resolved, root in
             var env = ProcessInfo.processInfo.environment

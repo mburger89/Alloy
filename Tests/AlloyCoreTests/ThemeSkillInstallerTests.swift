@@ -1,11 +1,12 @@
 import AlloyCore
+import AlloyTestSupport
 import Foundation
 import Testing
 
 /// Every test uses a temporary home; nothing here may touch the real `~/.claude`.
 @Suite struct ThemeSkillInstallerTests {
     private func tempHome() throws -> URL {
-        let home = FileManager.default.temporaryDirectory.appendingPathComponent("alloy-skill-\(UUID().uuidString)")
+        let home = TempFiles.url("alloy-skill")
             .resolvingSymlinksInPath()
         try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
         return home

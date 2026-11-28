@@ -30,7 +30,7 @@ private final class LHarness: @unchecked Sendable {
     deinit { dirs.forEach { try? FileManager.default.removeItem(at: $0) } }
 
     private func tempDir() -> URL {
-        let u = FileManager.default.temporaryDirectory.appendingPathComponent("alloy-slf-\(UUID().uuidString)")
+        let u = TempFiles.url("alloy-slf")
         try? FileManager.default.createDirectory(at: u, withIntermediateDirectories: true)
         let r = u.resolvingSymlinksInPath()
         dirs.append(r)

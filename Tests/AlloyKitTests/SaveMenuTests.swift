@@ -139,7 +139,7 @@ import Testing
 
     @Test func saveAsOutsideTheProjectWritesAndLeavesTheTab() async throws {
         let rig = try await dirtyRig()
-        let elsewhere = FileManager.default.temporaryDirectory.appendingPathComponent("alloy-saveas-\(UUID().uuidString).txt")
+        let elsewhere = TempFiles.url("alloy-saveas", ext: ".txt")
         defer { try? FileManager.default.removeItem(at: elsewhere) }
         let center = testCenter(for: rig.workspace)
         center.chooseSaveURL = { _, _ in elsewhere }

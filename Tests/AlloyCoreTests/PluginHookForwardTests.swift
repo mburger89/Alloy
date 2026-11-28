@@ -30,7 +30,7 @@ private final class Events {
     }
 
     private func env() -> Env {
-        let root = FileManager.default.temporaryDirectory.appendingPathComponent("alloy-hookfwd-\(UUID().uuidString)")
+        let root = TempFiles.url("alloy-hookfwd")
             .resolvingSymlinksInPath()
         try? FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         let bag = Bag()

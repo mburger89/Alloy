@@ -43,7 +43,7 @@ private func userTexts(_ t: ScriptedTransport, at index: Int = 0) async -> [Stri
     deinit { dirs.forEach { try? FileManager.default.removeItem(at: $0) } }
 
     private func tempDir() -> URL {
-        let u = FileManager.default.temporaryDirectory.appendingPathComponent("alloy-fk-\(UUID().uuidString)")
+        let u = TempFiles.url("alloy-fk")
         try? FileManager.default.createDirectory(at: u, withIntermediateDirectories: true)
         let r = u.resolvingSymlinksInPath()
         dirs.append(r)

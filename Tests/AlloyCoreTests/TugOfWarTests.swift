@@ -27,7 +27,7 @@ private final class TugTransports: @unchecked Sendable {
     static let base = (1...40).map { "line\($0)\n" }.joined()
 
     private func tempDir() -> URL {
-        let u = FileManager.default.temporaryDirectory.appendingPathComponent("alloy-tug-\(UUID().uuidString)")
+        let u = TempFiles.url("alloy-tug")
         try? FileManager.default.createDirectory(at: u, withIntermediateDirectories: true)
         dirs.append(u)
         return u

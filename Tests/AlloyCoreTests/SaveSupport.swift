@@ -18,7 +18,7 @@ final class Env {
     /// `base` is a temp directory the test owns (cleanup removes the project's parent, so the project is `base/<project>`;
     /// a git worktree can be one). `factory` picks the change source for a watched directory; by default every
     /// directory gets `changes`.
-    init(base: URL = FileManager.default.temporaryDirectory.appendingPathComponent("alloy-sv-\(UUID().uuidString)"),
+    init(base: URL = TempFiles.url("alloy-sv"),
          project: String = "p", factory: (@Sendable (URL, ScriptedChangeSource) -> any FileChangeSource)? = nil) {
         let projectDir = base.appendingPathComponent(project), support = base.appendingPathComponent("s")
         try? FileManager.default.createDirectory(at: projectDir, withIntermediateDirectories: true)

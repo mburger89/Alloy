@@ -1,11 +1,12 @@
 import Testing
+import AlloyTestSupport
 import Foundation
 @testable import AlloyCore
 
 @Suite(.timeLimit(.minutes(1))) final class KnowledgeScopeTests {
     private let base: String
     init() throws {
-        let u = FileManager.default.temporaryDirectory.appendingPathComponent("alloy-scope-\(UUID().uuidString)")
+        let u = TempFiles.url("alloy-scope")
         try FileManager.default.createDirectory(at: u, withIntermediateDirectories: true)
         base = try #require(NotePath.realPath(u.path))
     }

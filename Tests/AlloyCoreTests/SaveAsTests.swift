@@ -1,5 +1,6 @@
 @testable import AlloyCore
 import Foundation
+import AlloyTestSupport
 import MetalUICodeBuffer
 import Testing
 
@@ -36,7 +37,7 @@ import Testing
     @Test func outsideTheProjectWritesTheCopyAndKeepsTheTab() async throws {
         let e = Env(); defer { e.cleanup() }
         try await open3(e)
-        let elsewhere = FileManager.default.temporaryDirectory.appendingPathComponent("alloy-core-saveas-\(UUID().uuidString).txt")
+        let elsewhere = TempFiles.url("alloy-core-saveas", ext: ".txt")
         defer { try? FileManager.default.removeItem(at: elsewhere) }
         try await e.ws.saveAs("b.txt", to: elsewhere)
         #expect(try String(contentsOf: elsewhere, encoding: .utf8) == "xhello\n")

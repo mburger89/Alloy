@@ -15,7 +15,7 @@ import Testing
     static let budgetMiB = 1.0
 
     @Test func hostAndThreeIdleConnectionsStayUnderBudget() async throws {
-        let root = FileManager.default.temporaryDirectory.appendingPathComponent("alloy-plugin-mem-\(UUID().uuidString)")
+        let root = TempFiles.url("alloy-plugin-mem")
         defer { try? FileManager.default.removeItem(at: root) }
         let paths = PluginPaths(appSupport: root)
         var configs: [PluginRuntimeConfig] = []

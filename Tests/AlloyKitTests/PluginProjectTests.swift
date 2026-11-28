@@ -142,7 +142,7 @@ import Testing
 
     @Test func writeRefusedOutside() async throws {
         let p = try await make()
-        let elsewhere = FileManager.default.temporaryDirectory.appendingPathComponent("alloy-outside-\(UUID().uuidString)")
+        let elsewhere = TempFiles.url("alloy-outside")
         try FileManager.default.createDirectory(at: elsewhere, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: elsewhere) }
         try FileManager.default.createSymbolicLink(at: p.rig.root.appendingPathComponent("link"), withDestinationURL: elsewhere)
@@ -175,7 +175,7 @@ import Testing
 
     @Test func aProjectInsideAClaudeOrGitFolderRefusesWrites() throws {
         for name in [".claude", ".Claude", ".GIT"] {
-            let base = FileManager.default.temporaryDirectory.appendingPathComponent("alloy-in-\(UUID().uuidString)")
+            let base = TempFiles.url("alloy-in")
             let root = base.appendingPathComponent(name).appendingPathComponent("proj")
             try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
             defer { try? FileManager.default.removeItem(at: base) }

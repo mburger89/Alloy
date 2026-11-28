@@ -1,6 +1,7 @@
 #if !os(Windows)
 
 import AlloyCore
+import AlloyTestSupport
 @testable import AlloyTerminal
 import Foundation
 import MetalUITerminal
@@ -35,7 +36,7 @@ private func settle(_ condition: @escaping @Sendable () async -> Bool, seconds: 
 }
 
 private func tempDir() -> String {
-    let url = FileManager.default.temporaryDirectory.appendingPathComponent("alloy-live-\(UUID().uuidString)")
+    let url = TempFiles.url("alloy-live")
     try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
     // Resolve symlinks (macOS /var -> /private/var) so `pwd` output matches.
     return url.resolvingSymlinksInPath().path

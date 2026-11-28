@@ -1,10 +1,11 @@
 @testable import AlloyCore
 import Foundation
+import AlloyTestSupport
 import Testing
 
 @MainActor @Suite struct BranchNameTests {
     private func project(head: String?) throws -> URL {
-        let root = FileManager.default.temporaryDirectory.appendingPathComponent("alloy-branch-\(UUID().uuidString)")
+        let root = TempFiles.url("alloy-branch")
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         if let head {
             try FileManager.default.createDirectory(at: root.appendingPathComponent(".git"), withIntermediateDirectories: true)

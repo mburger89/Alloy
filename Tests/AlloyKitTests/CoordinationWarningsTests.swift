@@ -22,7 +22,7 @@ private final class WarnRig {
     static let base = (1...30).map { "line\($0)\n" }.joined()
 
     static func make() async -> WarnRig {
-        let root = FileManager.default.temporaryDirectory.appendingPathComponent("alloy-warn-\(UUID().uuidString)").resolvingSymlinksInPath()
+        let root = TempFiles.url("alloy-warn").resolvingSymlinksInPath()
         try? FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         try? base.write(to: root.appendingPathComponent("f.txt"), atomically: true, encoding: .utf8)
         let clock = WarnClock(), bag = TransportBag(), manual = ManualClock()

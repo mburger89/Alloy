@@ -1,5 +1,6 @@
 @testable import AlloyCore
 import Foundation
+import AlloyTestSupport
 import Testing
 
 @Suite struct GitStatusParserTests {
@@ -58,7 +59,7 @@ import Testing
     }
 
     @Test func operationDetected() throws {
-        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("gitop-" + UUID().uuidString)
+        let dir = TempFiles.url("gitop")
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: dir) }
         #expect(GitOperation.detect(gitDir: dir) == nil)

@@ -36,7 +36,7 @@ private final class FakeWorkshop: ThemeWorkshop {
     private var caller: MCPCaller { MCPCaller(sessionID: session, scopes: [.theme]) }
 
     private func makeSupport() -> URL {
-        let u = FileManager.default.temporaryDirectory.appendingPathComponent("alloy-themetools-\(UUID().uuidString)")
+        let u = TempFiles.url("alloy-themetools")
         try? FileManager.default.createDirectory(at: u, withIntermediateDirectories: true)
         dirs.append(u)
         return u

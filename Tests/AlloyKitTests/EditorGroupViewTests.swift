@@ -338,7 +338,7 @@ import Testing
 
     private func definition(viaMenu: Bool) async throws {
         let rig = Rig()
-        let log = FileManager.default.temporaryDirectory.appendingPathComponent("alloy-groupdef-\(UUID().uuidString).jsonl")
+        let log = TempFiles.serverLog("alloy-groupdef")
         defer { try? FileManager.default.removeItem(at: log) }
         let launcher = ServerLauncher { _, resolved, root in
             let target = root.appendingPathComponent("lib.rs").absoluteString

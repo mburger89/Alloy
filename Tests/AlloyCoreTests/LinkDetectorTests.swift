@@ -1,4 +1,5 @@
 import Foundation
+import AlloyTestSupport
 import Testing
 @testable import AlloyCore
 
@@ -109,7 +110,7 @@ import Testing
 
     @Test func resolveRejectsASymlinkThatLeavesTheProject() throws {
         let fm = FileManager.default
-        let base = fm.temporaryDirectory.appendingPathComponent("ld-\(UUID().uuidString)")
+        let base = TempFiles.url("ld")
         let project = base.appendingPathComponent("p"), outside = base.appendingPathComponent("out")
         try fm.createDirectory(at: project, withIntermediateDirectories: true)
         try fm.createDirectory(at: outside, withIntermediateDirectories: true)

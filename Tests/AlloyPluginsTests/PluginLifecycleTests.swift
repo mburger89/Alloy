@@ -38,7 +38,7 @@ private final class FakeProbe: PluginProcessProbe, @unchecked Sendable {
 
 @Suite("PluginLifecycle", .serialized)
 struct PluginLifecycleTests {
-    let root = FileManager.default.temporaryDirectory.appendingPathComponent("alloy-life-tests-\(UUID().uuidString)")
+    let root = TempFiles.url("alloy-life-tests")
     let paths: PluginPaths
     let clock = ManualClock()
 

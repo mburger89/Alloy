@@ -107,7 +107,7 @@ import Testing
 }
 
 @MainActor private final class Harness {
-    let root = FileManager.default.temporaryDirectory.appendingPathComponent("alloy-reg-\(UUID().uuidString)")
+    let root = TempFiles.url("alloy-reg")
     lazy var workspace: Workspace = {
         try? FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         return Workspace(projectRoot: root, appSupport: root.appendingPathComponent("support"), settings: AlloySettings(),

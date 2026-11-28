@@ -5,7 +5,7 @@ import Testing
 
 @Suite struct FileIndexTests {
     private func tempDir() throws -> URL {
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("alloy-fi-\(UUID().uuidString)")
+        let url = TempFiles.url("alloy-fi")
             .resolvingSymlinksInPath()
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         return url

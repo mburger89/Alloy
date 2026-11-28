@@ -1,10 +1,11 @@
 @testable import AlloyCore
 import Foundation
+import AlloyTestSupport
 import Testing
 
 @Suite struct AlloySettingsRecoveryTests {
     private func tempDir() throws -> URL {
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("alloy-set-\(UUID().uuidString)")
+        let url = TempFiles.url("alloy-set")
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         return url
     }

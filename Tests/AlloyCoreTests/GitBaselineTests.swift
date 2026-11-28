@@ -191,7 +191,7 @@ import Testing
     }
 
     @Test func worktreeWatchesItsGitDirectory() async throws {
-        let base = FileManager.default.temporaryDirectory.appendingPathComponent("alloy-wt-\(UUID().uuidString)")
+        let base = TempFiles.url("alloy-wt")
         let main = base.appendingPathComponent("main")
         try FileManager.default.createDirectory(at: main, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: base) }
@@ -216,7 +216,7 @@ import Testing
     }
 
     @Test func projectBelowRepositoryTopWatchesTheRepositoryGitDirectory() async throws {
-        let base = FileManager.default.temporaryDirectory.appendingPathComponent("alloy-sub-\(UUID().uuidString)")
+        let base = TempFiles.url("alloy-sub")
         let sub = base.appendingPathComponent("sub")
         try FileManager.default.createDirectory(at: sub, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: base) }

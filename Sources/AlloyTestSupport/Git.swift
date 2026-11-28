@@ -48,10 +48,9 @@ public func writeFile(_ root: URL, _ rel: String, _ text: String) throws {
     try text.write(to: url, atomically: true, encoding: .utf8)
 }
 
-/// A throwaway repository on branch `main` with `files`, optionally committed. The caller removes the directory.
+/// A throwaway repository on branch `main` with `files`, optionally committed. Removed at process exit at the latest; callers may remove it sooner.
 public func makeRepo(files: [String: String], commit: Bool = true) throws -> URL {
-    let root = FileManager.default.temporaryDirectory.appendingPathComponent("alloy-repo-" + UUID().uuidString)
-    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let root = TempFiles.directory("alloy-repo")
     try git(root, "init", "-q", "-b", "main")
     for (rel, text) in files { try writeFile(root, rel, text) }
     if commit {

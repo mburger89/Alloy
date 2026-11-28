@@ -20,7 +20,7 @@ private final class Dirs: @unchecked Sendable {
     private let lock = NSLock()
     private var urls: [URL] = []
     func make() -> URL {
-        let u = FileManager.default.temporaryDirectory.appendingPathComponent("alloy-reads-\(UUID().uuidString)")
+        let u = TempFiles.url("alloy-reads")
         try? FileManager.default.createDirectory(at: u, withIntermediateDirectories: true)
         let r = u.resolvingSymlinksInPath()
         lock.withLock { urls.append(r) }

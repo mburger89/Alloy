@@ -30,7 +30,7 @@ private final class Transports: @unchecked Sendable {
     static let base = (1...30).map { "line\($0)\n" }.joined()
 
     private func tempDir() -> URL {
-        let u = FileManager.default.temporaryDirectory.appendingPathComponent("alloy-ct-\(UUID().uuidString)")
+        let u = TempFiles.url("alloy-ct")
         try? FileManager.default.createDirectory(at: u, withIntermediateDirectories: true)
         let r = u.resolvingSymlinksInPath()
         dirs.append(r)

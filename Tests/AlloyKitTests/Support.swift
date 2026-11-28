@@ -161,9 +161,9 @@ final class Rig {
         var settings = AlloySettings()
         settings.followEdits = followEdits
         settings.defaultAgentID = defaultAgentID
-        root = FileManager.default.temporaryDirectory.appendingPathComponent("alloy-ui-\(UUID().uuidString)").resolvingSymlinksInPath()
+        root = TempFiles.url("alloy-ui").resolvingSymlinksInPath()
         try? FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-        appSupport = FileManager.default.temporaryDirectory.appendingPathComponent("alloy-ui-support-\(UUID().uuidString)").resolvingSymlinksInPath()
+        appSupport = TempFiles.url("alloy-ui-support").resolvingSymlinksInPath()
         if let branch {
             try? FileManager.default.createDirectory(at: root.appendingPathComponent(".git"), withIntermediateDirectories: true)
             try? "ref: refs/heads/\(branch)\n".write(to: root.appendingPathComponent(".git/HEAD"), atomically: true, encoding: .utf8)

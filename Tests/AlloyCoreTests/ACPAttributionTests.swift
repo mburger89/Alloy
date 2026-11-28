@@ -30,7 +30,7 @@ private final class AEnv {
     private var stamps = 0
 
     init() {
-        base = FileManager.default.temporaryDirectory.appendingPathComponent("alloy-acpf-\(UUID().uuidString)")
+        base = TempFiles.url("alloy-acpf")
         let project = base.appendingPathComponent("p"), support = base.appendingPathComponent("s")
         try? FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
         try? FileManager.default.createDirectory(at: support, withIntermediateDirectories: true)

@@ -114,7 +114,7 @@ import UniformTypeIdentifiers
         try FileManager.default.createDirectory(at: rig.root.appendingPathComponent("src"), withIntermediateDirectories: true)
         let inside = rig.root.appendingPathComponent("src/main.swift")
         try "x".write(to: inside, atomically: true, encoding: .utf8)
-        let outsideDir = FileManager.default.temporaryDirectory.appendingPathComponent("alloy-out-\(UUID().uuidString)").resolvingSymlinksInPath()
+        let outsideDir = TempFiles.url("alloy-out").resolvingSymlinksInPath()
         try FileManager.default.createDirectory(at: outsideDir, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: outsideDir) }
         let outside = outsideDir.appendingPathComponent("notes.txt")

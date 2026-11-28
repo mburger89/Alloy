@@ -1,11 +1,12 @@
 import Foundation
+import AlloyTestSupport
 @testable import AlloyPlugins
 
 /// A temporary directory per test, with helpers to write a plugin folder.
 final class PluginTestFolder {
     let root: URL
     init() {
-        root = FileManager.default.temporaryDirectory.appendingPathComponent("alloy-plugin-tests-\(UUID().uuidString)")
+        root = TempFiles.url("alloy-plugin-tests")
         try? FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
     }
     deinit { try? FileManager.default.removeItem(at: root) }

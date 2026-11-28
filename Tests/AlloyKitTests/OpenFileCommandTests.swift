@@ -53,7 +53,7 @@ import Testing
     @Test func openOutsideFileBehavesLikeAlloyFileArgument() async throws {
         let rig = Rig()
         try write(rig, ["a.txt"])
-        let elsewhere = FileManager.default.temporaryDirectory.appendingPathComponent("alloy-open-\(UUID().uuidString).txt")
+        let elsewhere = TempFiles.url("alloy-open", ext: ".txt")
         try "y\n".write(to: elsewhere, atomically: true, encoding: .utf8)
         defer { try? FileManager.default.removeItem(at: elsewhere) }
         let center = testCenter(for: rig.workspace)

@@ -1,4 +1,5 @@
 import AlloyCore
+import AlloyTestSupport
 import Foundation
 import Testing
 
@@ -106,7 +107,7 @@ import Testing
     }
 
     @Test func lastProjectPathRoundTrips() throws {
-        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("alloy-set-\(UUID().uuidString)")
+        let dir = TempFiles.url("alloy-set")
         defer { try? FileManager.default.removeItem(at: dir) }
         try AlloySettings(lastProjectPath: "/work/proj").save(appSupport: dir)
         #expect(AlloySettings.load(appSupport: dir).lastProjectPath == "/work/proj")

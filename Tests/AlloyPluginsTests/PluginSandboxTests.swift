@@ -47,7 +47,7 @@ private final class Listener {
 
 @Suite("PluginSandbox", .serialized)
 struct PluginSandboxTests {
-    let root = FileManager.default.temporaryDirectory.appendingPathComponent("alloy-sandbox-tests-\(UUID().uuidString)")
+    let root = TempFiles.url("alloy-sandbox-tests")
     let paths: PluginPaths
     let project: URL
     let outside: URL
