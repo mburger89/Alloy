@@ -23,7 +23,7 @@ import Testing
     /// streamed block.
     /// `streamed` makes the reply one block that really streams (a block start, then a text delta per step): it takes the
     /// delta's index and returns the text to append. Without it each step emits a new block, as the older benchmarks do.
-    private func scenario(deltas: Int = 30, extras: Bool = false, streamed: ((Int) -> String)? = nil) async throws -> (Rig, Session, TestWindow, Run) {
+    private func scenario(deltas: Int = 30, extras: Bool = false, streamed: ((Int) -> String)? = nil, focusComposer: Bool = false) async throws -> (Rig, Session, TestWindow, Run) {
         let rig = Rig()
         let other = extras ? await rig.workspace.newSession(name: "Bea") : nil
         let session = await rig.workspace.newSession(name: "A")
@@ -51,6 +51,11 @@ import Testing
         // A tall window, so the notice, the message, the question and the plan are all on screen at once.
         let window = try alloyWindow(rig.workspace, height: extras ? 3000 : 800)
         for _ in 0..<30 { window.tick(); await Task.yield() }
+        if focusComposer {
+            try window.focus(window.element(identifier: "composer"))
+            window.tick()
+            #expect(try window.focusedElement?.identifier == "composer", "the composer holds focus before streaming")
+        }
         var run = Run()
         var text = "streaming"
         if streamed != nil { await t.emit(.delta(.blockStart(index: 0, kind: "text"))) }
@@ -100,11 +105,16 @@ import Testing
     }
 
     /// The long reply streamed in 30 deltas at the bottom, then scrolled from the bottom to the top in 20 equal steps.
-    @Test func measureLongReply() async throws {
+    @Test func measureLongReply() async throws { try await measureLong(prefix: "LONG", focusComposer: false) }
+
+    /// `measureLongReply` with the chat composer's text field holding focus throughout streaming and scrolling.
+    @Test func measureLongReplyComposerFocused() async throws { try await measureLong(prefix: "LONGF", focusComposer: true) }
+
+    private func measureLong(prefix: String, focusComposer: Bool) async throws {
         let chunks = Self.longReplyChunks(30)
-        let (_, _, window, run) = try await scenario(deltas: chunks.count) { chunks[$0] }
+        let (_, _, window, run) = try await scenario(deltas: chunks.count, streamed: { chunks[$0] }, focusComposer: focusComposer)
         let d = Double(run.deltas)
-        print("LONG per-delta requests=\(Double(run.requests) / d) prepaints=\(Double(run.prepaints) / d) markdownTopBlock=\(Double(run.rerun["MarkdownTopBlock"]!) / d)")
+        print("\(prefix) per-delta requests=\(Double(run.requests) / d) prepaints=\(Double(run.prepaints) / d) markdownTopBlock=\(Double(run.rerun["MarkdownTopBlock"]!) / d)")
         let centre = Point(x: Pixels(400), y: Pixels(300))
         var requests = 0, prepaints = 0
         let steps = 20
@@ -115,7 +125,8 @@ import Testing
             requests += window.frameWork.map { $0.elementRequests + $0.redoneElementRequests }.reduce(0, +)
             prepaints += window.frameWork.map { $0.elementPrepaints + $0.redoneElementPrepaints }.reduce(0, +)
         }
-        print("LONG per-scroll-step requests=\(Double(requests) / Double(steps)) prepaints=\(Double(prepaints) / Double(steps))")
+        if focusComposer { #expect(try window.focusedElement?.identifier == "composer", "the composer still holds focus after scrolling") }
+        print("\(prefix) per-scroll-step requests=\(Double(requests) / Double(steps)) prepaints=\(Double(prepaints) / Double(steps))")
     }
 
     /// Before: 23.9 ChatBlockView, 17.9 AssistantText, 17.9 MarkdownText, 1.4 UserBubble, 1.8 ThinkingRow, 2.0 ToolBlockView and
