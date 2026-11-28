@@ -18,6 +18,7 @@
 
 ```
 P0a mux close-ack + socket fix + content-hash version ─┐
+P0c host-path URL helper + guard pattern ──────────────┤
 P0b RPC schema + blob channel ─────────────────────────┤
                                                        ├─ D1 daemon fs/proc/info/attach ─┐
                                                        ├─ D2 daemon watch + search ──────┤
@@ -26,7 +27,7 @@ P0b RPC schema + blob channel ────────────────�
                                                        └─ U1 connect window + recents + remote arg (fakes only) ────────┘
 ```
 
-- **P0a and P0b** run in parallel; they touch different files.
+- **P0a, P0b and P0c** run in parallel; they touch different files.
 - **D1, D2, C1, K1 and U1** run in parallel once both P0s merge.
 - **C2** needs D1, D2 and C1.
 - **C3** needs C2.
@@ -89,11 +90,24 @@ P0b RPC schema + blob channel ────────────────�
   - `<home>/current` is a symlink to the version directory that should run.
   - New helpers: `HostPaths.current(home:)` and `HostPaths.setCurrent(version:home:) throws`, which swaps the symlink atomically via a temp link plus `rename`.
   - The bridge of any version relays to whatever daemon is listening.
+- **Plan 1 final review: wire decisions to settle before protocol major 1 freezes:**
+  - **Channel IDs are never reused.** Use monotonic IDs, with odd IDs opened by the client and even IDs by the daemon. Channels 0, 1 and 2 are reserved. Plan 3's dynamic pty and agent channels need this anyway. A close-ack only frees state, so a late close can never hit a reopened channel.
+  - **Control frames are typed.** A type byte first: 1 = grant, 2 = close, 3 = close-ack. Control frames no longer rely on payload length. An unknown type is a protocol violation, never silently ignored.
+  - **`close()` and `failAll` clear `handles`.** That fixes the retain cycle that leaks one Mux per reconnect in the persistent daemon.
+  - **`onClose` carries a reason** (`MuxCloseReason`: clean, decode error, protocol violation, send failure), so C3 can choose between reconnecting and failing.
+  - **The daemon closes a connection's fd only after the FDReader thread has ended** (its `onEnd`). That closes the read-side fd-reuse window.
+  - **Single consumer per channel stream** is documented, and a second iterator is a precondition failure.
 - **Pending Plan 1 minors that live in these lines:**
   - cap `pendingGrants` at 4096 frames, with a protocol violation past that;
   - add `onClose` coverage via `failAll` with a test.
 
 - [ ] **Step 1: Write failing tests.**
+  - `channelIDsAreNeverReused`
+  - `lateCloseNeverHitsAReopenedChannel`
+  - `unknownControlTypeFailsMux`
+  - `closeReleasesHandles`: a weak reference to a channel is nil after `close()`.
+  - `onCloseCarriesReason`
+  - `fdClosedOnlyAfterReaderEnds`
   - `socketIsVersionIndependent`
   - `setCurrentSwapsAtomically`
   - `localCloseWithoutDataIsReclaimedAfterAck`
@@ -168,7 +182,16 @@ public actor BlobStore {
 }
 ```
 
+**Plan 1 final review: throughput.**
+- The handshake carries the receive window: `Handshake.window`, default 256 KiB for channel 1 and 4 MiB for the blob channel.
+- Grants are coalesced: send one when at least half the window has been consumed, not one per frame.
+- Any result that can be large (`walkFiles`, `existingFiles` and `list` with more than 1,000 entries, plus every `run`/`git` stdout and stderr) travels as a blob, so a multi-MB answer never blocks small calls on channel 1.
+- Process output is always raw bytes. Fixes A4's `cat-file blob` note.
+
 - [ ] **Step 1: Write failing tests.**
+  - `largeListResultTravelsAsBlobAndSmallCallsAreNotBlocked`
+  - `grantsAreCoalesced`
+  - `windowNegotiatedInHandshake`
   - `everyMethodHasParamsAndResultRoundTrip`: one JSON round trip per `Method` case.
   - `searchBatchIsCodable`
   - `blobRoundTripsAcrossChunks`: a 5 MiB blob over a mux pair.
@@ -180,6 +203,44 @@ public actor BlobStore {
 - [ ] **Step 3:** implement.
 - [ ] **Step 4:** run the same command. Expected: PASS. Run `swift build --build-tests`.
 - [ ] **Step 5:** commit `feat(remote): host RPC schema and blob channel`.
+
+### Task P0c: Host-path URL helper and guard pattern (Plan 1 final review I3)
+
+**Files:**
+- Create: `Sources/AlloyCore/Host/HostPathURL.swift`
+- Modify: every remote-branch site in the list below, plus `Tests/AlloyCoreTests/HostBoundaryGuardTests.swift`
+- Test: the guard itself, plus `HostPathURLTests`
+
+**Interfaces (Produces):**
+- **The constructors:** `URL.hostPath(_ path: String, isDirectory: Bool = false) -> URL` and `URL.appendingHostPath(_ component: String, isDirectory: Bool = false) -> URL`. They are built on `URL(filePath:directoryHint:)` and `appending(path:directoryHint:)`, so they never stat. Every URL built from a path that may be remote uses them.
+- **The guard pattern:** `URL(fileURLWithPath:` and `.appendingPathComponent(` count as boundary hits and need a `// host-local:` marker. Sites that are fully lexical and app-local are allowlisted with a reason.
+- **Sites to convert,** from the review:
+  - `NotesTools.swift:83,89,499,504`
+  - `GitBaseline.swift:82,187`
+  - `TerminalManager.swift:172,175`
+  - `TerminalPanelStore.swift:173`
+  - `SharedContext.swift:146`
+  - `KnowledgeScope.swift:22` (the remote arm)
+  - `OutsideEdits.swift:178`
+  - `PluginCoordinator+Tasks.swift:71`
+  - `LSPManager.swift:1084`
+  - `ConfigProbe.swift:50`
+  - `ServerRegistry.swift:246-247`
+  - `LinkDetector.swift:107,112`
+  - `CodeActionService.swift:170`
+  - `ACPHistory.swift:17`
+  - `Workspace.swift:2547,2588`
+  - `hostResolved` in Workspace+Panes
+
+  Grep the tree for each, since line numbers may have moved. Local branches keep today's calls under a marker.
+
+- [ ] **Step 1:** add the pattern. Run the guard. Expected: FAIL, listing the sites.
+- [ ] **Step 2:** write `HostPathURLTests`. `hostPathNeverStats`: build a URL for a path under `/private/tmp` that exists, and assert `hasDirectoryPath` follows only the hint.
+- [ ] **Step 3:** convert the sites.
+- [ ] **Step 4:** run the guard and `--filter 'AlloyCoreTests|AlloyKitTests'`. Expected: PASS, with local behaviour unchanged. Re-run the 4 perf suites.
+- [ ] **Step 5:** commit `refactor(host): stat-free URLs for host paths and a guard pattern for them`.
+
+P0c runs alongside P0a and P0b, since it touches different files. C2 depends on it.
 
 ### Task D1: Daemon fs, processes, hello, attach and takeover
 
@@ -202,7 +263,11 @@ public actor BlobStore {
     - If `Idle` has no work, it calls `HostPaths.setCurrent`, replies `"now"`, then exits 0. launchd's KeepAlive starts `current`. Without launchd, the next bridge spawns it.
     - Otherwise it replies `"deferred"`, and performs the switch when the work count reaches 0.
     - It refuses versions whose directory or binary is missing.
-  - The daemon marks work in `Idle` while requests are in flight.
+  - The daemon marks work in `Idle` while requests are in flight. `Idle.enter` runs under the lock.
+  - **Writes and concurrency (Plan 1 final review I6):**
+    - Each connection gets one writer thread with a bounded queue (16 MiB). The Mux `send` closure enqueues; it never does a blocking `fdWriteAll` on a cooperative-pool thread.
+    - fs RPCs run on a dedicated bounded executor (8 concurrent), not the cooperative pool.
+    - The handshake read gets a 10 s timeout.
   - The daemon holds no per-project caches yet.
 
 - [ ] **Step 1: Write failing tests.** Each spawns the built daemon with a temp `ALLOY_HOST_HOME`, connects over its socket and performs the handshake, the same way the existing HostDaemonTests do.
@@ -217,6 +282,8 @@ public actor BlobStore {
   - `upgradeWhenIdleSwitchesCurrentAndExits`
   - `upgradeWhenBusyDefers`
   - `upgradeToMissingVersionRefused`
+  - `slowReaderDoesNotStallOtherConnections`
+  - `handshakeTimesOut`
 - [ ] **Step 2:** run `swift build --product alloy-host && swift test --no-parallel --filter HostServicesTests`. Expected: FAIL.
 - [ ] **Step 3:** implement.
 - [ ] **Step 4:** run the same command, then `--filter AlloyRemoteTests`. Expected: PASS.
@@ -233,6 +300,9 @@ public actor BlobStore {
 - **Consumes:** P0b. `FSEventsSource` and `SearchEngine` from AlloyCore.
 - **Produces:**
   - **`watch.start {root}`** returns `{watchID}`. It then streams `watch.batch` notifications. Each watch has a `ReplayRing(byteCap: 1 << 20)`. The client sends `watch.ack {watchID, through}`. `watch.resume {watchID, after}` replays the batches after `after`. If the ring has dropped them (`gapTooLarge`), it sends one batch `[root + "/"]`, meaning rescan.
+  - **Restart epochs (Plan 1 final review I5):** each watch has an `epoch`, a random UInt64 picked per watch. `watch.start` returns `{watchID, epoch}`, and `watch.resume {watchID, epoch, after}`:
+    - An unknown watchID or a different epoch (after a daemon restart or re-exec) is answered with a rescan batch.
+    - `ReplayRing.resume(after:)` reports `gapTooLarge` when `after > lastSeq`. That's a Plan 1 fix in this task.
   - **Watch lifetime:** watches stop when no client has the root attached for 60 s. That uses a one-shot timer per detach, which the spec allows ("no timers beyond that one"). The ring is freed then.
   - **`search.start`** has fields `{root, query: SearchQuery, paths, exclude, indexTruncated, maxResults}`. It returns `{searchID}` and streams `search.batch` until a batch has `finished == true`. `search.cancel` stops it. The engine runs on the server through `SearchEngine(root:fs: LocalFileSystem())`.
 
@@ -240,6 +310,8 @@ public actor BlobStore {
   - `watchStreamsBatchesForTouchedFiles`
   - `watchResumeReplaysAfterSeq`
   - `watchGapBecomesRootRescan`: overflow the ring, then resume from an old seq.
+  - `resumeAcrossDaemonRestartRescans`: same watchID, different epoch.
+  - `resumeAheadOfLastSeqIsAGap`
   - `watchStopsAfterDetachGrace`, with an injectable grace, 0.2 s in tests.
   - `searchStreamsBatchesAndFinishes`
   - `searchCancelStopsWork`
@@ -394,7 +466,8 @@ public struct RecentProject: Codable, Hashable, Sendable { public var local: Str
 - Modify: `Sources/AlloyCore/Host/ProjectHost.swift` (add search), `LocalHost.swift`, `Sources/AlloyTestSupport/TranslatingHost.swift`, `Sources/AlloyCore/Model/Workspace+Search.swift`
 
 **Interfaces:**
-- **Consumes:** C1's `SSHLink`, D1, D2 and P0b.
+- **Consumes:** C1's `SSHLink`, D1, D2, P0b and P0c. Every URL built from a host path uses P0c's helpers.
+- `RemoteFileSystem.isLocal` and `RemoteProcesses.isLocal` are false. The Plan 1 fix wave added `isLocal` to both protocols, and every local/remote predicate derives from it.
 - **Produces:**
 ```swift
 // ProjectHost gains (additive; LocalHost runs today's SearchEngine; TranslatingHost translates):
@@ -494,6 +567,10 @@ extension Workspace {
   - Saves, reverts and git actions refuse with that reason.
   - Unsaved buffers are kept.
 - **Coming back online:** previous states are restored and the root is rescanned. Each open document's stamp is compared, and a moved file goes through the existing outside-edit conflict flow. Autosave resumes and flushes.
+- **Suspending work while offline or taken over (Plan 1 final review I10):**
+  - Index refresh, outside-edit processing (`handleDeleted`/`refresh`), restore filtering (`Workspace.existing`) and store loading are all suspended. A transport failure must never read as "file gone" or "empty project".
+  - The work that was suspended runs once on reconnect.
+  - `ensureLoaded` merges rather than replaces, once a store is loaded.
 - **Takeover:** `takenOver` stays read-only until the user re-opens the project. U2 offers "Reopen here", which re-attaches and takes the project back.
 
 - [ ] **Step 1: Write failing tests.** These run against `TranslatingHost` plus a scripted availability.
@@ -503,6 +580,7 @@ extension Workspace {
   - `reconnectWithChangedDiskUsesConflictFlow`
   - `takenOverClientNeverWrites`: after `takenOver`, no `fs` write is attempted. A recording fs asserts it.
   - `localWorkspaceIgnoresAvailability`
+  - `offlineNeverDeletesTabsOrEmptiesTree`: while offline, index and kind calls fail. The tabs and the tree stay as they were, and nothing is marked deleted.
 - [ ] **Step 2:** run `swift test --no-parallel --filter WorkspaceRemoteTests`. Expected: FAIL.
 - [ ] **Step 3:** implement. The local path is unchanged, and `remoteAvailability` is `.local` for it.
 - [ ] **Step 4:** run the same command, then `--filter AlloyCoreTests` and `--filter AlloyKitTests`. Expected: PASS.
@@ -533,6 +611,16 @@ extension Workspace {
   - **New commands:** `remote.stopServer` ("Stop Server", File menu, remote windows only, with a confirmation alert). `LiveRemoteBrowser: RemoteBrowsing` is backed by `SSHLink` and `RemoteHost` for U1.
   - **Gating:** in remote windows, New Session, agents, the terminal panel, LSP and plugin processes (tasks, scripted plugins, plugin language servers) are off. Each shows "Available for remote projects in a later update" where the user would reach for it. Themes and declarative plugin parts still apply.
   - **Composer:** Send is disabled while the window is offline or taken over, and drafts are kept.
+  - **App-local state is keyed by host as well as path (Plan 1 final review I8):**
+    - `localStoreDirectory` (`ui-state.json`, `plugin-state`) hashes `HostID` plus the root, so a remote project never shares state with a local project at the same path.
+    - KnowledgePool rows and KnowledgeScope roots are keyed the same way.
+    - Local keys stay byte-identical to today, so existing data is found.
+  - **Refusal at each factory, not just in the UI (Plan 1 final review I9).** When `host.id != .local`, the factories refuse:
+    - the terminal spawner;
+    - `LSPCoordinator.installLive`;
+    - the plugin process launch.
+    
+    They refuse the same way agent transports already do, with a clear error and no spawn. The UI gating sits on top of this.
 
 - [ ] **Step 1: Write failing tests.** These use a headless `TestWindow`, a `RemoteConnection` over fake-ssh and a local daemon.
   - `remoteWindowShowsHostBadgeAndTitle`
@@ -542,6 +630,8 @@ extension Workspace {
   - `stopServerAsksThenStops`
   - `newSessionAndTerminalAreOffForRemote`
   - `localWindowUnchanged`: no badge, no banner, every feature on.
+  - `remoteAndLocalSamePathKeepSeparateState`
+  - `remoteFactoriesRefuseToSpawn`
 - [ ] **Step 2:** run `swift test --no-parallel --filter RemoteWindowTests`. Expected: FAIL.
 - [ ] **Step 3:** implement. For the banner, reuse the `UpdateBanner` and `FilePanelNotice` styling, with no new MetalUI needs. If one appears, forward it.
 - [ ] **Step 4:** run the same command, then the full `--filter AlloyKitTests`. Expected: PASS.
