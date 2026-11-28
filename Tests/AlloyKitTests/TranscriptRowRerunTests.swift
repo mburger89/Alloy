@@ -64,8 +64,8 @@ import Testing
             let before = Self.names.map(BodyProbe.count)
             window.tick()
             for (k, n) in Self.names.enumerated() { run.rerun[n, default: 0] += BodyProbe.count(n) - before[k] }
-            run.requests += window.frameWork.map(\.elementRequests).reduce(0, +)
-            run.prepaints += window.frameWork.map(\.elementPrepaints).reduce(0, +)
+            run.requests += window.frameWork.map { $0.elementRequests + $0.redoneElementRequests }.reduce(0, +)
+            run.prepaints += window.frameWork.map { $0.elementPrepaints + $0.redoneElementPrepaints }.reduce(0, +)
             run.deltas += 1
         }
         return (rig, session, window, run)
@@ -112,8 +112,8 @@ import Testing
             window.resetFrameWork()
             window.scroll(at: centre, byDeltaX: 0, deltaY: 500)
             await Task.yield()
-            requests += window.frameWork.map(\.elementRequests).reduce(0, +)
-            prepaints += window.frameWork.map(\.elementPrepaints).reduce(0, +)
+            requests += window.frameWork.map { $0.elementRequests + $0.redoneElementRequests }.reduce(0, +)
+            prepaints += window.frameWork.map { $0.elementPrepaints + $0.redoneElementPrepaints }.reduce(0, +)
         }
         print("LONG per-scroll-step requests=\(Double(requests) / Double(steps)) prepaints=\(Double(prepaints) / Double(steps))")
     }
