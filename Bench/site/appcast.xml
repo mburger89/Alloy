@@ -1,0 +1,102 @@
+<?xml version="1.0" standalone="yes"?>
+<rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0">
+    <channel>
+        <title>Alloy</title>
+        <item>
+            <title>0.1.0</title>
+            <pubDate>Sat, 28 Nov 2026 01:02:26 -0800</pubDate>
+            <link>https://mburger89.github.io/Alloy/</link>
+            <sparkle:version>1045</sparkle:version>
+            <sparkle:shortVersionString>0.1.0</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+            <description sparkle:format="markdown"><![CDATA[# Alloy 0.1.0
+
+First public release of Alloy, a native macOS code editor built around AI coding sessions.
+
+## Requirements
+
+- A Mac with Apple silicon, running macOS 14 or later.
+- At least one coding agent installed and signed in. Claude Code is supported directly. Codex, Gemini CLI, OpenCode, Goose or an agent you add run over the Agent Client Protocol. Alloy does not install agents.
+
+## Sessions and chat
+
+- Run several sessions at once on one project folder, each with streaming chat, collapsible thinking, tool blocks, permission cards, question cards and plan cards.
+- Choose the agent for each session from the New Session menu (⇧⌘N): Claude Code, Codex, Gemini CLI, OpenCode, Goose or a custom agent. API keys for agents are entered in Settings > Agents and are kept in the macOS Keychain only.
+- Composer with @file and slash-command completion, image paste and drop, queued messages, and mode and model controls.
+- An Agent Client Protocol agent that is still starting after ten seconds says so in the transcript.
+- Sessions can be renamed and forked. Sessions and history persist per project and resume on your next message.
+- One window per project; open several windows to work on several repositories.
+- `alloy <file>` from a terminal opens the file in its enclosing git repository, or in its folder if there is none.
+
+## Who changed what
+
+- Every line is attributed to the session that wrote it, to you, or to an outside change, with gutter bars and tints.
+- Optional: Settings > Editor > Tint my own edits (off by default) also tints what you have typed since your last save, in the code editor and the Table view, in a colour you can pick. The tint clears when you save. With it off, your own edits are not tinted.
+- Keep or revert each edit. Side-by-side diff with synchronised scrolling.
+- Changes made by a session's shell commands are attributed to that session.
+
+## Working together
+
+- Sessions share what they have read through small notes, so a second session does not re-read the same files. Notes are tied to the file's state and are not served once the file changes. You can turn sharing between projects off in Settings.
+- Warnings when a session is about to edit lines another session, or you, is changing. Warnings never block an edit.
+- Sessions can message each other and claim a region of a file. Alloy flags two parties repeatedly rewriting the same lines.
+
+## Code mode
+
+- Switch between Chat and Code. Code mode has a file tree, tabs, split panes, and a narrow chat column.
+- Syntax highlighting (tree-sitter) for Swift, Python, JavaScript, TypeScript, TSX, JSON, Markdown, Bash, Rust, Go, C, C++, YAML, HTML and CSS.
+- Multiple cursors, code folding, find, quick open, command palette, and rebindable keyboard shortcuts.
+- File > New File (⌘N) opens an empty Untitled tab. The first save asks where to put it. Closing the tab or quitting with Untitled text asks Save, Don't Save or Cancel.
+- File > Open… (⌘O) opens any files you pick. Files outside the project open the way `alloy <file>` opens them.
+- Project-wide search and replace with regular expressions and include and exclude globs; results respect .gitignore.
+- Git: change bars in the gutter, blame, compare with the last commit, stage, commit and switch branches.
+- Built-in terminal running your login shell, with links, find and a confirmation before multi-line pastes.
+- CSV and TSV files open as a table: check what a session changed cell by cell, fix values in place, sort by a column header (the file is not reordered), resize columns, and switch to Text any time.
+
+## Language servers
+
+- Alloy uses language servers you already have installed (rust-analyzer, sourcekit-lsp, typescript-language-server, pyright, gopls, clangd and others; you can add your own).
+- Diagnostics and linter warnings, completion with snippets, signature help, hover, go to definition and references, rename, quick fixes and formatting.
+- Alloy never installs or updates servers.
+
+## Menu bar
+
+- File: New File (⌘N), New Session (⇧⌘N), New Terminal Tab (⌘T), Open… (⌘O), Quick Open (⌘P), Close Tab (⌘W), Close Window (⇧⌘W), Save (⌘S), Save As… (⇧⌘S) and Save All (⌥⌘S).
+- Edit > Find: Find (⌘F), Find Next (⌘G), Find Previous (⇧⌘G), Find in Files (⇧⌘F) and Replace in Files (⇧⌘H).
+- Window: Next Tab (⌃Tab), Previous Tab (⌃⇧Tab) and Go to Tab 1 to 9 (⌘1 to ⌘9).
+- Menu items show your rebound shortcuts.
+
+## Plugins
+
+- A plugin is a folder with an `alloy-plugin.json` manifest. Install one from a folder, or from a git URL and tag, in Settings > Plugins. Plugins are off until you switch them on and approve the permissions they ask for.
+- Plugins can add themes, language servers, settings, commands (in the palette and a Plugins menu, with shortcuts that never override yours), task commands that run in a terminal tab, sidebar panels, line and range decorations, and tools for your agent sessions.
+- Plugins that run code run outside Alloy, each in a macOS sandbox limited to the permissions you approved. Alloy never runs one unsandboxed. Plugins can never write to a .claude or .git folder.
+- Plugin secrets are kept in the Keychain. Plugins installed from git can be updated from their row in Settings.
+
+## Appearance
+
+- Six built-in themes: Dracula (default), Alloy Dark, Alloy Light, Solarized Dark, Solarized Light, One Dark. Themes can follow the system appearance.
+- Your own themes are JSON files that apply live. In any session, type /theme to have its agent draft one, or use Settings > Make a theme with your default agent.
+- The theme skill lets your agents make Alloy themes in any session. It is installed only when you click Install theme skill in Settings. You choose Claude Code, the shared agents folder that Codex, Gemini CLI, OpenCode and Goose read, or both.
+- Rounded "island" layout with an optional glass effect, both adjustable in Settings.
+
+## Updates and privacy
+
+- Alloy checks for updates once a day through Sparkle and installs when you quit or choose Restart to update. You can turn automatic checks off in Settings.
+- No telemetry and no account. Alloy does not write to your project's .claude folder. Outside its own data, Alloy writes only when you click Install theme skill in Settings: to ~/.claude/skills/alloy-theme and ~/.agents/skills/alloy-theme, the targets you tick.
+- Alloy's local tool server listens on 127.0.0.1 only.
+
+## Known limitations
+
+- Intel Macs are not supported.
+- Early software: expect rough edges.
+
+## Reporting problems
+
+Open an issue at https://github.com/mburger89/Alloy/issues.
+]]></description>
+            <enclosure url="https://github.com/mburger89/Alloy/releases/download/v0.1.0/Alloy-0.1.0.dmg" length="16934105" type="application/octet-stream" sparkle:edSignature="7ZWlAjh9BJR+sn2r4NiUxSfa2p8E//TiS2d2Dr5eeIq/IMhy4eXtyRRWTKUlhkoirrSBJb8dVJRjOOCXPAU4Bw=="/>
+        </item>
+    </channel>
+</rss>

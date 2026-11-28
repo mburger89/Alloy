@@ -332,11 +332,13 @@ import Foundation
         #expect(!html.contains("The update check is the only network call"))
     }
 
-    @Test func issuesLinkAndDownloadStaysOff() {
-        let html = Self.page(Self.run())
+    /// 0.1.0 is published (2026-11-28), so the download is live and points at the latest release's DMG.
+    @Test func issuesLinkAndDownloadIsLive() {
+        let html = Self.page(Self.run(), available: LandingContent().downloadAvailable)
         #expect(html.contains("https://github.com/mburger89/Alloy/issues"))
-        #expect(LandingContent().downloadAvailable == false)
-        #expect(html.contains("Coming soon"))
+        #expect(LandingContent().downloadAvailable == true)
+        #expect(html.contains("https://github.com/mburger89/Alloy/releases/latest/download/Alloy.dmg"))
+        #expect(!html.contains("Coming soon"))
     }
 
     @Test func editorSectionAndFeature() {

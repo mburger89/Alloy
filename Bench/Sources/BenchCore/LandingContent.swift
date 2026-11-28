@@ -17,7 +17,7 @@ public struct LandingContent: Sendable {
 
     /// The one switch for every download link. False until the first release exists: each Download button and the
     /// Releases links render as an inactive "Coming soon" instead. Set it to true at release time.
-    public var downloadAvailable = false
+    public var downloadAvailable = true
     public var downloadURL = "https://github.com/mburger89/Alloy/releases/latest/download/Alloy.dmg"
     public var repoURL = "https://github.com/mburger89/Alloy"
     public var releasesURL = "https://github.com/mburger89/Alloy/releases"
